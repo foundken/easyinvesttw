@@ -96,6 +96,7 @@ const els = {
   sectorDetailSummary: document.querySelector("#sectorDetailSummary"),
   sectorDetailList: document.querySelector("#sectorDetailList"),
   trendChart: document.querySelector("#trendChart"),
+  trendChartStats: document.querySelector("#trendChartStats"),
   trendGuide: document.querySelector("#trendGuide"),
   trendList: document.querySelector("#trendList"),
   trendAiTitle: document.querySelector("#trendAiTitle"),
@@ -1010,7 +1011,8 @@ function renderTrendResults(items) {
     <article class="trend-row">
       <div>
         <strong>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
-        <small>${escapeHtml(item.sector)} ｜ 近月 ${percent(item.monthReturn)} ｜ 1 日 ${percent(item.recentReturn)}</small>
+        <small>${escapeHtml(item.sector)} ｜ 近月 ${percent(item.monthReturn)} ｜ 1 日 ${percent(item.recentReturn)} ｜ 3 日區段上漲 ${item.positiveSegments}/${item.segmentCount}</small>
+        <small>成交金額 ${compactMoney(item.value)} ｜ 收盤 ${money(item.close)} ｜ 漲跌 ${percent(item.changePercent)}</small>
       </div>
       <span class="${item.recentReturn >= 0 ? "price-up" : "price-down"}">${percent(item.recentReturn)}</span>
     </article>
@@ -1023,6 +1025,7 @@ function renderTrendResults(items) {
   els.trendAiTitle.textContent = sectorLeader ? `${sectorLeader.name} 較強` : `${leader.code} 領先`;
   els.trendAiText.textContent = buildTrendAiText(leader, sectorLeader, items);
   els.trendStatus.textContent = `趨勢：已分析 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
+  renderTrendChartStats(items, sectors);
   drawTrendChart(items);
 }
 
@@ -1042,17 +1045,82 @@ function updateTrendGuide(items, sectors = summarizeTrendSectors(items)) {
     .slice(0, 3);
   const sectorNames = sectors
     .filter((sector) => sector.count >= 2)
-    .slice(0, 2)
-    .map((sector) => `${sector.name} ${sector.count} 檔`);
+    .slice(0, 3);
 
   els.trendGuide.innerHTML = `
     <strong>這張圖怎麼看</strong>
     <ul>
-      <li><b>找強勢股：</b>先看紅色前 5 名${strongStocks.length ? `，目前是 ${strongStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}。` : "。"}</li>
-      <li><b>避開風險：</b>${riskStocks.length ? `近月大漲但今天轉綠的 ${riskStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}，先等回穩再觀察。` : "目前沒有明顯「近月大漲、今日轉弱」的高風險名單。"}</li>
-      <li><b>找方向：</b>${sectorNames.length ? `同族群多檔上榜，先關注 ${sectorNames.join("、")}。` : "若同一族群有多檔一起上榜，代表資金可能正在集中。"}</li>
+      <li><b>紅色代表今天強：</b>紅色條越長，表示最近 1 日漲幅越大。先看前 5 名${strongStocks.length ? `：${strongStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}。` : "。"}</li>
+      <li><b>綠色不是一定壞：</b>綠色代表今天回檔。若近月仍大漲，通常是「漲多整理」，不急著追，等回穩再觀察。</li>
+      <li><b>避開風險：</b>${riskStocks.length ? `近月大漲但今天轉綠的 ${riskStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}，先等量縮或止跌。` : "目前沒有明顯「近月大漲、今日轉弱」的高風險名單。"}</li>
+      <li><b>找方向：</b>${sectorNames.length ? `同族群多檔上榜，代表資金可能集中在 ${sectorNames.map((sector) => `<button class="inline-link" type="button" data-trend-sector="${escapeHtml(sector.name)}">${escapeHtml(sector.name)} ${sector.count} 檔</button>`).join("、")}。` : "若同一族群有多檔一起上榜，代表資金可能正在集中。"}</li>
+      <li><b>不要只看名次：</b>還要看近月漲幅、3 日區段上漲次數與成交金額。連續很強但漲幅過大，通常要等拉回。</li>
     </ul>
+    <div id="trendSectorDetail" class="trend-sector-detail"></div>
   `;
+  els.trendGuide.querySelectorAll("[data-trend-sector]").forEach((button) => {
+    button.addEventListener("click", () => renderTrendSectorDetail(button.dataset.trendSector, items, sectors));
+  });
+  if (sectorNames[0]) renderTrendSectorDetail(sectorNames[0].name, items, sectors);
+}
+
+function renderTrendChartStats(items, sectors) {
+  if (!els.trendChartStats) return;
+  const upCount = items.filter((item) => item.recentReturn > 0).length;
+  const downCount = items.filter((item) => item.recentReturn < 0).length;
+  const topSector = sectors[0];
+  const hottest = items[0];
+  const riskCount = items.filter((item) => item.monthReturn > 20 && item.recentReturn < 0).length;
+  els.trendChartStats.innerHTML = [
+    ["上漲檔數", `${upCount} 檔`],
+    ["下跌檔數", `${downCount} 檔`],
+    ["最集中族群", topSector ? `${topSector.name} ${topSector.count} 檔` : "--"],
+    ["領漲股", hottest ? `${hottest.code} ${hottest.name}` : "--"],
+    ["漲多回檔", `${riskCount} 檔`]
+  ].map(([label, value]) => `
+    <article>
+      <span>${label}</span>
+      <strong>${value}</strong>
+    </article>
+  `).join("");
+}
+
+function renderTrendSectorDetail(name, items, sectors) {
+  const box = els.trendGuide?.querySelector("#trendSectorDetail");
+  if (!box) return;
+  const sector = sectors.find((item) => item.name === name);
+  const stocks = items
+    .filter((item) => item.sector === name)
+    .sort((a, b) => b.recentReturn - a.recentReturn)
+    .slice(0, 8);
+  if (!sector || !stocks.length) {
+    box.innerHTML = "";
+    return;
+  }
+  const strong = stocks.filter((item) => item.recentReturn > 0).length;
+  const risk = stocks.filter((item) => item.monthReturn > 20 && item.recentReturn < 0).length;
+  box.innerHTML = `
+    <strong>${escapeHtml(name)} 族群明細</strong>
+    <p>${escapeHtml(name)} 有 ${sector.count} 檔上榜，最近 1 日平均 ${percent(sector.avgRecent)}，近月平均 ${percent(sector.avgMonth)}。${strong >= 2 ? "多檔同時轉強，代表資金集中度較高。" : "目前強度偏分散，先觀察是否擴散。"}${risk ? ` 其中 ${risk} 檔有漲多回檔跡象。` : ""}</p>
+    <div class="sector-chip-list">
+      ${stocks.map((item) => `
+        <button type="button" data-stock-code="${escapeHtml(item.code)}">
+          ${escapeHtml(item.code)} ${escapeHtml(item.name)}
+          <small>1 日 ${percent(item.recentReturn)}｜近月 ${percent(item.monthReturn)}</small>
+        </button>
+      `).join("")}
+    </div>
+  `;
+  box.querySelectorAll("[data-stock-code]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const stock = items.find((item) => item.code === button.dataset.stockCode);
+      if (!stock) return;
+      const val = getValuation(stock.code);
+      const rev = getRevenue(stock.code);
+      const item = watchList.find((entry) => entry.code === stock.code) || { code: stock.code, cost: "", shares: "", type: "watch" };
+      openStockDetail({ item, stock, val, rev, signal: scoreStock(stock, val, rev) });
+    });
+  });
 }
 
 function summarizeTrendSectors(items) {
