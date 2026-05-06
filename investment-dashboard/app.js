@@ -1,5 +1,6 @@
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
-const REFRESH_MS = 60000;
+const MARKET_REFRESH_FAST_MS = 60000;
+const MARKET_REFRESH_SLOW_MS = 5 * 60000;
 
 const endpoints = {
   bundle: getMarketEndpoint()
@@ -156,6 +157,8 @@ let latestTrendItems = [];
 let smallCapRequestKey = "";
 let latestSmallCapItems = [];
 let selectedSmallCapCode = "";
+let refreshTimer = null;
+let marketFetchInFlight = false;
 
 const sampleDaily = [
   row("2330", "台積電", 108500000, 104800000000, 968, 984, 960, 981, 12, 64000),
@@ -537,7 +540,39 @@ function mergeRealtimeQuotes(daily, realtime) {
   return Array.from(map.values());
 }
 
+function isTwMarketOpen(date = new Date()) {
+  const taipeiParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const get = (type) => taipeiParts.find((part) => part.type === type)?.value;
+  const weekday = get("weekday");
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  const minutes = hour * 60 + minute;
+  return minutes >= 9 * 60 && minutes <= 13 * 60 + 35;
+}
+
+function currentRefreshInterval() {
+  return isTwMarketOpen() ? MARKET_REFRESH_FAST_MS : MARKET_REFRESH_SLOW_MS;
+}
+
+function scheduleMarketRefresh() {
+  window.clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(fetchMarket, currentRefreshInterval());
+}
+
 async function fetchMarket() {
+  if (document.hidden) {
+    setStatus("暫停更新", "分頁在背景，回到畫面後會自動更新");
+    return;
+  }
+  if (marketFetchInFlight) return;
+  marketFetchInFlight = true;
   setStatus("更新中", "正在讀取證交所公開資料");
 
   try {
@@ -574,6 +609,8 @@ async function fetchMarket() {
 
   setStatus(market.source === "sample" ? "範例資料" : "已更新", new Date().toLocaleString("zh-TW"));
   render();
+  marketFetchInFlight = false;
+  scheduleMarketRefresh();
 }
 
 function normalizeInstitutional(payload) {
@@ -2633,6 +2670,14 @@ els.priceChart.addEventListener("pointermove", handleChartPointer);
 els.priceChart.addEventListener("mouseleave", clearChartHover);
 els.priceChart.addEventListener("pointerleave", clearChartHover);
 window.addEventListener("resize", redrawChart);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    window.clearTimeout(refreshTimer);
+    setStatus("暫停更新", "分頁在背景，回到畫面後會自動更新");
+    return;
+  }
+  fetchMarket();
+});
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (chartExpanded) {
@@ -2667,4 +2712,3 @@ async function initApp() {
 }
 
 initApp();
-setInterval(fetchMarket, REFRESH_MS);

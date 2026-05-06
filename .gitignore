@@ -1,2 +1,4 @@
 .firebase/
 functions/.env
+firebase-debug.log
+firebase-debug.*.log
