@@ -86,6 +86,7 @@ const els = {
   sectorDetailSummary: document.querySelector("#sectorDetailSummary"),
   sectorDetailList: document.querySelector("#sectorDetailList"),
   trendChart: document.querySelector("#trendChart"),
+  trendGuide: document.querySelector("#trendGuide"),
   trendList: document.querySelector("#trendList"),
   trendAiTitle: document.querySelector("#trendAiTitle"),
   trendAiText: document.querySelector("#trendAiText"),
@@ -757,6 +758,7 @@ async function renderTrendPanel(ranking) {
   if (!key) {
     latestTrendItems = [];
     els.trendList.innerHTML = '<p class="empty">等待成交排行更新後，這裡會計算近月漲勢。</p>';
+    updateTrendGuide([]);
     els.trendAiTitle.textContent = "等待資料";
     els.trendAiText.textContent = "目前沒有足夠股票可分析。";
     els.trendStatus.textContent = "趨勢：等待近月資料";
@@ -811,6 +813,7 @@ function buildTrendItem(stock, history) {
 function renderTrendResults(items) {
   if (!items.length) {
     els.trendList.innerHTML = '<p class="empty">近月資料不足，稍後再更新。</p>';
+    updateTrendGuide([]);
     els.trendAiTitle.textContent = "資料不足";
     els.trendAiText.textContent = "目前無法形成趨勢判讀。";
     els.trendStatus.textContent = "趨勢：資料不足";
@@ -829,12 +832,42 @@ function renderTrendResults(items) {
   `).join("");
 
   const sectors = summarizeTrendSectors(items);
+  updateTrendGuide(items, sectors);
   const leader = items[0];
   const sectorLeader = sectors[0];
   els.trendAiTitle.textContent = sectorLeader ? `${sectorLeader.name} 較強` : `${leader.code} 領先`;
   els.trendAiText.textContent = buildTrendAiText(leader, sectorLeader, items);
   els.trendStatus.textContent = `趨勢：已分析 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
   drawTrendChart(items);
+}
+
+function updateTrendGuide(items, sectors = summarizeTrendSectors(items)) {
+  if (!els.trendGuide) return;
+  if (!items.length) {
+    els.trendGuide.innerHTML = `
+      <strong>這張圖怎麼看</strong>
+      <p>資料更新後，這裡會整理強勢股、風險提醒與資金集中方向。</p>
+    `;
+    return;
+  }
+
+  const strongStocks = items.filter((item) => item.recentReturn > 0).slice(0, 5);
+  const riskStocks = items
+    .filter((item) => item.monthReturn >= 10 && item.recentReturn < 0)
+    .slice(0, 3);
+  const sectorNames = sectors
+    .filter((sector) => sector.count >= 2)
+    .slice(0, 2)
+    .map((sector) => `${sector.name} ${sector.count} 檔`);
+
+  els.trendGuide.innerHTML = `
+    <strong>這張圖怎麼看</strong>
+    <ul>
+      <li><b>找強勢股：</b>先看紅色前 5 名${strongStocks.length ? `，目前是 ${strongStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}。` : "。"}</li>
+      <li><b>避開風險：</b>${riskStocks.length ? `近月大漲但今天轉綠的 ${riskStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}，先等回穩再觀察。` : "目前沒有明顯「近月大漲、今日轉弱」的高風險名單。"}</li>
+      <li><b>找方向：</b>${sectorNames.length ? `同族群多檔上榜，先關注 ${sectorNames.join("、")}。` : "若同一族群有多檔一起上榜，代表資金可能正在集中。"}</li>
+    </ul>
+  `;
 }
 
 function summarizeTrendSectors(items) {
