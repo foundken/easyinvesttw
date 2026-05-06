@@ -381,7 +381,7 @@ select:focus {
 
 .small-cap-list {
   display: grid;
-  max-height: 520px;
+  max-height: 760px;
   gap: 10px;
   overflow-y: auto;
   padding-right: 6px;

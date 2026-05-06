@@ -950,7 +950,7 @@ async function renderSmallCapGuide() {
 
   latestSmallCapItems = items.filter(Boolean)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+    .slice(0, 20);
   renderSmallCapResults(latestSmallCapItems);
 }
 
@@ -1008,7 +1008,7 @@ function renderSmallCapResults(items) {
     monthReturn: item.monthReturn
   })));
   els.smallCapAiTitle.textContent = `${top.stock.code} ${top.stock.name} 分數最高`;
-  els.smallCapAiText.textContent = `${sectors[0]?.name || top.sector} 目前較集中。這 10 檔只代表「可觀察候選」，進場上建議等回檔不破支撐、成交量沒有失控放大，再用小部位分批測試。`;
+  els.smallCapAiText.textContent = `${sectors[0]?.name || top.sector} 目前較集中。這 20 檔只代表「可觀察候選」，進場上建議等回檔不破支撐、成交量沒有失控放大，再用小部位分批測試。`;
   els.smallCapStatus.textContent = `小型股：已篩選 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
 }
 
