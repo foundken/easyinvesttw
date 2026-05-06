@@ -1,8 +1,9 @@
 window.EASYINVEST_FIREBASE_CONFIG = {
-  apiKey: "PASTE_FIREBASE_API_KEY_HERE",
-  authDomain: "PASTE_FIREBASE_AUTH_DOMAIN_HERE",
-  projectId: "PASTE_FIREBASE_PROJECT_ID_HERE",
-  storageBucket: "PASTE_FIREBASE_STORAGE_BUCKET_HERE",
-  messagingSenderId: "PASTE_FIREBASE_MESSAGING_SENDER_ID_HERE",
-  appId: "PASTE_FIREBASE_APP_ID_HERE"
+  apiKey: "AIzaSyCQNEXuBXemDC989CZB_XtROmmXNjDb7SA",
+  authDomain: "easyinvesttw.firebaseapp.com",
+  projectId: "easyinvesttw",
+  storageBucket: "easyinvesttw.firebasestorage.app",
+  messagingSenderId: "489921924530",
+  appId: "1:489921924530:web:ffdb49e656d0641c97a8ab",
+  measurementId: "G-TSN7ERXZV7"
 };
