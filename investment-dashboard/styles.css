@@ -1068,7 +1068,7 @@ body.chart-expanded .chart-wrap canvas {
   }
 
   .trend-layout canvas {
-    height: 620px;
+    height: 560px;
   }
 
   .small-cap-head,
@@ -1081,9 +1081,15 @@ body.chart-expanded .chart-wrap canvas {
   .ranking-list,
   .finance-list,
   .insight-list,
-  .news-list {
+  .news-list,
+  .trend-list,
+  .small-cap-list {
     max-height: 360px;
     padding-right: 3px;
+  }
+
+  .small-cap-list {
+    max-height: 520px;
   }
 
   .market-groups {
