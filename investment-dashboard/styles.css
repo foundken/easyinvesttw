@@ -453,7 +453,8 @@ label span {
 .holding-list,
 .ranking-list,
 .finance-list,
-.insight-list {
+.insight-list,
+.news-list {
   display: grid;
   gap: 10px;
   padding-top: 14px;
@@ -463,7 +464,8 @@ label span {
 .holding-card,
 .rank-row,
 .finance-card,
-.insight-card {
+.insight-card,
+.news-card {
   border: 1px solid #e8e0d4;
   border-radius: 8px;
   padding: 14px;
@@ -472,13 +474,15 @@ label span {
 
 .stock-card,
 .holding-card,
-.rank-row {
+.rank-row,
+.news-card {
   cursor: pointer;
 }
 
 .stock-card:hover,
 .holding-card:hover,
-.rank-row:hover {
+.rank-row:hover,
+.news-card:hover {
   border-color: rgba(47, 95, 143, 0.45);
   box-shadow: 0 8px 24px rgba(47, 95, 143, 0.1);
 }
@@ -605,8 +609,34 @@ label span {
 }
 
 .rank-row small,
-.finance-card small {
+.finance-card small,
+.news-card small {
   color: var(--muted);
+}
+
+.news-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
+
+.news-card strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.news-card small {
+  display: block;
+  margin-top: 6px;
+  font-weight: 800;
+}
+
+.news-card .source-pill {
+  white-space: nowrap;
 }
 
 .price-up {
@@ -797,6 +827,10 @@ body.chart-expanded .chart-wrap canvas {
   .institution-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .news-card {
+    grid-template-columns: 1fr;
   }
 
   .market-groups {

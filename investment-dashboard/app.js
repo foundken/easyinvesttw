@@ -54,6 +54,7 @@ const els = {
   institutionStatus: document.querySelector("#institutionStatus"),
   watchList: document.querySelector("#watchList"),
   holdingList: document.querySelector("#holdingList"),
+  newsList: document.querySelector("#newsList"),
   rankingList: document.querySelector("#rankingList"),
   financeList: document.querySelector("#financeList"),
   insightList: document.querySelector("#insightList"),
@@ -79,6 +80,7 @@ let market = {
   index: null,
   usIndex: null,
   institutional: null,
+  news: [],
   source: "sample"
 };
 const historyCache = new Map();
@@ -156,6 +158,23 @@ const sampleInstitutional = {
   total: 194000000,
   source: "sample"
 };
+
+const sampleNews = [
+  {
+    title: "台股資金熱度升溫，電子權值股仍是盤面焦點",
+    url: "https://www.cnyes.com/",
+    category: "台股",
+    date: new Date().toISOString(),
+    source: "鉅亨網"
+  },
+  {
+    title: "美股大型科技股表現牽動全球風險偏好",
+    url: "https://www.cnyes.com/",
+    category: "美股",
+    date: new Date().toISOString(),
+    source: "鉅亨網"
+  }
+];
 
 function usIndex(name, symbol, index, open, high, low, previousClose) {
   const change = index - previousClose;
@@ -362,6 +381,7 @@ async function fetchMarket() {
       index: normalizeIndex(payload.index) || sampleIndex,
       usIndex: normalizeUsMarket(payload.usIndex) || sampleUsMarket,
       institutional: normalizeInstitutional(payload.institutional) || sampleInstitutional,
+      news: normalizeNews(payload.news || []),
       source: payload.realtimeSource === "Fugle" ? "TWSE + Fugle" : "TWSE"
     };
   } catch {
@@ -372,6 +392,7 @@ async function fetchMarket() {
       index: sampleIndex,
       usIndex: sampleUsMarket,
       institutional: sampleInstitutional,
+      news: sampleNews,
       source: "sample"
     };
   }
@@ -398,6 +419,17 @@ function normalizeUsMarket(payload) {
     groups: normalizeIndexGroups(payload.groups),
     source: payload.source || "Yahoo"
   };
+}
+
+function normalizeNews(items) {
+  const news = (items || []).map((item) => ({
+    title: String(item.title || "").trim(),
+    url: String(item.url || "").trim(),
+    category: item.category || "市場",
+    date: item.date || item.publishedAt || "",
+    source: item.source || "鉅亨網"
+  })).filter((item) => item.title && item.url);
+  return news.length ? news : sampleNews;
 }
 
 function setStatus(status, time) {
@@ -528,6 +560,7 @@ function render() {
   els.sourceLabel.textContent = market.source === "sample" ? "範例" : market.source;
 
   renderHoldings(holdings);
+  renderNews();
   renderWatchList(watchOnly);
   renderInsights(tracked, ranking);
   renderRanking(ranking);
@@ -822,6 +855,41 @@ function renderHoldings(holdings) {
     });
     els.holdingList.append(card);
   });
+}
+
+function renderNews() {
+  const items = (market.news?.length ? market.news : sampleNews).slice(0, 6);
+  els.newsList.innerHTML = items.map((item) => `
+    <a class="news-card" href="${escapeAttribute(item.url)}" target="_blank" rel="noopener noreferrer">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(item.category || "市場")} ｜ ${escapeHtml(formatNewsDate(item.date))}</small>
+      </div>
+      <span class="pill source-pill">${escapeHtml(item.source || "鉅亨網")}</span>
+    </a>
+  `).join("");
+}
+
+function formatNewsDate(value) {
+  if (!value) return "最新";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("zh-TW");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeAttribute(value) {
+  const text = String(value || "");
+  if (!/^https?:\/\//.test(text)) return "https://www.cnyes.com/";
+  return escapeHtml(text);
 }
 
 function renderWatchList(tracked) {

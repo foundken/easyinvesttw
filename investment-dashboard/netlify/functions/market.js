@@ -21,14 +21,15 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const [daily, valuation, revenue, realtime, index, usIndex, institutional] = await Promise.all([
+    const [daily, valuation, revenue, realtime, index, usIndex, institutional, news] = await Promise.all([
       safeFetchJson(endpoints.daily),
       safeFetchJson(endpoints.valuation),
       safeFetchJson(endpoints.revenue),
       safeFetchFugleQuotes(symbols),
       safeFetchTwseIndex(),
       safeFetchUsMarket(),
-      safeFetchInstitutional()
+      safeFetchInstitutional(),
+      safeFetchMarketNews()
     ]);
 
     return json(200, {
@@ -41,6 +42,7 @@ exports.handler = async function handler(event) {
       index,
       usIndex,
       institutional,
+      news,
       realtimeSource: realtime.length ? "Fugle" : null
     });
   } catch (error) {
@@ -236,6 +238,115 @@ function pickNumber(row, required, excluded = []) {
   return key ? toNumber(row[key]) : null;
 }
 
+async function fetchMarketNews() {
+  const apiNews = await fetchCnyesNewsApi();
+  if (apiNews.length) return apiNews;
+  return fetchCnyesHomeNews();
+}
+
+async function fetchCnyesNewsApi() {
+  const now = Math.floor(Date.now() / 1000);
+  const startAt = now - (7 * 24 * 60 * 60);
+  const categories = [
+    ["tw_stock", "台股"],
+    ["us_stock", "美股"],
+    ["headline", "頭條"]
+  ];
+  const batches = await Promise.all(categories.map(async ([category, label]) => {
+    try {
+      const url = `https://api.cnyes.com/media/api/v1/newslist/category/${category}?startAt=${startAt}&endAt=${now}&limit=5`;
+      const response = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "user-agent": "Mozilla/5.0 EasyInvestTW market news reader"
+        }
+      });
+      if (!response.ok) return [];
+      const payload = await response.json();
+      const rows = payload.items?.data || [];
+      return rows.map((item) => ({
+        title: String(item.title || "").trim(),
+        url: item.newsId ? `https://news.cnyes.com/news/id/${item.newsId}` : "https://www.cnyes.com/",
+        category: item.categoryName || label,
+        date: item.publishAt ? new Date(item.publishAt * 1000).toISOString() : "",
+        source: "鉅亨網"
+      }));
+    } catch {
+      return [];
+    }
+  }));
+
+  const seen = new Set();
+  return batches.flat().filter((item) => {
+    if (!item.title || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  }).slice(0, 8);
+}
+
+async function fetchCnyesHomeNews() {
+  const response = await fetch("https://www.cnyes.com/", {
+    headers: {
+      accept: "text/html",
+      "user-agent": "Mozilla/5.0 EasyInvestTW market news reader"
+    }
+  });
+  if (!response.ok) throw new Error("Cnyes request failed");
+  const html = await response.text();
+  const anchors = [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+  const seen = new Set();
+
+  return anchors.map((match) => {
+    const url = absoluteUrl(match[1]);
+    const title = decodeHtml(stripTags(match[2])).replace(/\s+/g, " ").trim();
+    const dateMatch = title.match(/^(\d{2}\/\d{2})\s+(.+)/);
+    const cleanTitle = dateMatch ? dateMatch[2].trim() : title;
+    return {
+      title: cleanTitle,
+      url,
+      category: categoryFromUrl(url),
+      date: dateMatch ? newsDate(dateMatch[1]) : "",
+      source: "鉅亨網"
+    };
+  }).filter((item) => {
+    if (!item.title || item.title.length < 12 || !item.url.includes("news.cnyes.com")) return false;
+    if (seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  }).slice(0, 8);
+}
+
+function absoluteUrl(url) {
+  if (/^https?:\/\//.test(url)) return url;
+  if (url.startsWith("//")) return `https:${url}`;
+  return new URL(url, "https://www.cnyes.com/").toString();
+}
+
+function categoryFromUrl(url) {
+  if (url.includes("/tw_stock")) return "台股";
+  if (url.includes("/us_stock")) return "美股";
+  if (url.includes("/headline")) return "頭條";
+  return "市場";
+}
+
+function newsDate(monthDay) {
+  const year = new Intl.DateTimeFormat("en", { timeZone: "Asia/Taipei", year: "numeric" }).format(new Date());
+  return `${year}/${monthDay}`;
+}
+
+function stripTags(value) {
+  return String(value || "").replace(/<[^>]+>/g, "");
+}
+
+function decodeHtml(value) {
+  return String(value || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
 function taipeiDate() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -406,6 +517,14 @@ async function safeFetchInstitutional() {
     return await fetchInstitutional();
   } catch {
     return null;
+  }
+}
+
+async function safeFetchMarketNews() {
+  try {
+    return await fetchMarketNews();
+  } catch {
+    return [];
   }
 }
 
