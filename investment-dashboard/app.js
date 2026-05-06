@@ -770,7 +770,7 @@ async function renderTrendPanel(ranking) {
 
   trendRequestKey = key;
   els.trendStatus.textContent = "趨勢：正在抓取近一個月資料";
-  els.trendList.innerHTML = '<p class="empty">正在依 3 天為一段計算漲勢...</p>';
+  els.trendList.innerHTML = '<p class="empty">正在依每日漲幅計算近期漲勢...</p>';
 
   const items = await Promise.all(candidates.map(async (stock) => {
     const history = await fetchHistory(stock.code);
@@ -786,9 +786,9 @@ function buildTrendItem(stock, history) {
   const recent = history.filter((item) => Number.isFinite(item.close)).slice(-22);
   if (recent.length < 4) return null;
   const latest = recent.at(-1).close;
-  const previous3 = recent[Math.max(0, recent.length - 4)].close;
+  const previousDay = recent[Math.max(0, recent.length - 2)].close;
   const first = recent[0].close;
-  const recentReturn = previous3 ? ((latest - previous3) / previous3) * 100 : null;
+  const recentReturn = previousDay ? ((latest - previousDay) / previousDay) * 100 : null;
   const monthReturn = first ? ((latest - first) / first) * 100 : null;
   const segments = [];
   for (let index = Math.max(3, recent.length % 3 || 3); index < recent.length; index += 3) {
@@ -822,7 +822,7 @@ function renderTrendResults(items) {
     <article class="trend-row">
       <div>
         <strong>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
-        <small>${escapeHtml(item.sector)} ｜ 近月 ${percent(item.monthReturn)} ｜ 3 日 ${percent(item.recentReturn)}</small>
+        <small>${escapeHtml(item.sector)} ｜ 近月 ${percent(item.monthReturn)} ｜ 1 日 ${percent(item.recentReturn)}</small>
       </div>
       <span class="${item.recentReturn >= 0 ? "price-up" : "price-down"}">${percent(item.recentReturn)}</span>
     </article>
@@ -856,12 +856,12 @@ function summarizeTrendSectors(items) {
 function buildTrendAiText(leader, sectorLeader, items) {
   const strongCount = items.filter((item) => item.recentReturn > 2 && item.monthReturn > 0).length;
   if (sectorLeader && sectorLeader.count >= 2) {
-    return `${sectorLeader.name}有 ${sectorLeader.count} 檔進入漲勢榜，近 3 日平均 ${percent(sectorLeader.avgRecent)}。後續可優先觀察同族群中基本面沒有轉弱、且回檔量縮的標的；追高時要等拉回或突破確認。`;
+    return `${sectorLeader.name}有 ${sectorLeader.count} 檔進入漲勢榜，最近 1 日平均 ${percent(sectorLeader.avgRecent)}。後續可優先觀察同族群中基本面沒有轉弱、且回檔量縮的標的；追高時要等拉回或突破確認。`;
   }
   if (strongCount >= 3) {
     return `短線漲勢不只集中在單一股票，代表盤面風險偏好轉強。可觀察 ${leader.code} ${leader.name} 這類領漲股是否續強，同時留意漲多後震盪。`;
   }
-  return `目前漲勢偏集中在少數個股，${leader.code} ${leader.name} 近 3 日表現最好。方向上先偏觀察，不急著追價，等族群擴散或回測支撐後再評估。`;
+  return `目前漲勢偏集中在少數個股，${leader.code} ${leader.name} 最近 1 日表現最好。方向上先偏觀察，不急著追價，等族群擴散或回測支撐後再評估。`;
 }
 
 function drawTrendChart(items) {
