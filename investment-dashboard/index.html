@@ -24,33 +24,31 @@
     <section class="market-tape" aria-label="大盤即時資訊">
       <div class="market-tabs">
         <strong>大盤行情</strong>
-        <span class="active">台股</span>
-        <span>亞股</span>
-        <span>歐股</span>
-        <span>美股</span>
+        <button class="market-tab active" type="button" data-market="tw">台股</button>
+        <button class="market-tab" type="button" data-market="us">美股</button>
       </div>
       <div class="market-board">
         <aside class="market-groups">
-          <article class="group-card active">
-            <span>上市</span>
+          <button class="group-card active" type="button" data-group="listed">
+            <span id="listedIndexLabel">上市</span>
             <strong id="listedIndexPrice">--</strong>
             <small id="listedIndexMeta">--</small>
-          </article>
-          <article class="group-card">
-            <span>上櫃</span>
+          </button>
+          <button class="group-card" type="button" data-group="otc">
+            <span id="otcIndexLabel">上櫃</span>
             <strong id="otcIndexPrice">--</strong>
-            <small>稍後加入</small>
-          </article>
-          <article class="group-card">
-            <span>電子</span>
+            <small id="otcIndexMeta">--</small>
+          </button>
+          <button class="group-card" type="button" data-group="electronic">
+            <span id="electronicIndexLabel">電子</span>
             <strong id="electronicIndexPrice">--</strong>
-            <small>稍後加入</small>
-          </article>
-          <article class="group-card">
-            <span>金融</span>
+            <small id="electronicIndexMeta">--</small>
+          </button>
+          <button class="group-card" type="button" data-group="finance">
+            <span id="financeIndexLabel">金融</span>
             <strong id="financeIndexPrice">--</strong>
-            <small>稍後加入</small>
-          </article>
+            <small id="financeIndexMeta">--</small>
+          </button>
         </aside>
         <div class="index-detail">
           <div class="market-main">

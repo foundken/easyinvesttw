@@ -24,11 +24,20 @@ const els = {
   marketIndexPrice: document.querySelector("#marketIndexPrice"),
   marketIndexChange: document.querySelector("#marketIndexChange"),
   marketIndexChart: document.querySelector("#marketIndexChart"),
+  marketTabs: document.querySelectorAll(".market-tab"),
+  groupCards: document.querySelectorAll(".group-card"),
+  listedIndexLabel: document.querySelector("#listedIndexLabel"),
   listedIndexPrice: document.querySelector("#listedIndexPrice"),
   listedIndexMeta: document.querySelector("#listedIndexMeta"),
+  otcIndexLabel: document.querySelector("#otcIndexLabel"),
   otcIndexPrice: document.querySelector("#otcIndexPrice"),
+  otcIndexMeta: document.querySelector("#otcIndexMeta"),
+  electronicIndexLabel: document.querySelector("#electronicIndexLabel"),
   electronicIndexPrice: document.querySelector("#electronicIndexPrice"),
+  electronicIndexMeta: document.querySelector("#electronicIndexMeta"),
+  financeIndexLabel: document.querySelector("#financeIndexLabel"),
   financeIndexPrice: document.querySelector("#financeIndexPrice"),
+  financeIndexMeta: document.querySelector("#financeIndexMeta"),
   marketTurnover: document.querySelector("#marketTurnover"),
   marketOpen: document.querySelector("#marketOpen"),
   marketHigh: document.querySelector("#marketHigh"),
@@ -62,11 +71,14 @@ let market = {
   valuation: [],
   revenue: [],
   index: null,
+  usIndex: null,
   source: "sample"
 };
 const historyCache = new Map();
 let activeChartHistory = [];
 let chartExpanded = false;
+let selectedMarket = "tw";
+let selectedGroup = "listed";
 
 const sampleDaily = [
   row("2330", "台積電", 108500000, 104800000000, 968, 984, 960, 981, 12, 64000),
@@ -112,6 +124,45 @@ const sampleIndex = {
     volume: 500 + Math.round(Math.abs(Math.sin(index / 7)) * 900)
   }))
 };
+
+sampleIndex.groups = {
+  otc: { ...sampleIndex, name: "上櫃指數", index: 410.29, previousClose: 407.44, change: 2.85, changePercent: 0.7, turnover: 4261.58 },
+  electronic: { ...sampleIndex, name: "電子類指數", index: 2663.65, previousClose: 2636.97, change: 26.68, changePercent: 1.01, turnover: 11957.85 },
+  finance: { ...sampleIndex, name: "金融保險類指數", index: 2532.24, previousClose: 2503.19, change: 29.05, changePercent: 1.16, turnover: 223.37 }
+};
+
+const sampleUsMarket = {
+  groups: {
+    listed: usIndex("S&P 500", "^GSPC", 5321.41, 5292.40, 5338.87, 5285.11, 5305.74),
+    otc: usIndex("Nasdaq", "^IXIC", 16685.97, 16532.90, 16721.12, 16480.48, 16511.18),
+    electronic: usIndex("Dow", "^DJI", 39110.76, 39005.82, 39232.44, 38880.71, 38972.41),
+    finance: usIndex("Russell 2000", "^RUT", 2094.33, 2079.41, 2104.91, 2070.12, 2084.22)
+  },
+  source: "sample"
+};
+
+function usIndex(name, symbol, index, open, high, low, previousClose) {
+  const change = index - previousClose;
+  return {
+    name,
+    symbol,
+    index,
+    open,
+    high,
+    low,
+    previousClose,
+    turnover: null,
+    change,
+    changePercent: (change / previousClose) * 100,
+    source: "sample",
+    lastUpdated: new Date().toISOString(),
+    candles: Array.from({ length: 78 }, (_, point) => ({
+      date: `US ${point + 1}`,
+      close: index + Math.sin(point / 8) * (index * 0.006) - Math.cos(point / 5) * (index * 0.002),
+      volume: 400 + Math.round(Math.abs(Math.sin(point / 4)) * 700)
+    }))
+  };
+}
 
 function row(code, name, volume, value, open, high, low, close, change, trades) {
   return { code, name, volume, value, open, high, low, close, change, trades };
@@ -244,12 +295,17 @@ function normalizeIndex(payload) {
     high: number(payload.high),
     low: number(payload.low),
     turnover: number(payload.turnover),
+    groups: normalizeIndexGroups(payload.groups),
     change,
     changePercent,
     lastUpdated: payload.lastUpdated || payload.time || payload.updatedAt,
     source: payload.source || "Fugle",
     candles
   };
+}
+
+function normalizeIndexGroups(groups = {}) {
+  return Object.fromEntries(Object.entries(groups).map(([key, group]) => [key, normalizeIndex(group)]));
 }
 
 function mergeRealtimeQuotes(daily, realtime) {
@@ -288,6 +344,7 @@ async function fetchMarket() {
       valuation: normalizeValuation(payload.valuation || []),
       revenue: normalizeRevenue(payload.revenue || []),
       index: normalizeIndex(payload.index) || sampleIndex,
+      usIndex: normalizeUsMarket(payload.usIndex) || sampleUsMarket,
       source: payload.realtimeSource === "Fugle" ? "TWSE + Fugle" : "TWSE"
     };
   } catch {
@@ -296,12 +353,21 @@ async function fetchMarket() {
       valuation: sampleValuation,
       revenue: sampleRevenue,
       index: sampleIndex,
+      usIndex: sampleUsMarket,
       source: "sample"
     };
   }
 
   setStatus(market.source === "sample" ? "範例資料" : "已更新", new Date().toLocaleString("zh-TW"));
   render();
+}
+
+function normalizeUsMarket(payload) {
+  if (!payload?.groups) return null;
+  return {
+    groups: normalizeIndexGroups(payload.groups),
+    source: payload.source || "Yahoo"
+  };
 }
 
 function setStatus(status, time) {
@@ -447,11 +513,20 @@ function formatUpdateTime(value) {
 }
 
 function renderMarketIndex() {
-  const index = market.index || sampleIndex;
+  const marketData = selectedMarket === "us" ? (market.usIndex || sampleUsMarket) : { groups: (market.index?.groups || sampleIndex.groups), source: market.index?.source };
+  const groups = selectedMarket === "us" ? marketData.groups : {
+    listed: market.index || sampleIndex,
+    ...(market.index?.groups || {})
+  };
+  const fallbackGroups = selectedMarket === "us" ? sampleUsMarket.groups : {
+    listed: sampleIndex,
+    ...sampleIndex.groups
+  };
+  const index = groups[selectedGroup] || fallbackGroups[selectedGroup] || sampleIndex;
   const change = number(index.change);
   const changePercent = number(index.changePercent);
   const isUp = change >= 0;
-  const hasTwseIndex = index.source === "TWSE" && Number.isFinite(index.index);
+  const hasMarketIndex = (index.source === "TWSE" || index.source === "Yahoo") && Number.isFinite(index.index);
   const hasFugleQuotes = market.source.includes("Fugle");
 
   els.marketIndexName.textContent = index.name || "加權指數";
@@ -460,17 +535,57 @@ function renderMarketIndex() {
     ? `${change > 0 ? "+" : ""}${money(change)} (${percent(changePercent)})`
     : "--";
   els.marketIndexChange.className = isUp ? "price-up" : "price-down";
-  els.listedIndexPrice.textContent = Number.isFinite(index.index) ? money(index.index) : "--";
-  els.listedIndexMeta.textContent = Number.isFinite(change) ? `${change > 0 ? "▲" : "▼"} ${money(Math.abs(change))}` : "--";
+  renderMarketGroupCards(groups, fallbackGroups);
   els.marketTurnover.textContent = Number.isFinite(index.turnover) ? `${money(index.turnover)} 億` : "--";
   els.marketOpen.textContent = Number.isFinite(index.open) ? money(index.open) : "--";
   els.marketHigh.textContent = Number.isFinite(index.high) ? money(index.high) : "--";
   els.marketLow.textContent = Number.isFinite(index.low) ? money(index.low) : "--";
   els.marketPreviousClose.textContent = Number.isFinite(index.previousClose) ? money(index.previousClose) : "--";
-  els.marketRealtimeStatus.textContent = hasTwseIndex ? "大盤：TWSE 即時指數資料" : "大盤：非即時或範例資料";
+  els.marketRealtimeStatus.textContent = hasMarketIndex
+    ? `大盤：${index.source === "Yahoo" ? "美股公開行情" : "TWSE 即時指數資料"}`
+    : "大盤：非即時或範例資料";
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
   drawMarketBoardChart(index.candles?.length ? index.candles : sampleIndex.candles, index, isUp);
+}
+
+function renderMarketGroupCards(groups, fallbackGroups) {
+  const labels = selectedMarket === "us"
+    ? { listed: "S&P 500", otc: "Nasdaq", electronic: "Dow", finance: "Russell 2000" }
+    : { listed: "上市", otc: "上櫃", electronic: "電子", finance: "金融" };
+  const labelEls = {
+    listed: els.listedIndexLabel,
+    otc: els.otcIndexLabel,
+    electronic: els.electronicIndexLabel,
+    finance: els.financeIndexLabel
+  };
+  const priceEls = {
+    listed: els.listedIndexPrice,
+    otc: els.otcIndexPrice,
+    electronic: els.electronicIndexPrice,
+    finance: els.financeIndexPrice
+  };
+  const metaEls = {
+    listed: els.listedIndexMeta,
+    otc: els.otcIndexMeta,
+    electronic: els.electronicIndexMeta,
+    finance: els.financeIndexMeta
+  };
+
+  Object.keys(labels).forEach((key) => {
+    const group = groups[key] || fallbackGroups[key];
+    const groupChange = number(group?.change);
+    labelEls[key].textContent = labels[key];
+    priceEls[key].textContent = Number.isFinite(group?.index) ? money(group.index) : "--";
+    metaEls[key].textContent = Number.isFinite(groupChange) ? `${groupChange > 0 ? "▲" : "▼"} ${money(Math.abs(groupChange))}` : "資料不足";
+  });
+
+  els.groupCards.forEach((card) => {
+    card.classList.toggle("active", card.dataset.group === selectedGroup);
+  });
+  els.marketTabs.forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.market === selectedMarket);
+  });
 }
 
 function drawMarketBoardChart(points, index, isUp) {
@@ -1057,6 +1172,19 @@ els.form.addEventListener("submit", (event) => {
 });
 
 els.refresh.addEventListener("click", fetchMarket);
+els.marketTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    selectedMarket = tab.dataset.market;
+    selectedGroup = "listed";
+    renderMarketIndex();
+  });
+});
+els.groupCards.forEach((card) => {
+  card.addEventListener("click", () => {
+    selectedGroup = card.dataset.group;
+    renderMarketIndex();
+  });
+});
 els.closeDetail.addEventListener("click", () => {
   if (chartExpanded) toggleChartExpanded();
   els.detailModal.hidden = true;

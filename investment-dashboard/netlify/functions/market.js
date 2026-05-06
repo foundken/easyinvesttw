@@ -21,12 +21,13 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const [daily, valuation, revenue, realtime, index] = await Promise.all([
+    const [daily, valuation, revenue, realtime, index, usIndex] = await Promise.all([
       safeFetchJson(endpoints.daily),
       safeFetchJson(endpoints.valuation),
       safeFetchJson(endpoints.revenue),
       safeFetchFugleQuotes(symbols),
-      safeFetchTwseIndex()
+      safeFetchTwseIndex(),
+      safeFetchUsMarket()
     ]);
 
     return json(200, {
@@ -37,6 +38,7 @@ exports.handler = async function handler(event) {
       revenue,
       realtime,
       index,
+      usIndex,
       realtimeSource: realtime.length ? "Fugle" : null
     });
   } catch (error) {
@@ -80,10 +82,11 @@ async function fetchFugleQuotes(symbols) {
 
 async function fetchTwseIndex() {
   const date = taipeiDate();
-  const [summary, candles] = await Promise.all([
-    fetchTwseIndexSummary(),
+  const [groups, candles] = await Promise.all([
+    fetchTwseIndexGroups(),
     fetchTwseIndexCandles(date)
   ]);
+  const summary = groups.listed || {};
   const latest = candles.at(-1);
   const index = toNumber(summary.index) || latest?.close;
   const previousClose = toNumber(summary.previousClose);
@@ -103,12 +106,20 @@ async function fetchTwseIndex() {
     changePercent,
     source: "TWSE",
     lastUpdated: summary.lastUpdated || latest?.date || new Date().toISOString(),
-    candles
+    candles,
+    groups
   };
 }
 
-async function fetchTwseIndexSummary() {
-  const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0&_=${Date.now()}`;
+async function fetchTwseIndexGroups() {
+  const symbols = [
+    ["listed", "tse_t00.tw", "發行量加權股價指數"],
+    ["otc", "otc_o00.tw", "上櫃指數"],
+    ["electronic", "tse_t13.tw", "電子類指數"],
+    ["finance", "tse_t17.tw", "金融保險類指數"]
+  ];
+  const exCh = symbols.map((item) => item[1]).join("|");
+  const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0&_=${Date.now()}`;
   const response = await fetch(url, {
     headers: {
       accept: "application/json",
@@ -118,17 +129,33 @@ async function fetchTwseIndexSummary() {
   });
   if (!response.ok) return {};
   const payload = await response.json();
-  const row = payload.msgArray && payload.msgArray[0];
-  if (!row) return {};
+  const rows = payload.msgArray || [];
+  return Object.fromEntries(symbols.map(([key, channel, fallbackName]) => {
+    const code = channel.split("_")[1].replace(".tw", "");
+    const row = rows.find((item) => item.ch === channel.replace("tse_", "").replace("otc_", "") || item.c === code || item.ch?.includes(code)) || {};
+    return [key, twseSummaryFromRow(row, fallbackName)];
+  }));
+}
 
+function twseSummaryFromRow(row, fallbackName) {
+  const index = toNumber(row.z);
+  const previousClose = toNumber(row.y);
+  const change = Number.isFinite(index) && Number.isFinite(previousClose) ? index - previousClose : null;
+  const changePercent = Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null;
   return {
-    index: row.z,
-    previousClose: row.y,
-    open: row.o,
-    high: row.h,
-    low: row.l,
-    turnover: row.v,
-    lastUpdated: row.tlong ? Number(row.tlong) : `${row.d || ""} ${row.t || ""}`
+    name: row.n || fallbackName,
+    symbol: row.c,
+    index,
+    previousClose,
+    open: toNumber(row.o),
+    high: toNumber(row.h),
+    low: toNumber(row.l),
+    turnover: toNumber(row.v),
+    change,
+    changePercent,
+    source: "TWSE",
+    lastUpdated: row.tlong ? Number(row.tlong) : `${row.d || ""} ${row.t || ""}`,
+    candles: []
   };
 }
 
@@ -175,6 +202,61 @@ function maxBy(rows, key) {
 function minBy(rows, key) {
   const values = rows.map((row) => row[key]).filter(Number.isFinite);
   return values.length ? Math.min(...values) : null;
+}
+
+async function fetchUsMarket() {
+  const symbols = {
+    listed: ["^GSPC", "S&P 500"],
+    otc: ["^IXIC", "Nasdaq"],
+    electronic: ["^DJI", "Dow"],
+    finance: ["^RUT", "Russell 2000"]
+  };
+  const entries = await Promise.all(Object.entries(symbols).map(async ([key, [symbol, name]]) => {
+    const data = await fetchYahooIndex(symbol, name);
+    return [key, data];
+  }));
+  return {
+    source: "Yahoo",
+    groups: Object.fromEntries(entries)
+  };
+}
+
+async function fetchYahooIndex(symbol, fallbackName) {
+  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=5m`, {
+    headers: { accept: "application/json" }
+  });
+  if (!response.ok) throw new Error(`Yahoo request failed: ${symbol}`);
+  const payload = await response.json();
+  const result = payload.chart?.result?.[0];
+  if (!result) throw new Error(`Yahoo empty result: ${symbol}`);
+  const meta = result.meta || {};
+  const quote = result.indicators?.quote?.[0] || {};
+  const timestamps = result.timestamp || [];
+  const closes = quote.close || [];
+  const volumes = quote.volume || [];
+  const candles = timestamps.map((time, index) => ({
+    date: new Date(time * 1000).toISOString(),
+    close: toNumber(closes[index]),
+    volume: toNumber(volumes[index])
+  })).filter((item) => Number.isFinite(item.close));
+  const index = toNumber(meta.regularMarketPrice) || candles.at(-1)?.close;
+  const previousClose = toNumber(meta.previousClose) || toNumber(meta.chartPreviousClose);
+  const change = Number.isFinite(index) && Number.isFinite(previousClose) ? index - previousClose : null;
+  return {
+    name: meta.shortName || fallbackName,
+    symbol,
+    index,
+    previousClose,
+    open: toNumber(meta.regularMarketOpen) || candles[0]?.close,
+    high: toNumber(meta.regularMarketDayHigh) || maxBy(candles, "close"),
+    low: toNumber(meta.regularMarketDayLow) || minBy(candles, "close"),
+    turnover: null,
+    change,
+    changePercent: Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null,
+    source: "Yahoo",
+    lastUpdated: meta.regularMarketTime ? meta.regularMarketTime * 1000 : new Date().toISOString(),
+    candles
+  };
 }
 
 async function fetchHistory(code) {
@@ -243,6 +325,14 @@ async function safeFetchFugleQuotes(symbols) {
 async function safeFetchTwseIndex() {
   try {
     return await fetchTwseIndex();
+  } catch {
+    return null;
+  }
+}
+
+async function safeFetchUsMarket() {
+  try {
+    return await fetchUsMarket();
   } catch {
     return null;
   }

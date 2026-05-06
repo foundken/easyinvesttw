@@ -99,11 +99,17 @@ select:focus {
   font-size: 24px;
 }
 
-.market-tabs span {
+.market-tab {
+  min-height: 36px;
+  padding: 0 2px;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
+  font-size: 18px;
+  font-weight: 900;
 }
 
-.market-tabs .active {
+.market-tab.active {
   color: var(--ink);
   border-bottom: 4px solid var(--ink);
 }
@@ -131,10 +137,15 @@ select:focus {
   align-content: center;
   gap: 6px;
   border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
 }
 
 .group-card.active {
   background: #fff;
+  box-shadow: inset 5px 0 0 var(--blue);
 }
 
 .group-card span {
