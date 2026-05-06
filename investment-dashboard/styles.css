@@ -342,9 +342,20 @@ select:focus {
   margin-top: 14px;
 }
 
+.small-cap-panel {
+  margin-top: 14px;
+}
+
 .trend-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.small-cap-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
   gap: 14px;
   padding-top: 14px;
 }
@@ -362,14 +373,23 @@ select:focus {
 
 .trend-list {
   display: grid;
-  max-height: 236px;
+  max-height: 420px;
   gap: 8px;
   overflow-y: auto;
   padding-right: 6px;
 }
 
+.small-cap-list {
+  display: grid;
+  max-height: 520px;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
 .trend-row,
-.ai-card {
+.ai-card,
+.small-cap-card {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -383,14 +403,35 @@ select:focus {
   align-items: center;
 }
 
+.small-cap-card {
+  display: grid;
+  gap: 10px;
+}
+
+.small-cap-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.small-cap-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-weight: 800;
+}
+
 .trend-row strong,
-.ai-card strong {
+.ai-card strong,
+.small-cap-card strong {
   display: block;
   font-size: 18px;
 }
 
 .trend-row small,
-.ai-card span {
+.ai-card span,
+.small-cap-card small {
   display: block;
   margin-top: 4px;
   color: var(--muted);
@@ -1012,7 +1053,8 @@ body.chart-expanded .chart-wrap canvas {
   .index-metrics,
   .institution-grid,
   .theme-grid,
-  .trend-layout {
+  .trend-layout,
+  .small-cap-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1027,6 +1069,11 @@ body.chart-expanded .chart-wrap canvas {
 
   .trend-layout canvas {
     height: 280px;
+  }
+
+  .small-cap-head,
+  .trend-row {
+    grid-template-columns: 1fr;
   }
 
   .watch-list,

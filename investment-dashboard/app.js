@@ -89,7 +89,11 @@ const els = {
   trendList: document.querySelector("#trendList"),
   trendAiTitle: document.querySelector("#trendAiTitle"),
   trendAiText: document.querySelector("#trendAiText"),
-  trendStatus: document.querySelector("#trendStatus")
+  trendStatus: document.querySelector("#trendStatus"),
+  smallCapList: document.querySelector("#smallCapList"),
+  smallCapAiTitle: document.querySelector("#smallCapAiTitle"),
+  smallCapAiText: document.querySelector("#smallCapAiText"),
+  smallCapStatus: document.querySelector("#smallCapStatus")
 };
 
 let watchList = loadWatchList();
@@ -111,6 +115,8 @@ let selectedGroup = "listed";
 let latestRanking = [];
 let trendRequestKey = "";
 let latestTrendItems = [];
+let smallCapRequestKey = "";
+let latestSmallCapItems = [];
 
 const sampleDaily = [
   row("2330", "台積電", 108500000, 104800000000, 968, 984, 960, 981, 12, 64000),
@@ -582,7 +588,7 @@ function scoreStock(stock, val, rev) {
 }
 
 function render() {
-  const ranking = market.daily.slice().sort((a, b) => b.value - a.value).slice(0, 10);
+  const ranking = market.daily.slice().sort((a, b) => b.value - a.value).slice(0, 20);
   latestRanking = ranking;
   const tracked = watchList.map((item) => {
     const stock = getStock(item.code);
@@ -614,6 +620,7 @@ function render() {
   renderInstitutional();
   renderMarketThemes(ranking);
   renderTrendPanel(ranking);
+  renderSmallCapGuide();
 }
 
 function formatShareFlow(value) {
@@ -706,7 +713,7 @@ function sectorBreakdown(stocks) {
 }
 
 function openSectorDetail() {
-  const ranking = latestRanking.length ? latestRanking : market.daily.slice().sort((a, b) => b.value - a.value).slice(0, 10);
+  const ranking = latestRanking.length ? latestRanking : market.daily.slice().sort((a, b) => b.value - a.value).slice(0, 20);
   const { groups, totalValue } = sectorBreakdown(ranking);
   els.sectorDetailTitle.textContent = "今日產業族群";
   els.sectorDetailSummary.textContent = groups.length
@@ -745,7 +752,7 @@ function inferSector(stock) {
 }
 
 async function renderTrendPanel(ranking) {
-  const candidates = ranking.slice(0, 12);
+  const candidates = ranking.slice(0, 20);
   const key = candidates.map((stock) => stock.code).join(",");
   if (!key) {
     latestTrendItems = [];
@@ -771,7 +778,7 @@ async function renderTrendPanel(ranking) {
   }));
   if (trendRequestKey !== key) return;
 
-  latestTrendItems = items.filter(Boolean).sort((a, b) => b.recentReturn - a.recentReturn).slice(0, 8);
+  latestTrendItems = items.filter(Boolean).sort((a, b) => b.recentReturn - a.recentReturn).slice(0, 20);
   renderTrendResults(latestTrendItems);
 }
 
@@ -811,7 +818,7 @@ function renderTrendResults(items) {
     return;
   }
 
-  els.trendList.innerHTML = items.slice(0, 6).map((item, index) => `
+  els.trendList.innerHTML = items.slice(0, 20).map((item, index) => `
     <article class="trend-row">
       <div>
         <strong>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
@@ -879,7 +886,7 @@ function drawTrendChart(items) {
     return;
   }
 
-  const top = items.slice(0, 6);
+  const top = items.slice(0, 10);
   const padding = { top: 24 * ratio, right: 78 * ratio, bottom: 22 * ratio, left: 138 * ratio };
   const chartWidth = width - padding.left - padding.right;
   const rowHeight = (height - padding.top - padding.bottom) / top.length;
@@ -899,6 +906,117 @@ function drawTrendChart(items) {
     context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
     context.fillText(percent(item.recentReturn), padding.left + barWidth + 10 * ratio, y + barHeight * 0.68);
   });
+}
+
+async function renderSmallCapGuide() {
+  const baseCandidates = market.daily
+    .filter((stock) => stock.close > 0 && stock.close < 100 && /^\d{4}$/.test(stock.code) && inferSector(stock) !== "ETF")
+    .map((stock) => {
+      const val = getValuation(stock.code);
+      const rev = getRevenue(stock.code);
+      const inst = getInstitutional(stock.code);
+      const qualityScore =
+        (rev?.yoy > 0 ? Math.min(rev.yoy, 80) : -20) +
+        (stock.change > 0 ? 10 : -8) +
+        (val?.pe && val.pe > 0 && val.pe < 25 ? 12 : 0) +
+        (val?.yieldRate >= 2 ? 8 : 0) +
+        (inst?.total > 0 ? 8 : 0) +
+        Math.min((stock.value || 0) / 100000000, 15);
+      return { stock, val, rev, inst, qualityScore };
+    })
+    .sort((a, b) => b.qualityScore - a.qualityScore)
+    .slice(0, 28);
+  const key = baseCandidates.map((item) => item.stock.code).join(",");
+
+  if (!key) {
+    latestSmallCapItems = [];
+    els.smallCapList.innerHTML = '<p class="empty">目前沒有找到 100 元以下且資料足夠的候選股。</p>';
+    els.smallCapAiTitle.textContent = "等待資料";
+    els.smallCapAiText.textContent = "小型股需要更重視流動性與停損，等待資料更新後再判讀。";
+    els.smallCapStatus.textContent = "小型股：等待資料";
+    return;
+  }
+  if (smallCapRequestKey === key && latestSmallCapItems.length) return;
+
+  smallCapRequestKey = key;
+  els.smallCapStatus.textContent = "小型股：正在分析近月表現";
+  els.smallCapList.innerHTML = '<p class="empty">正在篩選 100 元以下、營收與價格表現較佳的股票...</p>';
+
+  const items = await Promise.all(baseCandidates.map(async ({ stock, val, rev, inst, qualityScore }) => {
+    const history = await fetchHistory(stock.code);
+    return buildSmallCapItem(stock, val, rev, inst, qualityScore, history);
+  }));
+  if (smallCapRequestKey !== key) return;
+
+  latestSmallCapItems = items.filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+  renderSmallCapResults(latestSmallCapItems);
+}
+
+function buildSmallCapItem(stock, val, rev, inst, qualityScore, history) {
+  const recent = history.filter((item) => Number.isFinite(item.close)).slice(-22);
+  if (recent.length < 4) return null;
+  const latest = recent.at(-1).close;
+  const previous3 = recent[Math.max(0, recent.length - 4)].close;
+  const first = recent[0].close;
+  const recentReturn = previous3 ? ((latest - previous3) / previous3) * 100 : 0;
+  const monthReturn = first ? ((latest - first) / first) * 100 : 0;
+  const revScore = rev?.yoy > 0 ? Math.min(rev.yoy, 80) : -25;
+  const valueScore = val?.pe && val.pe > 0 && val.pe < 25 ? 14 : val?.pe > 35 ? -10 : 0;
+  const score = qualityScore + revScore * 0.5 + recentReturn * 1.3 + monthReturn * 0.55 + valueScore;
+  if (rev?.yoy < 0 && monthReturn < 0) return null;
+  return {
+    stock,
+    val,
+    rev,
+    inst,
+    recentReturn,
+    monthReturn,
+    score,
+    sector: inferSector(stock)
+  };
+}
+
+function renderSmallCapResults(items) {
+  if (!items.length) {
+    els.smallCapList.innerHTML = '<p class="empty">沒有符合「營收與價格表現都偏好」的 100 元以下候選。</p>';
+    els.smallCapAiTitle.textContent = "暫無候選";
+    els.smallCapAiText.textContent = "低價股波動較大，沒有好訊號時寧可等待。";
+    els.smallCapStatus.textContent = "小型股：沒有足夠候選";
+    return;
+  }
+
+  els.smallCapList.innerHTML = items.map((item, index) => `
+    <article class="small-cap-card">
+      <div class="small-cap-head">
+        <div>
+          <strong>${index + 1}. ${escapeHtml(item.stock.code)} ${escapeHtml(item.stock.name)}</strong>
+          <small>${escapeHtml(item.sector)} ｜ 股價 ${money(item.stock.close)} ｜ 分數 ${money(item.score)}</small>
+        </div>
+        <span class="${item.monthReturn >= 0 ? "price-up" : "price-down"}">近月 ${percent(item.monthReturn)}</span>
+      </div>
+      <p>3 日 ${percent(item.recentReturn)}，營收年增 ${item.rev ? percent(item.rev.yoy) : "--"}，本益比 ${item.val?.pe ?? "--"}，法人 ${item.inst ? formatShareFlow(item.inst.total) : "--"}。</p>
+      <p>${smallCapAdvice(item)}</p>
+    </article>
+  `).join("");
+
+  const top = items[0];
+  const sectors = summarizeTrendSectors(items.map((item) => ({
+    sector: item.sector,
+    recentReturn: item.recentReturn,
+    monthReturn: item.monthReturn
+  })));
+  els.smallCapAiTitle.textContent = `${top.stock.code} ${top.stock.name} 分數最高`;
+  els.smallCapAiText.textContent = `${sectors[0]?.name || top.sector} 目前較集中。這 10 檔只代表「可觀察候選」，進場上建議等回檔不破支撐、成交量沒有失控放大，再用小部位分批測試。`;
+  els.smallCapStatus.textContent = `小型股：已篩選 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
+}
+
+function smallCapAdvice(item) {
+  if (item.recentReturn > 8) return "短線已明顯上漲，適合等拉回或突破後再評估，避免直接追高。";
+  if (item.rev?.yoy > 15 && item.monthReturn > 0 && item.inst?.total > 0) return "營收、價格與法人方向偏正面，可列入優先觀察名單。";
+  if (item.val?.pe && item.val.pe < 18 && item.rev?.yoy > 0) return "估值不算太高且營收成長，適合觀察是否有量價轉強。";
+  return "資料偏正向但仍需確認流動性、停損點與下一期營收。";
 }
 
 function formatUpdateTime(value) {
