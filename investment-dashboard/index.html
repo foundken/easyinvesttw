@@ -21,6 +21,90 @@
       </div>
     </section>
 
+    <section class="beginner-brief" aria-label="今日新手導讀">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">今日新手導讀</p>
+          <h2>先看這 4 件事</h2>
+        </div>
+        <span>從結論開始，再往下看細節</span>
+      </div>
+      <div class="brief-grid">
+        <article>
+          <span>1. 市場狀態</span>
+          <strong id="beginnerMarketTone">等待資料</strong>
+          <p id="beginnerMarketText">更新後會判斷今天偏強、震盪或偏弱。</p>
+        </article>
+        <article>
+          <span>2. 資金方向</span>
+          <strong id="beginnerTrendText">等待族群</strong>
+          <p>同一族群多檔上榜，代表資金可能正在集中。</p>
+        </article>
+        <article>
+          <span>3. 風險提醒</span>
+          <strong id="beginnerRiskText">先等資料</strong>
+          <p>近月大漲但今天轉弱的股票，不急著追。</p>
+        </article>
+        <article>
+          <span>4. 下一步</span>
+          <strong id="beginnerNextText">加入你的股票</strong>
+          <p>輸入持股或觀察股，系統會幫你整理損益與白話提醒。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="control-panel" aria-label="管理持股">
+      <form id="watchForm" autocomplete="off">
+        <label>
+          <span>股票代號</span>
+          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
+        </label>
+        <label>
+          <span>買進價</span>
+          <input id="costInput" type="number" min="0" step="0.01" placeholder="可留空">
+        </label>
+        <label>
+          <span>股數</span>
+          <input id="sharesInput" type="number" min="0" step="1" placeholder="可留空">
+        </label>
+        <label>
+          <span>分類</span>
+          <select id="typeInput">
+            <option value="holding">我的存股</option>
+            <option value="watch">觀察名單</option>
+          </select>
+        </label>
+        <button type="submit">加入追蹤</button>
+      </form>
+      <div class="actions">
+        <button id="refreshButton" type="button">立即更新</button>
+        <button id="demoButton" type="button">載入範例</button>
+      </div>
+    </section>
+
+    <section class="summary-grid" aria-label="摘要">
+      <article>
+        <span>追蹤股票</span>
+        <strong id="watchCount">0</strong>
+      </article>
+      <article>
+        <span>存股市值</span>
+        <strong id="holdingValue">--</strong>
+      </article>
+      <article>
+        <span>今日成交最熱</span>
+        <strong id="topHotStock">--</strong>
+      </article>
+      <article>
+        <span>高風險提醒</span>
+        <strong id="riskCount">0</strong>
+      </article>
+      <article>
+        <span>資料來源</span>
+        <strong id="sourceLabel">TWSE</strong>
+      </article>
+    </section>
+
     <section class="market-tape" aria-label="大盤即時資訊">
       <div class="market-tabs">
         <strong>大盤行情</strong>
@@ -168,58 +252,6 @@
         </article>
       </div>
       <p id="smallCapStatus" class="last-updated">小型股：等待資料</p>
-    </section>
-
-    <section class="control-panel" aria-label="管理持股">
-      <form id="watchForm" autocomplete="off">
-        <label>
-          <span>股票代號</span>
-          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
-        </label>
-        <label>
-          <span>買進價</span>
-          <input id="costInput" type="number" min="0" step="0.01" placeholder="可留空">
-        </label>
-        <label>
-          <span>股數</span>
-          <input id="sharesInput" type="number" min="0" step="1" placeholder="可留空">
-        </label>
-        <label>
-          <span>分類</span>
-          <select id="typeInput">
-            <option value="holding">我的存股</option>
-            <option value="watch">觀察名單</option>
-          </select>
-        </label>
-        <button type="submit">加入追蹤</button>
-      </form>
-      <div class="actions">
-        <button id="refreshButton" type="button">立即更新</button>
-        <button id="demoButton" type="button">載入範例</button>
-      </div>
-    </section>
-
-    <section class="summary-grid" aria-label="摘要">
-      <article>
-        <span>追蹤股票</span>
-        <strong id="watchCount">0</strong>
-      </article>
-      <article>
-        <span>存股市值</span>
-        <strong id="holdingValue">--</strong>
-      </article>
-      <article>
-        <span>今日成交最熱</span>
-        <strong id="topHotStock">--</strong>
-      </article>
-      <article>
-        <span>高風險提醒</span>
-        <strong id="riskCount">0</strong>
-      </article>
-      <article>
-        <span>資料來源</span>
-        <strong id="sourceLabel">TWSE</strong>
-      </article>
     </section>
 
     <section class="panel" aria-label="我的存股">

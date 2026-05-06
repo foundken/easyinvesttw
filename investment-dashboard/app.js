@@ -20,6 +20,11 @@ const els = {
   topHotStock: document.querySelector("#topHotStock"),
   riskCount: document.querySelector("#riskCount"),
   sourceLabel: document.querySelector("#sourceLabel"),
+  beginnerMarketTone: document.querySelector("#beginnerMarketTone"),
+  beginnerMarketText: document.querySelector("#beginnerMarketText"),
+  beginnerTrendText: document.querySelector("#beginnerTrendText"),
+  beginnerRiskText: document.querySelector("#beginnerRiskText"),
+  beginnerNextText: document.querySelector("#beginnerNextText"),
   marketIndexName: document.querySelector("#marketIndexName"),
   marketIndexPrice: document.querySelector("#marketIndexPrice"),
   marketIndexChange: document.querySelector("#marketIndexChange"),
@@ -611,6 +616,7 @@ function render() {
   els.riskCount.textContent = tracked.filter((item) => item.signal.tone === "bad").length;
   els.sourceLabel.textContent = market.source === "sample" ? "範例" : market.source;
 
+  renderBeginnerBrief(ranking, tracked);
   renderHoldings(holdings);
   renderNews();
   renderWatchList(watchOnly);
@@ -622,6 +628,56 @@ function render() {
   renderMarketThemes(ranking);
   renderTrendPanel(ranking);
   renderSmallCapGuide();
+}
+
+function renderBeginnerBrief(ranking, tracked) {
+  const index = selectedMarket === "us"
+    ? market.usIndex?.groups?.listed
+    : market.index;
+  const changePercent = number(index?.changePercent);
+  const totalFlow = number((market.institutional || sampleInstitutional).total);
+  const sectors = summarizeSectors(ranking);
+  const topStocks = ranking.slice(0, 3).map((stock) => `${stock.code} ${stock.name}`);
+  const riskTracked = tracked.filter((entry) => entry.signal.tone === "bad");
+
+  if (Number.isFinite(changePercent)) {
+    if (changePercent > 0.7) {
+      els.beginnerMarketTone.textContent = "今天偏強";
+      els.beginnerMarketTone.className = "price-up";
+      els.beginnerMarketText.textContent = `大盤上漲 ${percent(changePercent)}，可看資金集中在哪些族群，但避免追太急。`;
+    } else if (changePercent < -0.7) {
+      els.beginnerMarketTone.textContent = "今天偏弱";
+      els.beginnerMarketTone.className = "price-down";
+      els.beginnerMarketText.textContent = `大盤下跌 ${percent(changePercent)}，先保守觀察，等止跌訊號比急著進場重要。`;
+    } else {
+      els.beginnerMarketTone.textContent = "今天震盪";
+      els.beginnerMarketTone.className = "";
+      els.beginnerMarketText.textContent = `大盤約 ${percent(changePercent)}，方向還不明確，適合看族群輪動和個股強弱。`;
+    }
+  } else {
+    els.beginnerMarketTone.textContent = "等待資料";
+    els.beginnerMarketTone.className = "";
+    els.beginnerMarketText.textContent = "更新後會判斷今天偏強、震盪或偏弱。";
+  }
+
+  els.beginnerTrendText.textContent = sectors.length
+    ? sectors.map((sector) => `${sector.name} ${sector.count} 檔`).join("、")
+    : "等待族群";
+
+  if (riskTracked.length) {
+    els.beginnerRiskText.textContent = `${riskTracked.length} 檔需小心`;
+    els.beginnerRiskText.className = "price-down";
+  } else if (Number.isFinite(totalFlow) && totalFlow < 0) {
+    els.beginnerRiskText.textContent = "法人偏賣超";
+    els.beginnerRiskText.className = "price-down";
+  } else {
+    els.beginnerRiskText.textContent = "暫無明顯警訊";
+    els.beginnerRiskText.className = "";
+  }
+
+  els.beginnerNextText.textContent = watchList.length
+    ? `先看你的 ${watchList.length} 檔股票`
+    : topStocks.length ? `可先觀察 ${topStocks[0]}` : "加入你的股票";
 }
 
 function formatShareFlow(value) {

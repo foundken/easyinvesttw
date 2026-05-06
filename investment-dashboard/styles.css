@@ -69,6 +69,7 @@ select:focus {
 }
 
 .hero,
+.beginner-brief,
 .market-tape,
 .institution-strip,
 .control-panel,
@@ -539,6 +540,48 @@ label span {
 
 .status-card strong {
   font-size: 26px;
+}
+
+.beginner-brief {
+  margin-top: 14px;
+  padding: 18px;
+}
+
+.brief-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.brief-grid article {
+  min-height: 154px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.brief-grid span {
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.brief-grid strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.brief-grid p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-weight: 800;
 }
 
 .control-panel {
@@ -1061,6 +1104,7 @@ body.chart-expanded .chart-wrap canvas {
   }
 
   form,
+  .brief-grid,
   .summary-grid,
   .layout,
   .market-grid,
