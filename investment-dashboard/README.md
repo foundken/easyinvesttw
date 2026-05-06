@@ -62,7 +62,13 @@ firebase login
 firebase deploy --only hosting
 ```
 
-注意：Firebase Hosting 是靜態網站服務。若只使用 Hosting，上線後登入與 Firestore 持股同步可以使用；原本 Netlify Functions 的即時市場資料代理需要另外改成 Firebase Functions，否則網站會先使用本機範例資料 fallback。
+注意：Firebase Hosting 是靜態網站服務，市場資料 API 已改成 Firebase Functions，正式部署請使用：
+
+```bash
+firebase deploy --only hosting,functions
+```
+
+若只部署 Hosting，登入與 Firestore 持股同步可以使用，但市場資料會缺少後端代理，可能退回範例資料。Firebase Functions 呼叫外部市場資料來源通常需要 Firebase Blaze 方案。
 
 ## 串接 Fugle 富果即時行情
 

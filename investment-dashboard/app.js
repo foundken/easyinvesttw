@@ -1,6 +1,5 @@
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const REFRESH_MS = 60000;
-const NETLIFY_MARKET_ENDPOINT = "https://easyinvesttw.netlify.app/.netlify/functions/market";
 
 const endpoints = {
   bundle: getMarketEndpoint()
@@ -8,7 +7,7 @@ const endpoints = {
 
 function getMarketEndpoint() {
   const host = window.location.hostname;
-  if (!host || host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return NETLIFY_MARKET_ENDPOINT;
+  if (!host || host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return "/api/market";
   return "/.netlify/functions/market";
 }
 
