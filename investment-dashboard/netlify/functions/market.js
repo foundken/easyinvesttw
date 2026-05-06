@@ -21,13 +21,14 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const [daily, valuation, revenue, realtime, index, usIndex] = await Promise.all([
+    const [daily, valuation, revenue, realtime, index, usIndex, institutional] = await Promise.all([
       safeFetchJson(endpoints.daily),
       safeFetchJson(endpoints.valuation),
       safeFetchJson(endpoints.revenue),
       safeFetchFugleQuotes(symbols),
       safeFetchTwseIndex(),
-      safeFetchUsMarket()
+      safeFetchUsMarket(),
+      safeFetchInstitutional()
     ]);
 
     return json(200, {
@@ -39,6 +40,7 @@ exports.handler = async function handler(event) {
       realtime,
       index,
       usIndex,
+      institutional,
       realtimeSource: realtime.length ? "Fugle" : null
     });
   } catch (error) {
@@ -171,6 +173,67 @@ async function fetchTwseIndexCandles(date) {
     close: toNumber(row[1]),
     volume: toNumber(row[2])
   })).filter((row) => Number.isFinite(row.close));
+}
+
+async function fetchInstitutional() {
+  const date = taipeiDate();
+  const response = await fetch(`https://www.twse.com.tw/rwd/zh/fund/T86?date=${date}&selectType=ALLBUT0999&response=json`, {
+    headers: { accept: "application/json" }
+  });
+  if (!response.ok) throw new Error("TWSE institutional request failed");
+
+  const payload = await response.json();
+  const fields = payload.fields || [];
+  const rows = Array.isArray(payload.data) ? payload.data : [];
+  if (!rows.length) throw new Error("TWSE institutional empty result");
+  const totals = rows.reduce((sum, row) => {
+    const value = parseInstitutionalRow(row, fields);
+    sum.foreign += value.foreign || 0;
+    sum.trust += value.trust || 0;
+    sum.dealer += value.dealer || 0;
+    return sum;
+  }, { foreign: 0, trust: 0, dealer: 0 });
+
+  return {
+    date: payload.date || date,
+    foreign: totals.foreign,
+    trust: totals.trust,
+    dealer: totals.dealer,
+    total: totals.foreign + totals.trust + totals.dealer,
+    source: "TWSE"
+  };
+}
+
+function parseInstitutionalRow(row, fields) {
+  if (Array.isArray(row)) {
+    return {
+      foreign: toNumber(row[fieldIndex(fields, ["外陸資", "買賣超", "不含"])]) || 0,
+      trust: toNumber(row[fieldIndex(fields, ["投信", "買賣超"])]) || 0,
+      dealer: toNumber(row[fieldIndex(fields, ["自營商", "買賣超"], ["外資自營商"])]) || 0
+    };
+  }
+
+  return {
+    foreign: pickNumber(row, ["外陸資", "買賣超"], ["外資自營商"]) || 0,
+    trust: pickNumber(row, ["投信", "買賣超"]) || 0,
+    dealer: pickNumber(row, ["自營商", "買賣超"], ["外資自營商"]) || 0
+  };
+}
+
+function fieldIndex(fields, required, excluded = []) {
+  return fields.findIndex((field) => {
+    const label = String(field);
+    return required.every((keyword) => label.includes(keyword)) && excluded.every((keyword) => !label.includes(keyword));
+  });
+}
+
+function pickNumber(row, required, excluded = []) {
+  if (!row || typeof row !== "object") return null;
+  const key = Object.keys(row).find((item) => {
+    const label = String(item);
+    return required.every((keyword) => label.includes(keyword)) && excluded.every((keyword) => !label.includes(keyword));
+  });
+  return key ? toNumber(row[key]) : null;
 }
 
 function taipeiDate() {
@@ -333,6 +396,14 @@ async function safeFetchTwseIndex() {
 async function safeFetchUsMarket() {
   try {
     return await fetchUsMarket();
+  } catch {
+    return null;
+  }
+}
+
+async function safeFetchInstitutional() {
+  try {
+    return await fetchInstitutional();
   } catch {
     return null;
   }

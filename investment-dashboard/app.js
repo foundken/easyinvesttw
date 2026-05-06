@@ -46,6 +46,12 @@ const els = {
   marketRealtimeStatus: document.querySelector("#marketRealtimeStatus"),
   quoteRealtimeStatus: document.querySelector("#quoteRealtimeStatus"),
   marketLastUpdated: document.querySelector("#marketLastUpdated"),
+  institutionDate: document.querySelector("#institutionDate"),
+  foreignNet: document.querySelector("#foreignNet"),
+  trustNet: document.querySelector("#trustNet"),
+  dealerNet: document.querySelector("#dealerNet"),
+  institutionTotalNet: document.querySelector("#institutionTotalNet"),
+  institutionStatus: document.querySelector("#institutionStatus"),
   watchList: document.querySelector("#watchList"),
   holdingList: document.querySelector("#holdingList"),
   rankingList: document.querySelector("#rankingList"),
@@ -72,6 +78,7 @@ let market = {
   revenue: [],
   index: null,
   usIndex: null,
+  institutional: null,
   source: "sample"
 };
 const historyCache = new Map();
@@ -138,6 +145,15 @@ const sampleUsMarket = {
     electronic: usIndex("Dow", "^DJI", 39110.76, 39005.82, 39232.44, 38880.71, 38972.41),
     finance: usIndex("Russell 2000", "^RUT", 2094.33, 2079.41, 2104.91, 2070.12, 2084.22)
   },
+  source: "sample"
+};
+
+const sampleInstitutional = {
+  date: new Date().toISOString(),
+  foreign: 182000000,
+  trust: 36000000,
+  dealer: -24000000,
+  total: 194000000,
   source: "sample"
 };
 
@@ -345,6 +361,7 @@ async function fetchMarket() {
       revenue: normalizeRevenue(payload.revenue || []),
       index: normalizeIndex(payload.index) || sampleIndex,
       usIndex: normalizeUsMarket(payload.usIndex) || sampleUsMarket,
+      institutional: normalizeInstitutional(payload.institutional) || sampleInstitutional,
       source: payload.realtimeSource === "Fugle" ? "TWSE + Fugle" : "TWSE"
     };
   } catch {
@@ -354,12 +371,25 @@ async function fetchMarket() {
       revenue: sampleRevenue,
       index: sampleIndex,
       usIndex: sampleUsMarket,
+      institutional: sampleInstitutional,
       source: "sample"
     };
   }
 
   setStatus(market.source === "sample" ? "範例資料" : "已更新", new Date().toLocaleString("zh-TW"));
   render();
+}
+
+function normalizeInstitutional(payload) {
+  if (!payload) return null;
+  return {
+    date: payload.date,
+    foreign: number(payload.foreign),
+    trust: number(payload.trust),
+    dealer: number(payload.dealer),
+    total: number(payload.total),
+    source: payload.source || "TWSE"
+  };
 }
 
 function normalizeUsMarket(payload) {
@@ -503,6 +533,41 @@ function render() {
   renderRanking(ranking);
   renderFinance(tracked);
   renderMarketIndex();
+  renderInstitutional();
+}
+
+function formatShareFlow(value) {
+  if (!Number.isFinite(value)) return "--";
+  const abs = Math.abs(value);
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  if (abs >= 100000000) return `${sign}${money(abs / 100000000)} 億股`;
+  if (abs >= 10000) return `${sign}${money(abs / 10000)} 萬股`;
+  return `${sign}${money(abs)} 股`;
+}
+
+function setFlowClass(element, value) {
+  element.classList.toggle("price-up", value > 0);
+  element.classList.toggle("price-down", value < 0);
+}
+
+function renderInstitutional() {
+  const data = market.institutional || sampleInstitutional;
+  const rows = [
+    [els.foreignNet, data.foreign],
+    [els.trustNet, data.trust],
+    [els.dealerNet, data.dealer],
+    [els.institutionTotalNet, data.total]
+  ];
+
+  rows.forEach(([element, value]) => {
+    element.textContent = formatShareFlow(value);
+    setFlowClass(element, value);
+  });
+
+  els.institutionDate.textContent = `資料日期：${formatUpdateTime(data.date)}`;
+  els.institutionStatus.textContent = data.source === "TWSE"
+    ? "法人：TWSE 盤後統計，非逐筆即時"
+    : "法人：範例資料，等待 TWSE 更新";
 }
 
 function formatUpdateTime(value) {
