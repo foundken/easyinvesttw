@@ -188,11 +188,22 @@ async function fetchInstitutional() {
   const fields = payload.fields || [];
   const rows = Array.isArray(payload.data) ? payload.data : [];
   if (!rows.length) throw new Error("TWSE institutional empty result");
+  const stocks = {};
   const totals = rows.reduce((sum, row) => {
     const value = parseInstitutionalRow(row, fields);
     sum.foreign += value.foreign || 0;
     sum.trust += value.trust || 0;
     sum.dealer += value.dealer || 0;
+    if (value.code) {
+      stocks[value.code] = {
+        code: value.code,
+        name: value.name,
+        foreign: value.foreign || 0,
+        trust: value.trust || 0,
+        dealer: value.dealer || 0,
+        total: (value.foreign || 0) + (value.trust || 0) + (value.dealer || 0)
+      };
+    }
     return sum;
   }, { foreign: 0, trust: 0, dealer: 0 });
 
@@ -202,6 +213,7 @@ async function fetchInstitutional() {
     trust: totals.trust,
     dealer: totals.dealer,
     total: totals.foreign + totals.trust + totals.dealer,
+    stocks,
     source: "TWSE"
   };
 }
@@ -209,6 +221,8 @@ async function fetchInstitutional() {
 function parseInstitutionalRow(row, fields) {
   if (Array.isArray(row)) {
     return {
+      code: cleanTwseCell(row[fieldIndex(fields, ["證券代號"])]),
+      name: cleanTwseCell(row[fieldIndex(fields, ["證券名稱"])]),
       foreign: toNumber(row[fieldIndex(fields, ["外陸資", "買賣超", "不含"])]) || 0,
       trust: toNumber(row[fieldIndex(fields, ["投信", "買賣超"])]) || 0,
       dealer: toNumber(row[fieldIndex(fields, ["自營商", "買賣超"], ["外資自營商"])]) || 0
@@ -216,6 +230,8 @@ function parseInstitutionalRow(row, fields) {
   }
 
   return {
+    code: pickValue(row, ["證券代號"]) || pickValue(row, ["code"]),
+    name: pickValue(row, ["證券名稱"]) || pickValue(row, ["name"]),
     foreign: pickNumber(row, ["外陸資", "買賣超"], ["外資自營商"]) || 0,
     trust: pickNumber(row, ["投信", "買賣超"]) || 0,
     dealer: pickNumber(row, ["自營商", "買賣超"], ["外資自營商"]) || 0
@@ -236,6 +252,15 @@ function pickNumber(row, required, excluded = []) {
     return required.every((keyword) => label.includes(keyword)) && excluded.every((keyword) => !label.includes(keyword));
   });
   return key ? toNumber(row[key]) : null;
+}
+
+function pickValue(row, required, excluded = []) {
+  if (!row || typeof row !== "object") return "";
+  const key = Object.keys(row).find((item) => {
+    const label = String(item);
+    return required.every((keyword) => label.includes(keyword)) && excluded.every((keyword) => !label.includes(keyword));
+  });
+  return key ? cleanTwseCell(row[key]) : "";
 }
 
 async function fetchMarketNews() {

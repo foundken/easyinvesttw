@@ -72,11 +72,14 @@ const els = {
   detailMonthReturn: document.querySelector("#detailMonthReturn"),
   detailPe: document.querySelector("#detailPe"),
   detailRevenue: document.querySelector("#detailRevenue"),
+  detailInstitutional: document.querySelector("#detailInstitutional"),
   detailChartStatus: document.querySelector("#detailChartStatus"),
   expandChart: document.querySelector("#expandChartButton"),
   priceChart: document.querySelector("#priceChart"),
   detailPlainText: document.querySelector("#detailPlainText"),
   detailHoldingText: document.querySelector("#detailHoldingText"),
+  detailInstitutionalText: document.querySelector("#detailInstitutionalText"),
+  detailAiAdviceText: document.querySelector("#detailAiAdviceText"),
   sectorModal: document.querySelector("#sectorModal"),
   closeSector: document.querySelector("#closeSectorButton"),
   sectorDetailTitle: document.querySelector("#sectorDetailTitle"),
@@ -176,6 +179,11 @@ const sampleInstitutional = {
   trust: 36000000,
   dealer: -24000000,
   total: 194000000,
+  stocks: {
+    "2330": { code: "2330", name: "台積電", foreign: 82000000, trust: 12000000, dealer: -6000000, total: 88000000 },
+    "2317": { code: "2317", name: "鴻海", foreign: -18000000, trust: 6000000, dealer: 3000000, total: -9000000 },
+    "0050": { code: "0050", name: "元大台灣50", foreign: 9000000, trust: 0, dealer: 2000000, total: 11000000 }
+  },
   source: "sample"
 };
 
@@ -429,8 +437,20 @@ function normalizeInstitutional(payload) {
     trust: number(payload.trust),
     dealer: number(payload.dealer),
     total: number(payload.total),
+    stocks: normalizeInstitutionalStocks(payload.stocks || {}),
     source: payload.source || "TWSE"
   };
+}
+
+function normalizeInstitutionalStocks(stocks) {
+  return Object.fromEntries(Object.entries(stocks).map(([code, item]) => [String(code), {
+    code: item.code || code,
+    name: item.name || "",
+    foreign: number(item.foreign),
+    trust: number(item.trust),
+    dealer: number(item.dealer),
+    total: number(item.total)
+  }]));
 }
 
 function normalizeUsMarket(payload) {
@@ -467,6 +487,10 @@ function getValuation(code) {
 
 function getRevenue(code) {
   return market.revenue.find((item) => item.code === code);
+}
+
+function getInstitutional(code) {
+  return market.institutional?.stocks?.[code] || null;
 }
 
 function sampleHistory(code) {
@@ -1072,13 +1096,47 @@ function drawMarketBoardChart(points, index, isUp) {
   });
 }
 
-function holdingMessage(stock, val, rev, pnlRate) {
+function holdingMessage(stock, val, rev, inst, pnlRate) {
   if (!stock) return "目前沒有今日成交資料，先確認股票代號是否正確。";
+  if (pnlRate <= -10 && inst?.total < 0) return "目前帳面虧損且法人偏賣超，先確認基本面與停損線，不適合只因跌深就加碼。";
   if (pnlRate <= -10) return "帳面虧損較明顯，先檢查基本面是否變差，不要只因為便宜就加碼。";
   if (rev?.yoy < -10) return "月營收年減幅度較大，適合暫停加碼並追蹤下一期財報。";
+  if (pnlRate >= 10 && inst?.total > 0 && rev?.yoy >= 0) return "獲利、法人與營收方向同時偏正面，可續抱觀察，但仍要避免單檔比重過高。";
   if (val?.yieldRate >= 4 && rev?.yoy >= 0) return "殖利率與營收表現相對穩定，適合列入長期領息觀察。";
   if (pnlRate >= 20) return "已有明顯獲利，可以檢查是否超過原本配置比例。";
   return "維持追蹤成本、殖利率與營收趨勢，分批買進比一次押注更穩。";
+}
+
+function aiHoldingAdvice(stock, val, rev, inst, pnlRate) {
+  if (!stock) return "資料不足，先確認代號是否正確。";
+  const notes = [];
+  if (Number.isFinite(pnlRate)) notes.push(pnlRate >= 0 ? `目前獲利 ${percent(pnlRate)}` : `目前虧損 ${percent(pnlRate)}`);
+  if (Number.isFinite(inst?.total)) notes.push(`法人合計 ${formatShareFlow(inst.total)}`);
+  if (Number.isFinite(rev?.yoy)) notes.push(`月營收年增 ${percent(rev.yoy)}`);
+
+  if (pnlRate >= 15 && inst?.total > 0 && rev?.yoy >= 0) {
+    return `${notes.join("，")}。整體偏強，可續抱並設定移動停利；若短線急漲，避免追高加碼。`;
+  }
+  if (pnlRate < 0 && inst?.total < 0 && rev?.yoy < 0) {
+    return `${notes.join("，")}。價格、法人與基本面同時偏弱，建議先降低曝險或等待轉強訊號。`;
+  }
+  if (pnlRate < -8) {
+    return `${notes.join("，")}。虧損已擴大，先檢查原始買進理由是否仍成立，並訂出明確停損或減碼條件。`;
+  }
+  if (inst?.total > 0 && rev?.yoy >= 0) {
+    return `${notes.join("，")}。籌碼與營收偏正向，可列入續抱觀察；加碼仍以回檔或突破確認為主。`;
+  }
+  return `${notes.join("，") || "資料正在整理"}。目前訊號不夠一致，建議先觀察，不把單一資料當作買賣依據。`;
+}
+
+function institutionalText(inst) {
+  if (!inst) return "尚未取得此股三大法人資料。";
+  const leader = [
+    ["外資", inst.foreign],
+    ["投信", inst.trust],
+    ["自營商", inst.dealer]
+  ].sort((a, b) => Math.abs(b[1] || 0) - Math.abs(a[1] || 0))[0];
+  return `${leader[0]}影響最大：${formatShareFlow(leader[1])}；合計 ${formatShareFlow(inst.total)}。`;
 }
 
 function renderHoldings(holdings) {
@@ -1089,6 +1147,7 @@ function renderHoldings(holdings) {
   }
 
   holdings.forEach(({ item, stock, val, rev, signal }) => {
+    const inst = getInstitutional(item.code);
     const cost = number(item.cost);
     const shares = number(item.shares);
     const marketValue = stock && shares ? stock.close * shares : null;
@@ -1114,9 +1173,10 @@ function renderHoldings(holdings) {
         <div class="metric"><span>殖利率</span><strong>${val?.yieldRate ?? "--"}%</strong></div>
         <div class="metric"><span>估年股息</span><strong>${yearlyDividend === null ? "--" : compactMoney(yearlyDividend)}</strong></div>
         <div class="metric"><span>月營收年增</span><strong>${rev ? percent(rev.yoy) : "--"}</strong></div>
+        <div class="metric"><span>法人合計</span><strong class="${inst ? inst.total >= 0 ? "price-up" : "price-down" : ""}">${inst ? formatShareFlow(inst.total) : "--"}</strong></div>
         <div class="metric"><span>狀態</span><strong>${signal.level}</strong></div>
       </div>
-      <p class="holding-note">${holdingMessage(stock, val, rev, pnlRate ?? 0)}</p>
+      <p class="holding-note">${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
       watchList = watchList.filter((entry) => entry.code !== item.code);
@@ -1212,6 +1272,7 @@ function renderWatchList(tracked) {
 
 async function openStockDetail(entry) {
   const { item, stock, val, rev, signal } = entry;
+  const inst = getInstitutional(item.code);
   const cost = number(item.cost);
   const shares = number(item.shares);
   const marketValue = stock && shares ? stock.close * shares : null;
@@ -1223,10 +1284,14 @@ async function openStockDetail(entry) {
   els.detailPrice.textContent = stock ? money(stock.close) : "--";
   els.detailPe.textContent = val?.pe ?? "--";
   els.detailRevenue.textContent = rev ? percent(rev.yoy) : "--";
+  els.detailInstitutional.textContent = inst ? formatShareFlow(inst.total) : "--";
+  els.detailInstitutional.className = inst ? inst.total >= 0 ? "price-up" : "price-down" : "";
   els.detailPlainText.textContent = `${signal.level}：${signal.text}`;
   els.detailHoldingText.textContent = cost && shares
     ? `持有 ${money(shares)} 股，投入 ${compactMoney(costValue)}，目前損益 ${pnl === null ? "--" : compactMoney(pnl)}，損益率 ${pnlRate === null ? "--" : percent(pnlRate)}。`
     : "尚未填入買進價與股數，可以先當作觀察標的。";
+  els.detailInstitutionalText.textContent = institutionalText(inst);
+  els.detailAiAdviceText.textContent = aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0);
   els.detailChartStatus.textContent = "線圖讀取中";
   els.detailModal.hidden = false;
 
