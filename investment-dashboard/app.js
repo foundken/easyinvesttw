@@ -81,7 +81,12 @@ const els = {
   closeSector: document.querySelector("#closeSectorButton"),
   sectorDetailTitle: document.querySelector("#sectorDetailTitle"),
   sectorDetailSummary: document.querySelector("#sectorDetailSummary"),
-  sectorDetailList: document.querySelector("#sectorDetailList")
+  sectorDetailList: document.querySelector("#sectorDetailList"),
+  trendChart: document.querySelector("#trendChart"),
+  trendList: document.querySelector("#trendList"),
+  trendAiTitle: document.querySelector("#trendAiTitle"),
+  trendAiText: document.querySelector("#trendAiText"),
+  trendStatus: document.querySelector("#trendStatus")
 };
 
 let watchList = loadWatchList();
@@ -101,6 +106,8 @@ let chartExpanded = false;
 let selectedMarket = "tw";
 let selectedGroup = "listed";
 let latestRanking = [];
+let trendRequestKey = "";
+let latestTrendItems = [];
 
 const sampleDaily = [
   row("2330", "台積電", 108500000, 104800000000, 968, 984, 960, 981, 12, 64000),
@@ -582,6 +589,7 @@ function render() {
   renderMarketIndex();
   renderInstitutional();
   renderMarketThemes(ranking);
+  renderTrendPanel(ranking);
 }
 
 function formatShareFlow(value) {
@@ -710,6 +718,163 @@ function inferSector(stock) {
   if (/藥|醫|生技|保瑞|藥華/.test(text)) return "生技醫療";
   if (/0050|0056|ETF|元大|富邦台|國泰永續/.test(text)) return "ETF";
   return "其他";
+}
+
+async function renderTrendPanel(ranking) {
+  const candidates = ranking.slice(0, 12);
+  const key = candidates.map((stock) => stock.code).join(",");
+  if (!key) {
+    latestTrendItems = [];
+    els.trendList.innerHTML = '<p class="empty">等待成交排行更新後，這裡會計算近月漲勢。</p>';
+    els.trendAiTitle.textContent = "等待資料";
+    els.trendAiText.textContent = "目前沒有足夠股票可分析。";
+    els.trendStatus.textContent = "趨勢：等待近月資料";
+    drawTrendChart([]);
+    return;
+  }
+  if (trendRequestKey === key && latestTrendItems.length) {
+    drawTrendChart(latestTrendItems);
+    return;
+  }
+
+  trendRequestKey = key;
+  els.trendStatus.textContent = "趨勢：正在抓取近一個月資料";
+  els.trendList.innerHTML = '<p class="empty">正在依 3 天為一段計算漲勢...</p>';
+
+  const items = await Promise.all(candidates.map(async (stock) => {
+    const history = await fetchHistory(stock.code);
+    return buildTrendItem(stock, history);
+  }));
+  if (trendRequestKey !== key) return;
+
+  latestTrendItems = items.filter(Boolean).sort((a, b) => b.recentReturn - a.recentReturn).slice(0, 8);
+  renderTrendResults(latestTrendItems);
+}
+
+function buildTrendItem(stock, history) {
+  const recent = history.filter((item) => Number.isFinite(item.close)).slice(-22);
+  if (recent.length < 4) return null;
+  const latest = recent.at(-1).close;
+  const previous3 = recent[Math.max(0, recent.length - 4)].close;
+  const first = recent[0].close;
+  const recentReturn = previous3 ? ((latest - previous3) / previous3) * 100 : null;
+  const monthReturn = first ? ((latest - first) / first) * 100 : null;
+  const segments = [];
+  for (let index = Math.max(3, recent.length % 3 || 3); index < recent.length; index += 3) {
+    const start = recent[index - 3]?.close;
+    const end = recent[index]?.close;
+    if (start && end) segments.push(((end - start) / start) * 100);
+  }
+  const positiveSegments = segments.filter((value) => value > 0).length;
+  return {
+    ...stock,
+    sector: inferSector(stock),
+    recentReturn,
+    monthReturn,
+    positiveSegments,
+    segmentCount: segments.length,
+    trendScore: (recentReturn || 0) * 0.65 + (monthReturn || 0) * 0.35
+  };
+}
+
+function renderTrendResults(items) {
+  if (!items.length) {
+    els.trendList.innerHTML = '<p class="empty">近月資料不足，稍後再更新。</p>';
+    els.trendAiTitle.textContent = "資料不足";
+    els.trendAiText.textContent = "目前無法形成趨勢判讀。";
+    els.trendStatus.textContent = "趨勢：資料不足";
+    drawTrendChart([]);
+    return;
+  }
+
+  els.trendList.innerHTML = items.slice(0, 6).map((item, index) => `
+    <article class="trend-row">
+      <div>
+        <strong>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
+        <small>${escapeHtml(item.sector)} ｜ 近月 ${percent(item.monthReturn)} ｜ 3 日 ${percent(item.recentReturn)}</small>
+      </div>
+      <span class="${item.recentReturn >= 0 ? "price-up" : "price-down"}">${percent(item.recentReturn)}</span>
+    </article>
+  `).join("");
+
+  const sectors = summarizeTrendSectors(items);
+  const leader = items[0];
+  const sectorLeader = sectors[0];
+  els.trendAiTitle.textContent = sectorLeader ? `${sectorLeader.name} 較強` : `${leader.code} 領先`;
+  els.trendAiText.textContent = buildTrendAiText(leader, sectorLeader, items);
+  els.trendStatus.textContent = `趨勢：已分析 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
+  drawTrendChart(items);
+}
+
+function summarizeTrendSectors(items) {
+  const map = new Map();
+  items.forEach((item) => {
+    const current = map.get(item.sector) || { name: item.sector, count: 0, avgRecent: 0, avgMonth: 0 };
+    current.count += 1;
+    current.avgRecent += item.recentReturn || 0;
+    current.avgMonth += item.monthReturn || 0;
+    map.set(item.sector, current);
+  });
+  return Array.from(map.values()).map((item) => ({
+    ...item,
+    avgRecent: item.avgRecent / item.count,
+    avgMonth: item.avgMonth / item.count
+  })).sort((a, b) => b.avgRecent - a.avgRecent || b.count - a.count);
+}
+
+function buildTrendAiText(leader, sectorLeader, items) {
+  const strongCount = items.filter((item) => item.recentReturn > 2 && item.monthReturn > 0).length;
+  if (sectorLeader && sectorLeader.count >= 2) {
+    return `${sectorLeader.name}有 ${sectorLeader.count} 檔進入漲勢榜，近 3 日平均 ${percent(sectorLeader.avgRecent)}。後續可優先觀察同族群中基本面沒有轉弱、且回檔量縮的標的；追高時要等拉回或突破確認。`;
+  }
+  if (strongCount >= 3) {
+    return `短線漲勢不只集中在單一股票，代表盤面風險偏好轉強。可觀察 ${leader.code} ${leader.name} 這類領漲股是否續強，同時留意漲多後震盪。`;
+  }
+  return `目前漲勢偏集中在少數個股，${leader.code} ${leader.name} 近 3 日表現最好。方向上先偏觀察，不急著追價，等族群擴散或回測支撐後再評估。`;
+}
+
+function drawTrendChart(items) {
+  const canvas = els.trendChart;
+  const context = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.max(640, Math.round(rect.width * ratio));
+  const height = Math.max(250, Math.round(rect.height * ratio));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "#6f6a61";
+  context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  if (!items.length) {
+    context.fillText("等待近月漲勢資料", 24 * ratio, 44 * ratio);
+    return;
+  }
+
+  const top = items.slice(0, 6);
+  const padding = { top: 24 * ratio, right: 78 * ratio, bottom: 22 * ratio, left: 138 * ratio };
+  const chartWidth = width - padding.left - padding.right;
+  const rowHeight = (height - padding.top - padding.bottom) / top.length;
+  const maxValue = Math.max(...top.map((item) => Math.abs(item.recentReturn)), 1);
+
+  top.forEach((item, index) => {
+    const y = padding.top + rowHeight * index + rowHeight * 0.18;
+    const barHeight = rowHeight * 0.5;
+    const barWidth = (Math.abs(item.recentReturn) / maxValue) * chartWidth;
+    context.fillStyle = "#242423";
+    context.font = `${14 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+    context.fillText(`${item.code} ${item.name}`.slice(0, 12), 14 * ratio, y + barHeight * 0.68);
+    context.fillStyle = item.recentReturn >= 0 ? "#ad3032" : "#176b55";
+    roundedRect(context, padding.left, y, Math.max(4 * ratio, barWidth), barHeight, 5 * ratio);
+    context.fill();
+    context.fillStyle = "#242423";
+    context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+    context.fillText(percent(item.recentReturn), padding.left + barWidth + 10 * ratio, y + barHeight * 0.68);
+  });
 }
 
 function formatUpdateTime(value) {
@@ -1314,9 +1479,11 @@ function resizeChartCanvas() {
 }
 
 function redrawChart() {
-  if (!activeChartHistory.length) return;
-  resizeChartCanvas();
-  drawPriceChart(activeChartHistory);
+  if (activeChartHistory.length) {
+    resizeChartCanvas();
+    drawPriceChart(activeChartHistory);
+  }
+  if (latestTrendItems.length) drawTrendChart(latestTrendItems);
 }
 
 function toggleChartExpanded() {

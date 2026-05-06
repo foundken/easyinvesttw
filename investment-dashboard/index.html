@@ -129,6 +129,27 @@
       </div>
     </section>
 
+    <section class="panel trend-panel" aria-label="近期大盤漲勢集中族群">
+      <div class="panel-head">
+        <h2>近期大盤漲勢集中族群</h2>
+        <span>近一個月，每 3 天整理一次</span>
+      </div>
+      <div class="trend-layout">
+        <div>
+          <canvas id="trendChart" width="980" height="320"></canvas>
+        </div>
+        <div class="trend-side">
+          <div id="trendList" class="trend-list"></div>
+          <article class="ai-card">
+            <span>AI 趨勢分析</span>
+            <strong id="trendAiTitle">等待資料</strong>
+            <p id="trendAiText">正在整理近期漲勢與族群集中度。</p>
+          </article>
+        </div>
+      </div>
+      <p id="trendStatus" class="last-updated">趨勢：等待近月資料</p>
+    </section>
+
     <section class="control-panel" aria-label="管理持股">
       <form id="watchForm" autocomplete="off">
         <label>

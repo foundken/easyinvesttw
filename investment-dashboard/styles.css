@@ -338,6 +338,71 @@ select:focus {
   outline: none;
 }
 
+.trend-panel {
+  margin-top: 14px;
+}
+
+.trend-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.trend-layout canvas {
+  height: 330px;
+  margin-top: 0;
+}
+
+.trend-side {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.trend-list {
+  display: grid;
+  max-height: 236px;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.trend-row,
+.ai-card {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.trend-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.trend-row strong,
+.ai-card strong {
+  display: block;
+  font-size: 18px;
+}
+
+.trend-row small,
+.ai-card span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.ai-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .hero {
   display: flex;
   justify-content: space-between;
@@ -946,7 +1011,8 @@ body.chart-expanded .chart-wrap canvas {
   .market-main,
   .index-metrics,
   .institution-grid,
-  .theme-grid {
+  .theme-grid,
+  .trend-layout {
     grid-template-columns: 1fr;
   }
 
@@ -957,6 +1023,10 @@ body.chart-expanded .chart-wrap canvas {
 
   .news-card {
     grid-template-columns: 1fr;
+  }
+
+  .trend-layout canvas {
+    height: 280px;
   }
 
   .watch-list,
