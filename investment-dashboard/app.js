@@ -58,6 +58,7 @@ const els = {
   tradeThemeText: document.querySelector("#tradeThemeText"),
   sectorThemeTitle: document.querySelector("#sectorThemeTitle"),
   sectorThemeText: document.querySelector("#sectorThemeText"),
+  sectorThemeCard: document.querySelector("#sectorThemeCard"),
   watchList: document.querySelector("#watchList"),
   holdingList: document.querySelector("#holdingList"),
   newsList: document.querySelector("#newsList"),
@@ -75,7 +76,12 @@ const els = {
   expandChart: document.querySelector("#expandChartButton"),
   priceChart: document.querySelector("#priceChart"),
   detailPlainText: document.querySelector("#detailPlainText"),
-  detailHoldingText: document.querySelector("#detailHoldingText")
+  detailHoldingText: document.querySelector("#detailHoldingText"),
+  sectorModal: document.querySelector("#sectorModal"),
+  closeSector: document.querySelector("#closeSectorButton"),
+  sectorDetailTitle: document.querySelector("#sectorDetailTitle"),
+  sectorDetailSummary: document.querySelector("#sectorDetailSummary"),
+  sectorDetailList: document.querySelector("#sectorDetailList")
 };
 
 let watchList = loadWatchList();
@@ -94,6 +100,7 @@ let activeChartHistory = [];
 let chartExpanded = false;
 let selectedMarket = "tw";
 let selectedGroup = "listed";
+let latestRanking = [];
 
 const sampleDaily = [
   row("2330", "台積電", 108500000, 104800000000, 968, 984, 960, 981, 12, 64000),
@@ -545,6 +552,7 @@ function scoreStock(stock, val, rev) {
 
 function render() {
   const ranking = market.daily.slice().sort((a, b) => b.value - a.value).slice(0, 10);
+  latestRanking = ranking;
   const tracked = watchList.map((item) => {
     const stock = getStock(item.code);
     const val = getValuation(item.code);
@@ -645,14 +653,49 @@ function summarizeSectors(stocks) {
   const totals = new Map();
   stocks.slice(0, 10).forEach((stock) => {
     const sector = inferSector(stock);
-    const current = totals.get(sector) || { name: sector, count: 0, value: 0 };
+    const current = totals.get(sector) || { name: sector, count: 0, value: 0, stocks: [] };
     current.count += 1;
     current.value += stock.value || 0;
+    current.stocks.push(stock);
     totals.set(sector, current);
   });
   return Array.from(totals.values())
     .sort((a, b) => b.value - a.value || b.count - a.count)
     .slice(0, 3);
+}
+
+function sectorBreakdown(stocks) {
+  const groups = summarizeSectors(stocks).map((group) => ({
+    ...group,
+    stocks: group.stocks.slice().sort((a, b) => (b.value || 0) - (a.value || 0))
+  }));
+  const totalValue = groups.reduce((sum, group) => sum + group.value, 0);
+  return { groups, totalValue };
+}
+
+function openSectorDetail() {
+  const ranking = latestRanking.length ? latestRanking : market.daily.slice().sort((a, b) => b.value - a.value).slice(0, 10);
+  const { groups, totalValue } = sectorBreakdown(ranking);
+  els.sectorDetailTitle.textContent = "今日產業族群";
+  els.sectorDetailSummary.textContent = groups.length
+    ? `依今日成交金額前 10 名整理，最高集中在 ${groups[0].name}，合計 ${compactMoney(groups[0].value)}。`
+    : "目前沒有足夠成交排行資料。";
+  els.sectorDetailList.innerHTML = groups.length ? groups.map((group, index) => `
+    <article class="sector-group">
+      <div class="sector-group-head">
+        <strong>${index + 1}. ${escapeHtml(group.name)}</strong>
+        <span class="pill">${group.count} 檔 ｜ ${compactMoney(group.value)} ｜ ${totalValue ? percent((group.value / totalValue) * 100) : "--"}</span>
+      </div>
+      ${group.stocks.map((stock) => `
+        <div class="sector-stock-row" data-code="${escapeAttribute(stock.code)}">
+          <strong>${escapeHtml(stock.code)} ${escapeHtml(stock.name)}</strong>
+          <small>成交金額 ${compactMoney(stock.value)}</small>
+          <span class="${stock.change >= 0 ? "price-up" : "price-down"}">${money(stock.close)} / ${money(stock.change)}</span>
+        </div>
+      `).join("")}
+    </article>
+  `).join("") : '<p class="empty">等待今日成交排行更新後，這裡會顯示族群明細。</p>';
+  els.sectorModal.hidden = false;
 }
 
 function inferSector(stock) {
@@ -1384,15 +1427,40 @@ els.groupCards.forEach((card) => {
     renderMarketIndex();
   });
 });
+els.sectorThemeCard.addEventListener("click", openSectorDetail);
+els.sectorThemeCard.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openSectorDetail();
+  }
+});
 els.closeDetail.addEventListener("click", () => {
   if (chartExpanded) toggleChartExpanded();
   els.detailModal.hidden = true;
+});
+els.closeSector.addEventListener("click", () => {
+  els.sectorModal.hidden = true;
 });
 els.detailModal.addEventListener("click", (event) => {
   if (event.target === els.detailModal) {
     if (chartExpanded) toggleChartExpanded();
     els.detailModal.hidden = true;
   }
+});
+els.sectorModal.addEventListener("click", (event) => {
+  if (event.target === els.sectorModal) {
+    els.sectorModal.hidden = true;
+    return;
+  }
+  const row = event.target.closest(".sector-stock-row");
+  if (!row) return;
+  const stock = getStock(row.dataset.code);
+  if (!stock) return;
+  const item = watchList.find((entry) => entry.code === stock.code) || { code: stock.code, cost: "", shares: "", type: "watch" };
+  const val = getValuation(stock.code);
+  const rev = getRevenue(stock.code);
+  els.sectorModal.hidden = true;
+  openStockDetail({ item, stock, val, rev, signal: scoreStock(stock, val, rev) });
 });
 els.expandChart.addEventListener("click", toggleChartExpanded);
 els.priceChart.addEventListener("mousemove", updateChartHover);
@@ -1407,6 +1475,7 @@ window.addEventListener("keydown", (event) => {
       return;
     }
     els.detailModal.hidden = true;
+    els.sectorModal.hidden = true;
   }
 });
 els.demo.addEventListener("click", () => {

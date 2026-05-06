@@ -327,6 +327,17 @@ select:focus {
   font-weight: 800;
 }
 
+.clickable-theme {
+  cursor: pointer;
+}
+
+.clickable-theme:hover,
+.clickable-theme:focus-visible {
+  border-color: rgba(47, 95, 143, 0.45);
+  box-shadow: 0 8px 24px rgba(47, 95, 143, 0.1);
+  outline: none;
+}
+
 .hero {
   display: flex;
   justify-content: space-between;
@@ -740,6 +751,10 @@ label span {
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
 }
 
+.compact-modal {
+  width: min(780px, 100%);
+}
+
 .modal-head,
 .chart-head {
   display: flex;
@@ -789,6 +804,55 @@ label span {
   display: block;
   margin-top: 6px;
   font-size: 24px;
+}
+
+.sector-detail-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.sector-group {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.sector-group-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sector-group-head strong {
+  font-size: 22px;
+}
+
+.sector-stock-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee7dd;
+  cursor: pointer;
+}
+
+.sector-stock-row:last-child {
+  border-bottom: 0;
+}
+
+.sector-stock-row:hover {
+  color: var(--blue);
+}
+
+.sector-stock-row small {
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .chart-wrap {
@@ -932,6 +996,11 @@ body.chart-expanded .chart-wrap canvas {
   .chart-tools {
     justify-content: space-between;
     width: 100%;
+  }
+
+  .sector-group-head,
+  .sector-stock-row {
+    grid-template-columns: 1fr;
   }
 
   canvas {

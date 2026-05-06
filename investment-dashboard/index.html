@@ -121,7 +121,7 @@
           <strong id="tradeThemeTitle">--</strong>
           <small id="tradeThemeText">等待成交排行</small>
         </article>
-        <article>
+        <article id="sectorThemeCard" class="clickable-theme" tabindex="0" role="button" aria-label="查看產業族群詳細資料">
           <span>產業族群</span>
           <strong id="sectorThemeTitle">--</strong>
           <small id="sectorThemeText">等待族群判斷</small>
@@ -284,6 +284,20 @@
           <p id="detailHoldingText" class="signal">--</p>
         </article>
       </div>
+    </div>
+  </section>
+
+  <section id="sectorModal" class="modal" hidden aria-label="產業族群詳細資料">
+    <div class="modal-card compact-modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">產業資訊</p>
+          <h2 id="sectorDetailTitle">今日產業族群</h2>
+        </div>
+        <button id="closeSectorButton" class="close-button" type="button" aria-label="關閉">×</button>
+      </div>
+      <p id="sectorDetailSummary" class="signal">--</p>
+      <div id="sectorDetailList" class="sector-detail-list"></div>
     </div>
   </section>
 
