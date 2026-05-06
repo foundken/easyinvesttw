@@ -53,6 +53,17 @@ window.EASYINVEST_FIREBASE_CONFIG = {
 
 把整個 `investment-dashboard` 資料夾部署到 Netlify。Netlify 會自動使用 `netlify/functions/market.js` 抓取證交所資料。
 
+## 部署到 Firebase Hosting
+
+本專案已加入 Firebase Hosting 設定，會把 `investment-dashboard` 資料夾發布成網站。
+
+```bash
+firebase login
+firebase deploy --only hosting
+```
+
+注意：Firebase Hosting 是靜態網站服務。若只使用 Hosting，上線後登入與 Firestore 持股同步可以使用；原本 Netlify Functions 的即時市場資料代理需要另外改成 Firebase Functions，否則網站會先使用本機範例資料 fallback。
+
 ## 串接 Fugle 富果即時行情
 
 1. 到 Fugle Developer 申請行情 API Key。
