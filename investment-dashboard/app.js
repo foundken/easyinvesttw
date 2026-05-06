@@ -24,6 +24,16 @@ const els = {
   marketIndexPrice: document.querySelector("#marketIndexPrice"),
   marketIndexChange: document.querySelector("#marketIndexChange"),
   marketIndexChart: document.querySelector("#marketIndexChart"),
+  listedIndexPrice: document.querySelector("#listedIndexPrice"),
+  listedIndexMeta: document.querySelector("#listedIndexMeta"),
+  otcIndexPrice: document.querySelector("#otcIndexPrice"),
+  electronicIndexPrice: document.querySelector("#electronicIndexPrice"),
+  financeIndexPrice: document.querySelector("#financeIndexPrice"),
+  marketTurnover: document.querySelector("#marketTurnover"),
+  marketOpen: document.querySelector("#marketOpen"),
+  marketHigh: document.querySelector("#marketHigh"),
+  marketLow: document.querySelector("#marketLow"),
+  marketPreviousClose: document.querySelector("#marketPreviousClose"),
   marketRealtimeStatus: document.querySelector("#marketRealtimeStatus"),
   quoteRealtimeStatus: document.querySelector("#quoteRealtimeStatus"),
   marketLastUpdated: document.querySelector("#marketLastUpdated"),
@@ -84,18 +94,22 @@ const sampleRevenue = [
 ];
 
 const sampleIndex = {
-  name: "加權指數",
-  symbol: "IR0001",
-  index: 23540.82,
-  previousClose: 23420.16,
-  change: 120.66,
-  changePercent: 0.52,
+  name: "發行量加權股價指數",
+  symbol: "t00",
+  index: 41138.85,
+  previousClose: 40769.29,
+  open: 40983.04,
+  high: 41575.84,
+  low: 40616.28,
+  turnover: 14515.35,
+  change: 369.56,
+  changePercent: 0.91,
   source: "sample",
   lastUpdated: new Date().toISOString(),
-  candles: Array.from({ length: 54 }, (_, index) => ({
+  candles: Array.from({ length: 250 }, (_, index) => ({
     date: `範例 ${index + 1}`,
-    close: 23420 + Math.sin(index / 5) * 80 + index * 2.2,
-    volume: 0
+    close: 41100 + Math.sin(index / 18) * 260 - Math.cos(index / 9) * 90 + (index > 110 ? (index - 110) * 3.2 : -index * 1.4),
+    volume: 500 + Math.round(Math.abs(Math.sin(index / 7)) * 900)
   }))
 };
 
@@ -226,6 +240,10 @@ function normalizeIndex(payload) {
     symbol: payload.symbol || "IR0001",
     index: close,
     previousClose,
+    open: number(payload.open),
+    high: number(payload.high),
+    low: number(payload.low),
+    turnover: number(payload.turnover),
     change,
     changePercent,
     lastUpdated: payload.lastUpdated || payload.time || payload.updatedAt,
@@ -433,7 +451,7 @@ function renderMarketIndex() {
   const change = number(index.change);
   const changePercent = number(index.changePercent);
   const isUp = change >= 0;
-  const hasFugleIndex = index.source === "Fugle" && Number.isFinite(index.index);
+  const hasTwseIndex = index.source === "TWSE" && Number.isFinite(index.index);
   const hasFugleQuotes = market.source.includes("Fugle");
 
   els.marketIndexName.textContent = index.name || "加權指數";
@@ -442,13 +460,20 @@ function renderMarketIndex() {
     ? `${change > 0 ? "+" : ""}${money(change)} (${percent(changePercent)})`
     : "--";
   els.marketIndexChange.className = isUp ? "price-up" : "price-down";
-  els.marketRealtimeStatus.textContent = hasFugleIndex ? "大盤：Fugle 即時行情" : "大盤：非即時或範例資料";
+  els.listedIndexPrice.textContent = Number.isFinite(index.index) ? money(index.index) : "--";
+  els.listedIndexMeta.textContent = Number.isFinite(change) ? `${change > 0 ? "▲" : "▼"} ${money(Math.abs(change))}` : "--";
+  els.marketTurnover.textContent = Number.isFinite(index.turnover) ? `${money(index.turnover)} 億` : "--";
+  els.marketOpen.textContent = Number.isFinite(index.open) ? money(index.open) : "--";
+  els.marketHigh.textContent = Number.isFinite(index.high) ? money(index.high) : "--";
+  els.marketLow.textContent = Number.isFinite(index.low) ? money(index.low) : "--";
+  els.marketPreviousClose.textContent = Number.isFinite(index.previousClose) ? money(index.previousClose) : "--";
+  els.marketRealtimeStatus.textContent = hasTwseIndex ? "大盤：TWSE 即時指數資料" : "大盤：非即時或範例資料";
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
-  drawMiniIndexChart(index.candles?.length ? index.candles : sampleIndex.candles, isUp);
+  drawMarketBoardChart(index.candles?.length ? index.candles : sampleIndex.candles, index, isUp);
 }
 
-function drawMiniIndexChart(points, isUp) {
+function drawMarketBoardChart(points, index, isUp) {
   const canvas = els.marketIndexChart;
   const context = canvas.getContext("2d");
   const rect = canvas.getBoundingClientRect();
@@ -462,8 +487,9 @@ function drawMiniIndexChart(points, isUp) {
 
   const width = canvas.width;
   const height = canvas.height;
-  const padding = { top: 18, right: 28, bottom: 28, left: 56 };
+  const padding = { top: 18, right: 96, bottom: 42, left: 12 };
   const values = points.map((item) => item.close).filter(Number.isFinite);
+  if (Number.isFinite(index.previousClose)) values.push(index.previousClose);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
@@ -472,12 +498,16 @@ function drawMiniIndexChart(points, isUp) {
   const color = isUp ? "#ad3032" : "#176b55";
 
   context.clearRect(0, 0, width, height);
-  context.fillStyle = "#fffdf8";
+  context.fillStyle = "#fff";
   context.fillRect(0, 0, width, height);
   context.strokeStyle = "#ece6dc";
   context.lineWidth = 1;
-  for (let i = 0; i <= 3; i += 1) {
-    const y = padding.top + (chartHeight / 3) * i;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = padding.top + (chartHeight / 4) * i;
+    if (i % 2 === 0) {
+      context.fillStyle = "rgba(36, 36, 35, 0.035)";
+      context.fillRect(padding.left, y, chartWidth, chartHeight / 4);
+    }
     context.beginPath();
     context.moveTo(padding.left, y);
     context.lineTo(width - padding.right, y);
@@ -486,25 +516,19 @@ function drawMiniIndexChart(points, isUp) {
 
   const pointX = (index) => padding.left + (chartWidth * index) / Math.max(points.length - 1, 1);
   const pointY = (value) => padding.top + ((max - value) / range) * chartHeight;
-  const gradient = context.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-  gradient.addColorStop(0, isUp ? "rgba(173, 48, 50, 0.18)" : "rgba(23, 107, 85, 0.16)");
-  gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+  if (Number.isFinite(index.previousClose)) {
+    const previousY = pointY(index.previousClose);
+    context.strokeStyle = "rgba(36, 36, 35, 0.38)";
+    context.setLineDash([6, 5]);
+    context.beginPath();
+    context.moveTo(padding.left, previousY);
+    context.lineTo(width - padding.right, previousY);
+    context.stroke();
+    context.setLineDash([]);
+  }
 
-  context.beginPath();
-  points.forEach((point, index) => {
-    const x = pointX(index);
-    const y = pointY(point.close);
-    if (index === 0) context.moveTo(x, y);
-    else context.lineTo(x, y);
-  });
-  context.lineTo(pointX(points.length - 1), height - padding.bottom);
-  context.lineTo(pointX(0), height - padding.bottom);
-  context.closePath();
-  context.fillStyle = gradient;
-  context.fill();
-
-  context.strokeStyle = color;
-  context.lineWidth = 3;
+  context.strokeStyle = "#0f6df2";
+  context.lineWidth = 3.4;
   context.beginPath();
   points.forEach((point, index) => {
     const x = pointX(index);
@@ -514,10 +538,51 @@ function drawMiniIndexChart(points, isUp) {
   });
   context.stroke();
 
-  context.fillStyle = "#6f6a61";
+  const volumeBase = height - padding.bottom;
+  const maxVolume = Math.max(...points.map((point) => point.volume || 0), 1);
+  points.forEach((point, index) => {
+    const barHeight = ((point.volume || 0) / maxVolume) * Math.min(58, chartHeight * 0.2);
+    context.fillStyle = "rgba(255, 48, 62, 0.55)";
+    context.fillRect(pointX(index) - 2, volumeBase - barHeight, 3, barHeight);
+  });
+
+  const latest = points.at(-1);
+  if (latest) {
+    const x = pointX(points.length - 1);
+    const y = pointY(latest.close);
+    context.fillStyle = "#242423";
+    context.beginPath();
+    context.arc(x, y, 4, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = color;
+    roundedRect(context, width - padding.right + 8, y - 18, 82, 32, 5);
+    context.fill();
+    context.fillStyle = "#fff";
+    context.font = `${15 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+    context.fillText(money(latest.close), width - padding.right + 16, y + 4);
+  }
+
+  if (Number.isFinite(index.previousClose)) {
+    const y = pointY(index.previousClose);
+    context.fillStyle = "#5d6470";
+    roundedRect(context, width - padding.right + 8, y - 18, 82, 32, 5);
+    context.fill();
+    context.fillStyle = "#fff";
+    context.font = `${15 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+    context.fillText(money(index.previousClose), width - padding.right + 16, y + 4);
+  }
+
+  context.fillStyle = "#4d5661";
   context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-  context.fillText(money(max), 8, padding.top + 12);
-  context.fillText(money(min), 8, height - padding.bottom);
+  for (let i = 0; i <= 3; i += 1) {
+    const value = max - (range / 3) * i;
+    const y = pointY(value);
+    context.fillText(money(value), width - padding.right + 12, y + 4);
+  }
+  ["09", "10", "11", "12", "13"].forEach((label, index) => {
+    const x = padding.left + (chartWidth / 4) * index;
+    context.fillText(label, x, height - 12);
+  });
 }
 
 function holdingMessage(stock, val, rev, pnlRate) {

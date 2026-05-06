@@ -26,7 +26,7 @@ exports.handler = async function handler(event) {
       safeFetchJson(endpoints.valuation),
       safeFetchJson(endpoints.revenue),
       safeFetchFugleQuotes(symbols),
-      safeFetchFugleIndex()
+      safeFetchTwseIndex()
     ]);
 
     return json(200, {
@@ -78,29 +78,103 @@ async function fetchFugleQuotes(symbols) {
   return quotes.filter(Boolean);
 }
 
-async function fetchFugleIndex() {
-  const apiKey = process.env.FUGLE_API_KEY;
-  if (!apiKey) return null;
-
-  const headers = {
-    accept: "application/json",
-    "X-API-KEY": apiKey
-  };
-  const [quoteResponse, candlesResponse] = await Promise.all([
-    fetch(`${FUGLE_BASE}/intraday/quote/IR0001`, { headers }),
-    fetch(`${FUGLE_BASE}/intraday/candles/IR0001?timeframe=1`, { headers })
+async function fetchTwseIndex() {
+  const date = taipeiDate();
+  const [summary, candles] = await Promise.all([
+    fetchTwseIndexSummary(),
+    fetchTwseIndexCandles(date)
   ]);
-
-  if (!quoteResponse.ok) return null;
-  const quote = await quoteResponse.json();
-  const candlesPayload = candlesResponse.ok ? await candlesResponse.json() : { data: [] };
+  const latest = candles.at(-1);
+  const index = toNumber(summary.index) || latest?.close;
+  const previousClose = toNumber(summary.previousClose);
+  const change = Number.isFinite(index) && Number.isFinite(previousClose) ? index - previousClose : null;
+  const changePercent = Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null;
 
   return {
-    ...quote,
-    name: quote.name || "加權指數",
-    source: "Fugle",
-    candles: candlesPayload.data || []
+    name: "發行量加權股價指數",
+    symbol: "t00",
+    index,
+    previousClose,
+    open: toNumber(summary.open) || candles[0]?.close,
+    high: toNumber(summary.high) || maxBy(candles, "close"),
+    low: toNumber(summary.low) || minBy(candles, "close"),
+    turnover: toNumber(summary.turnover),
+    change,
+    changePercent,
+    source: "TWSE",
+    lastUpdated: summary.lastUpdated || latest?.date || new Date().toISOString(),
+    candles
   };
+}
+
+async function fetchTwseIndexSummary() {
+  const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0&_=${Date.now()}`;
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/json",
+      referer: "https://mis.twse.com.tw/stock/index.jsp",
+      "cache-control": "no-cache"
+    }
+  });
+  if (!response.ok) return {};
+  const payload = await response.json();
+  const row = payload.msgArray && payload.msgArray[0];
+  if (!row) return {};
+
+  return {
+    index: row.z,
+    previousClose: row.y,
+    open: row.o,
+    high: row.h,
+    low: row.l,
+    turnover: row.v,
+    lastUpdated: row.tlong ? Number(row.tlong) : `${row.d || ""} ${row.t || ""}`
+  };
+}
+
+async function fetchTwseIndexCandles(date) {
+  const response = await fetch(`https://www.twse.com.tw/exchangeReport/MI_5MINS_INDEX?response=json&date=${date}`, {
+    headers: { accept: "application/json" }
+  });
+  if (!response.ok) return [];
+  const payload = await response.json();
+  const rows = payload.data || [];
+  return rows.map((row) => ({
+    date: cleanTwseCell(row[0]),
+    close: toNumber(row[1]),
+    volume: toNumber(row[2])
+  })).filter((row) => Number.isFinite(row.close));
+}
+
+function taipeiDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const get = (type) => parts.find((part) => part.type === type).value;
+  return `${get("year")}${get("month")}${get("day")}`;
+}
+
+function cleanTwseCell(value) {
+  return String(value || "").replaceAll("=", "").replaceAll('"', "").trim();
+}
+
+function toNumber(value) {
+  if (value === null || value === undefined || value === "" || value === "-") return null;
+  const parsed = Number(String(value).replaceAll(",", ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function maxBy(rows, key) {
+  const values = rows.map((row) => row[key]).filter(Number.isFinite);
+  return values.length ? Math.max(...values) : null;
+}
+
+function minBy(rows, key) {
+  const values = rows.map((row) => row[key]).filter(Number.isFinite);
+  return values.length ? Math.min(...values) : null;
 }
 
 async function fetchHistory(code) {
@@ -166,9 +240,9 @@ async function safeFetchFugleQuotes(symbols) {
   }
 }
 
-async function safeFetchFugleIndex() {
+async function safeFetchTwseIndex() {
   try {
-    return await fetchFugleIndex();
+    return await fetchTwseIndex();
   } catch {
     return null;
   }

@@ -22,17 +22,60 @@
     </section>
 
     <section class="market-tape" aria-label="大盤即時資訊">
-      <div class="market-main">
-        <div>
-          <p class="eyebrow">大盤即時</p>
-          <h2 id="marketIndexName">加權指數</h2>
-        </div>
-        <div class="index-price">
-          <strong id="marketIndexPrice">--</strong>
-          <span id="marketIndexChange">--</span>
+      <div class="market-tabs">
+        <strong>大盤行情</strong>
+        <span class="active">台股</span>
+        <span>亞股</span>
+        <span>歐股</span>
+        <span>美股</span>
+      </div>
+      <div class="market-board">
+        <aside class="market-groups">
+          <article class="group-card active">
+            <span>上市</span>
+            <strong id="listedIndexPrice">--</strong>
+            <small id="listedIndexMeta">--</small>
+          </article>
+          <article class="group-card">
+            <span>上櫃</span>
+            <strong id="otcIndexPrice">--</strong>
+            <small>稍後加入</small>
+          </article>
+          <article class="group-card">
+            <span>電子</span>
+            <strong id="electronicIndexPrice">--</strong>
+            <small>稍後加入</small>
+          </article>
+          <article class="group-card">
+            <span>金融</span>
+            <strong id="financeIndexPrice">--</strong>
+            <small>稍後加入</small>
+          </article>
+        </aside>
+        <div class="index-detail">
+          <div class="market-main">
+            <div>
+              <p class="eyebrow">大盤即時</p>
+              <h2 id="marketIndexName">發行量加權股價指數</h2>
+            </div>
+            <div class="index-price">
+              <strong id="marketIndexPrice">--</strong>
+              <span id="marketIndexChange">--</span>
+            </div>
+            <div class="turnover-box">
+              <span>成交</span>
+              <strong id="marketTurnover">--</strong>
+            </div>
+          </div>
+          <div class="index-metrics">
+            <article><span>開盤</span><strong id="marketOpen">--</strong></article>
+            <article><span>最高</span><strong id="marketHigh">--</strong></article>
+            <article><span>最低</span><strong id="marketLow">--</strong></article>
+            <article><span>昨收</span><strong id="marketPreviousClose">--</strong></article>
+          </div>
+          <canvas id="marketIndexChart" width="980" height="360"></canvas>
         </div>
       </div>
-      <canvas id="marketIndexChart" width="980" height="230"></canvas>
       <div class="freshness-grid">
         <span id="marketRealtimeStatus">大盤：等待資料</span>
         <span id="quoteRealtimeStatus">個股：等待資料</span>
