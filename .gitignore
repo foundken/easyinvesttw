@@ -1,4 +1,5 @@
 .firebase/
 functions/.env
+functions/node_modules/
 firebase-debug.log
 firebase-debug.*.log
