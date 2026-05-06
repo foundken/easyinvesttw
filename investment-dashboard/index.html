@@ -48,8 +48,8 @@
       </div>
       <div class="security-notes">
         <span>安全機制</span>
-        <strong>使用 Supabase Auth，密碼由驗證服務保護。</strong>
-        <small>持股資料存於雲端資料表，搭配 RLS 權限規則，使用者只能讀寫自己的資料。</small>
+        <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
+        <small>持股資料存於 Firestore，搭配 Security Rules，使用者只能讀寫自己的資料。</small>
       </div>
     </section>
 
@@ -476,8 +476,10 @@
     </div>
   </section>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="cloud-config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

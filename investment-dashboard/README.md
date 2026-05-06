@@ -2,28 +2,33 @@
 
 ## 跨手機/電腦登入同步
 
-本專案已支援 Supabase Auth + RLS 雲端同步。設定後，同一個 Email/密碼登入即可在手機與電腦讀取同一份持股資料。
+本專案已支援 Firebase Authentication + Firestore 雲端同步。設定後，同一個 Email/密碼登入即可在手機與電腦讀取同一份持股資料；不同使用者會各自讀寫自己的持股資料。
 
-1. 到 Supabase 建立新專案。
-2. 在 SQL Editor 執行 `supabase-schema.sql`。
-3. 到 Project Settings > API 複製：
-   - Project URL
-   - anon public key
-4. 打開 `cloud-config.js`，貼上：
+1. 到 Firebase 建立專案。
+2. 到 Authentication > Sign-in method，啟用 Email/Password。
+3. 到 Firestore Database，建立資料庫。
+4. 到 Project settings > Your apps，新增 Web app 並複製 Firebase config。
+5. 打開 `firebase-config.js`，貼上：
 
 ```js
-window.EASYINVEST_CONFIG = {
-  supabaseUrl: "你的 Project URL",
-  supabaseAnonKey: "你的 anon public key"
+window.EASYINVEST_FIREBASE_CONFIG = {
+  apiKey: "你的 apiKey",
+  authDomain: "你的 authDomain",
+  projectId: "你的 projectId",
+  storageBucket: "你的 storageBucket",
+  messagingSenderId: "你的 messagingSenderId",
+  appId: "你的 appId"
 };
 ```
 
+6. 到 Firestore Database > Rules，把 `firestore-rules.txt` 的內容貼上並發布。
+
 安全重點：
 
-- 密碼由 Supabase Auth 處理，不會存在本網站程式碼。
-- 持股資料存在 `watchlists` 資料表。
-- RLS 已限制每個登入者只能讀寫自己的資料。
-- anon key 可以放在前端，真正的保護是 RLS 規則。
+- 密碼由 Firebase Authentication 處理，不會存在本網站程式碼。
+- 持股資料存在 Firestore 的 `watchlists/{使用者UID}` 文件。
+- Firestore Security Rules 已限制每個登入者只能讀寫自己的資料。
+- Firebase 前端 config 可以放在網站中，真正的保護是 Authentication 與 Security Rules。
 
 這是一個給不熟悉股市線圖的人使用的台股投資管理儀表板。
 

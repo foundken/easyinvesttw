@@ -124,7 +124,8 @@ const els = {
 };
 
 let watchList = [];
-let cloudClient = null;
+let cloudAuth = null;
+let cloudDb = null;
 let currentUser = null;
 let cloudEnabled = false;
 let loadingCloudData = false;
@@ -287,26 +288,29 @@ function loadWatchList() {
 
 async function saveWatchList() {
   if (cloudEnabled && currentUser) {
-    const { error } = await cloudClient
-      .from("watchlists")
-      .upsert({
-        user_id: currentUser.id,
-        items: watchList,
-        updated_at: new Date().toISOString()
-      });
-    if (error) setAuthStatus(`雲端同步失敗：${error.message}`, true);
-    else setAuthStatus(`已登入：${currentUser.email}，持股資料已同步雲端。`);
+    try {
+      await cloudDb
+        .collection("watchlists")
+        .doc(currentUser.uid)
+        .set({
+          email: currentUser.email,
+          items: watchList,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      setAuthStatus(`已登入：${currentUser.email}，持股資料已同步 Firebase。`);
+    } catch (error) {
+      setAuthStatus(`雲端同步失敗：${error.message}`, true);
+    }
     return;
   }
   localStorage.setItem(WATCH_KEY, JSON.stringify(watchList));
 }
 
 function getCloudConfig() {
-  const config = window.EASYINVEST_CONFIG || {};
-  const supabaseUrl = config.supabaseUrl || "";
-  const supabaseAnonKey = config.supabaseAnonKey || "";
-  const ready = supabaseUrl.startsWith("https://") && !supabaseUrl.includes("PASTE_") && supabaseAnonKey && !supabaseAnonKey.includes("PASTE_");
-  return { supabaseUrl, supabaseAnonKey, ready };
+  const config = window.EASYINVEST_FIREBASE_CONFIG || {};
+  const required = ["apiKey", "authDomain", "projectId", "appId"];
+  const ready = required.every((key) => config[key] && !String(config[key]).includes("PASTE_"));
+  return { config, ready };
 }
 
 function setAuthStatus(message, isError = false) {
@@ -319,11 +323,11 @@ function updateAuthUi() {
   if (!els.authTitle) return;
   if (!cloudEnabled) {
     els.authTitle.textContent = "尚未啟用跨裝置同步";
-    setAuthStatus("請先設定 Supabase URL 與 anon key，完成後即可跨手機/電腦登入同步。", true);
+    setAuthStatus("請先設定 Firebase config，完成後即可跨手機/電腦登入同步。", true);
     return;
   }
   if (currentUser) {
-    els.authTitle.textContent = `已登入：${currentUser.user_metadata?.name || currentUser.email}`;
+    els.authTitle.textContent = `已登入：${currentUser.displayName || currentUser.email}`;
     setAuthStatus("雲端同步已啟用。新增、刪除或修改持股後會同步到你的帳號。");
   } else {
     els.authTitle.textContent = "雲端帳號登入";
@@ -338,17 +342,19 @@ async function loadCloudWatchList() {
     return;
   }
   loadingCloudData = true;
-  const { data, error } = await cloudClient
-    .from("watchlists")
-    .select("items")
-    .eq("user_id", currentUser.id)
-    .maybeSingle();
-  if (error) {
+  try {
+    const snapshot = await cloudDb.collection("watchlists").doc(currentUser.uid).get();
+    const data = snapshot.data();
+    if (snapshot.exists) {
+      watchList = Array.isArray(data?.items) ? data.items : [];
+    } else {
+      watchList = loadWatchList();
+      await saveWatchList();
+    }
+    setAuthStatus(`已登入：${currentUser.email}，已讀取 Firebase 雲端持股資料。`);
+  } catch (error) {
     setAuthStatus(`讀取雲端資料失敗：${error.message}`, true);
     watchList = [];
-  } else {
-    watchList = Array.isArray(data?.items) ? data.items : [];
-    if (!data) await saveWatchList();
   }
   loadingCloudData = false;
   render();
@@ -357,22 +363,32 @@ async function loadCloudWatchList() {
 
 async function initCloudAuth() {
   const config = getCloudConfig();
-  if (!config.ready || !window.supabase) {
+  if (!config.ready || !window.firebase) {
     cloudEnabled = false;
     watchList = loadWatchList();
     updateAuthUi();
     return;
   }
   cloudEnabled = true;
-  cloudClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-  const { data } = await cloudClient.auth.getSession();
-  currentUser = data.session?.user || null;
-  updateAuthUi();
-  if (currentUser) await loadCloudWatchList();
-  cloudClient.auth.onAuthStateChange(async (_event, session) => {
-    currentUser = session?.user || null;
-    updateAuthUi();
-    if (!loadingCloudData) await loadCloudWatchList();
+  if (!firebase.apps.length) firebase.initializeApp(config.config);
+  cloudAuth = firebase.auth();
+  cloudDb = firebase.firestore();
+  try {
+    await cloudAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+  } catch (error) {
+    setAuthStatus(`登入狀態保存設定失敗：${error.message}`, true);
+  }
+  await new Promise((resolve) => {
+    let firstRun = true;
+    cloudAuth.onAuthStateChanged(async (user) => {
+      currentUser = user || null;
+      updateAuthUi();
+      if (!loadingCloudData) await loadCloudWatchList();
+      if (firstRun) {
+        firstRun = false;
+        resolve();
+      }
+    });
   });
 }
 
@@ -2496,17 +2512,18 @@ els.form.addEventListener("submit", (event) => {
 els.authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!cloudEnabled) {
-    setAuthStatus("尚未設定 Supabase，無法跨裝置登入。", true);
+    setAuthStatus("尚未設定 Firebase，無法跨裝置登入。", true);
     return;
   }
   const email = els.authEmail.value.trim();
   const password = els.authPassword.value;
-  const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
-  if (error) {
+  try {
+    const credential = await cloudAuth.signInWithEmailAndPassword(email, password);
+    currentUser = credential.user;
+  } catch (error) {
     setAuthStatus(`登入失敗：${error.message}`, true);
     return;
   }
-  currentUser = data.user;
   els.authPassword.value = "";
   updateAuthUi();
   await loadCloudWatchList();
@@ -2514,7 +2531,7 @@ els.authForm.addEventListener("submit", async (event) => {
 
 els.register.addEventListener("click", async () => {
   if (!cloudEnabled) {
-    setAuthStatus("尚未設定 Supabase，無法註冊雲端帳號。", true);
+    setAuthStatus("尚未設定 Firebase，無法註冊雲端帳號。", true);
     return;
   }
   const email = els.authEmail.value.trim();
@@ -2524,24 +2541,22 @@ els.register.addEventListener("click", async () => {
     setAuthStatus("請輸入 Email，密碼至少 8 碼。", true);
     return;
   }
-  const { data, error } = await cloudClient.auth.signUp({
-    email,
-    password,
-    options: { data: { name } }
-  });
-  if (error) {
+  try {
+    const credential = await cloudAuth.createUserWithEmailAndPassword(email, password);
+    currentUser = credential.user;
+    if (name) await currentUser.updateProfile({ displayName: name });
+  } catch (error) {
     setAuthStatus(`註冊失敗：${error.message}`, true);
     return;
   }
-  currentUser = data.user;
   els.authPassword.value = "";
-  setAuthStatus(data.session ? "註冊完成，已登入並啟用雲端同步。" : "註冊完成，請到信箱確認後再登入。");
+  setAuthStatus("註冊完成，已登入並啟用 Firebase 雲端同步。");
   updateAuthUi();
   if (currentUser) await loadCloudWatchList();
 });
 
 els.logout.addEventListener("click", async () => {
-  if (cloudEnabled && cloudClient) await cloudClient.auth.signOut();
+  if (cloudEnabled && cloudAuth) await cloudAuth.signOut();
   currentUser = null;
   watchList = [];
   updateAuthUi();
