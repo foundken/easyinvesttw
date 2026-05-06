@@ -54,6 +54,16 @@
       <p id="todayConclusion" class="brief-conclusion">今日結論：等待資料更新後，會整理今天該先觀察什麼、該避開什麼。</p>
     </section>
 
+    <section class="market-score-panel" aria-label="今日總評分">
+      <div>
+        <p class="eyebrow">今日總評分</p>
+        <h2 id="marketScoreTitle">等待資料</h2>
+        <p id="marketScoreText">更新後會整理市場溫度、追高風險與今天比較適合的操作方式。</p>
+      </div>
+      <div id="marketScoreNumber" class="score-ring">--</div>
+      <div id="marketScoreList" class="score-list"></div>
+    </section>
+
     <section class="control-panel" aria-label="管理持股">
       <form id="watchForm" autocomplete="off">
         <label>
@@ -130,6 +140,14 @@
         <span>防止新手追高或重押</span>
       </div>
       <div id="preflightList" class="preflight-list"></div>
+    </section>
+
+    <section class="panel discipline-panel" aria-label="我的投資紀律">
+      <div class="panel-head">
+        <h2>我的投資紀律</h2>
+        <span>下單前先檢查資金與行為風險</span>
+      </div>
+      <div id="disciplineList" class="discipline-list"></div>
     </section>
 
     <section class="market-tape" aria-label="大盤即時資訊">
@@ -344,7 +362,7 @@
     </section>
   </main>
 
-  <section id="detailModal" class="modal" hidden aria-label="個股詳細資訊">
+    <section id="detailModal" class="modal" hidden aria-label="個股詳細資訊">
     <div class="modal-card" role="dialog" aria-modal="true">
       <div class="modal-head">
         <div>
@@ -353,6 +371,8 @@
         </div>
         <button id="closeDetailButton" class="close-button" type="button" aria-label="關閉">×</button>
       </div>
+
+      <div id="detailConclusionList" class="detail-conclusion-list"></div>
 
       <div class="detail-summary">
         <article>

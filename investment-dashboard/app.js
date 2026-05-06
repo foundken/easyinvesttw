@@ -26,9 +26,14 @@ const els = {
   beginnerRiskText: document.querySelector("#beginnerRiskText"),
   beginnerNextText: document.querySelector("#beginnerNextText"),
   todayConclusion: document.querySelector("#todayConclusion"),
+  marketScoreTitle: document.querySelector("#marketScoreTitle"),
+  marketScoreText: document.querySelector("#marketScoreText"),
+  marketScoreNumber: document.querySelector("#marketScoreNumber"),
+  marketScoreList: document.querySelector("#marketScoreList"),
   dataQualityList: document.querySelector("#dataQualityList"),
   portfolioHealthList: document.querySelector("#portfolioHealthList"),
   preflightList: document.querySelector("#preflightList"),
+  disciplineList: document.querySelector("#disciplineList"),
   marketIndexName: document.querySelector("#marketIndexName"),
   marketIndexPrice: document.querySelector("#marketIndexPrice"),
   marketIndexChange: document.querySelector("#marketIndexChange"),
@@ -90,6 +95,7 @@ const els = {
   detailHoldingText: document.querySelector("#detailHoldingText"),
   detailInstitutionalText: document.querySelector("#detailInstitutionalText"),
   detailAiAdviceText: document.querySelector("#detailAiAdviceText"),
+  detailConclusionList: document.querySelector("#detailConclusionList"),
   sectorModal: document.querySelector("#sectorModal"),
   closeSector: document.querySelector("#closeSectorButton"),
   sectorDetailTitle: document.querySelector("#sectorDetailTitle"),
@@ -624,9 +630,11 @@ function render() {
   els.sourceLabel.textContent = market.source === "sample" ? "範例" : market.source;
 
   renderBeginnerBrief(ranking, tracked);
+  renderMarketScore(ranking, tracked);
   renderDataQuality();
   renderPortfolioHealth(holdings, tracked, holdingValue);
   renderPreflightChecklist(tracked, ranking);
+  renderDisciplineList(holdings, tracked, holdingValue);
   renderHoldings(holdings);
   renderNews();
   renderHoldingNews(tracked);
@@ -705,6 +713,42 @@ function dataBadge(label, level, text) {
   `;
 }
 
+function renderMarketScore(ranking, tracked) {
+  const index = selectedMarket === "us" ? market.usIndex?.groups?.listed : market.index;
+  const changePercent = number(index?.changePercent);
+  const hotCount = ranking.filter((stock) => stock.changePercent > 3).length;
+  const dropCount = ranking.filter((stock) => stock.changePercent < -3).length;
+  const weakTracked = tracked.filter((entry) => entry.signal.tone === "bad").length;
+  const totalFlow = number((market.institutional || sampleInstitutional).total);
+  let score = 50;
+  if (Number.isFinite(changePercent)) score += Math.max(-18, Math.min(18, changePercent * 8));
+  score += Math.min(12, hotCount * 2);
+  score -= Math.min(12, dropCount * 2);
+  if (Number.isFinite(totalFlow)) score += totalFlow > 0 ? 8 : totalFlow < 0 ? -8 : 0;
+  score -= Math.min(15, weakTracked * 5);
+  score = Math.round(Math.max(0, Math.min(100, score)));
+
+  const temperature = score >= 70 ? "偏熱" : score <= 42 ? "偏冷" : "正常";
+  const chaseRisk = hotCount >= 5 || score >= 78 ? "高" : hotCount >= 2 ? "中" : "低";
+  const action = score >= 72 ? "等回檔" : score >= 55 ? "分批觀察" : score >= 42 ? "觀察" : "保守";
+
+  els.marketScoreNumber.textContent = score;
+  els.marketScoreNumber.className = `score-ring ${score >= 70 ? "hot" : score <= 42 ? "cold" : ""}`;
+  els.marketScoreTitle.textContent = `市場溫度 ${temperature}`;
+  els.marketScoreText.textContent = `今天較適合：${action}。追高風險 ${chaseRisk}，熱門股 ${hotCount} 檔，轉弱股 ${dropCount} 檔。`;
+  els.marketScoreList.innerHTML = [
+    ["市場溫度", temperature],
+    ["追高風險", chaseRisk],
+    ["適合操作", action],
+    ["持股警訊", `${weakTracked} 檔`]
+  ].map(([label, value]) => `
+    <article>
+      <span>${label}</span>
+      <strong>${value}</strong>
+    </article>
+  `).join("");
+}
+
 function renderDataQuality() {
   const hasFugle = market.source.includes("Fugle");
   const hasRealMarket = market.source !== "sample";
@@ -719,6 +763,7 @@ function renderDataQuality() {
 
 function stockDecision(signal, stock, val, rev, inst) {
   if (!stock) return { label: "資料不足", tone: "warn", text: "先確認股票代號與資料來源。" };
+  if (!val && !rev && !inst) return { label: "資料不足", tone: "warn", text: "缺少估值、營收與法人資料，不建議只用價格判斷。" };
   if (signal.tone === "bad" || rev?.yoy < -10 || inst?.total < 0 && stock.change < 0) {
     return { label: "風險偏高", tone: "bad", text: "價格、法人或基本面偏弱，先等轉強。" };
   }
@@ -729,6 +774,31 @@ function stockDecision(signal, stock, val, rev, inst) {
     return { label: "等回檔", tone: "warn", text: "短線或估值偏熱，不適合急追。" };
   }
   return { label: "等待確認", tone: "warn", text: "訊號還不一致，先放觀察名單。" };
+}
+
+function operationScenario(item, stock, val, rev, inst, pnlRate = null) {
+  const decision = stockDecision(scoreStock(stock, val, rev), stock, val, rev, inst);
+  if (!stock) return "資料不足：先確認代號，不要下單。";
+  if ((item?.type || "watch") === "holding") {
+    if (pnlRate >= 15) return "若已持有：可續抱，但設定移動停利，不建議獲利後再重押加碼。";
+    if (pnlRate <= -8) return "若已持有：先檢查買進理由是否還成立，必要時設停損或減碼。";
+    if (decision.label === "可觀察") return "若已持有：續抱觀察，等營收與法人方向確認後再加碼。";
+    if (decision.label === "風險偏高") return "若已持有：避免攤平，先降低曝險或等待轉強。";
+    return "若已持有：維持追蹤，不急著加碼。";
+  }
+  if (decision.label === "可觀察") return "若還沒買：等回檔不破支撐，或突破後量價健康再小部位測試。";
+  if (decision.label === "等回檔") return "若還沒買：先等拉回或整理，避免看到強勢就追。";
+  if (decision.label === "風險偏高") return "若還沒買：暫不追，等法人、營收或價格結構轉強。";
+  return "若還沒買：先放觀察名單，等訊號一致。";
+}
+
+function dataWarning(val, rev, inst) {
+  const missing = [];
+  if (!val) missing.push("估值");
+  if (!rev) missing.push("營收");
+  if (!inst) missing.push("法人");
+  if (!missing.length) return "";
+  return `資料不足：缺少${missing.join("、")}，不建議只用價格或排名判斷。`;
 }
 
 function riskLevel(stock, val, rev, inst, pnlRate = null) {
@@ -806,6 +876,38 @@ function renderPreflightChecklist(tracked, ranking) {
         <strong>${title}</strong>
         <p>${text}</p>
       </div>
+    </article>
+  `).join("");
+}
+
+function renderDisciplineList(holdings, tracked, holdingValue) {
+  const sectorValue = new Map();
+  holdings.forEach(({ item, stock }) => {
+    const shares = number(item.shares);
+    if (!stock || !shares) return;
+    const sector = inferSector(stock);
+    sectorValue.set(sector, (sectorValue.get(sector) || 0) + stock.close * shares);
+  });
+  const largestHolding = holdings.map(({ item, stock }) => {
+    const shares = number(item.shares);
+    return { item, stock, value: stock && shares ? stock.close * shares : 0 };
+  }).sort((a, b) => b.value - a.value)[0];
+  const largestSector = Array.from(sectorValue.entries()).sort((a, b) => b[1] - a[1])[0];
+  const singleRatio = holdingValue && largestHolding?.value ? (largestHolding.value / holdingValue) * 100 : 0;
+  const sectorRatio = holdingValue && largestSector ? (largestSector[1] / holdingValue) * 100 : 0;
+  const noCost = watchList.filter((item) => !number(item.cost) || !number(item.shares)).length;
+  const weak = tracked.filter((entry) => entry.signal.tone === "bad").length;
+  const checks = [
+    ["單檔集中", singleRatio > 20 ? "需調整" : "可接受", singleRatio > 20 ? "bad" : "good", largestHolding?.stock ? `${largestHolding.item.code} 約占 ${percent(singleRatio)}，新手單檔過高容易情緒化。` : "輸入持股後會檢查單檔比重。"],
+    ["族群集中", sectorRatio > 45 ? "偏高" : "正常", sectorRatio > 45 ? "bad" : "good", largestSector ? `${largestSector[0]} 約占 ${percent(sectorRatio)}，同族群會一起受消息影響。` : "輸入持股後會檢查族群集中度。"],
+    ["成本紀律", noCost ? "不完整" : "完整", noCost ? "warn" : "good", noCost ? `${noCost} 檔未填成本或股數，系統無法判斷損益與停損。` : "成本資料完整，可判讀損益。"],
+    ["追高紀律", weak ? "需檢查" : "正常", weak ? "bad" : "good", weak ? `${weak} 檔有弱訊號，避免因虧損而攤平。` : "目前沒有明顯追高或弱勢警訊。"]
+  ];
+  els.disciplineList.innerHTML = checks.map(([title, value, tone, text]) => `
+    <article class="discipline-card">
+      <span>${title}</span>
+      <strong class="${tone === "bad" ? "price-down" : tone === "good" ? "price-up" : ""}">${value}</strong>
+      <p>${text}</p>
     </article>
   `).join("");
 }
@@ -1317,6 +1419,12 @@ function renderSmallCapSelection(item, rank) {
   const signal = scoreStock(item.stock, item.val, item.rev);
   const decision = stockDecision(signal, item.stock, item.val, item.rev, item.inst);
   const risk = riskLevel(item.stock, item.val, item.rev, item.inst);
+  const liquidity = item.stock.value >= 300000000 ? "足夠" : item.stock.value >= 80000000 ? "普通" : "偏低";
+  const volumeProtection = liquidity === "偏低" ? "成交金額偏低，進出場可能滑價，部位要更小。" : "成交金額尚可，但仍要避免一次重押。";
+  const surgeProtection = item.recentReturn > 8 ? "短線急漲，等待回檔或整理比追高安全。" : "短線沒有過度急漲，可觀察是否緩步轉強。";
+  const revenueProtection = item.rev?.yoy > 0 ? "營收年增為正，基本面有初步支撐。" : "營收支撐不足，不能只看價格。";
+  const institutionProtection = item.inst?.total > 0 ? "法人偏買超，籌碼有加分。" : item.inst?.total < 0 ? "法人偏賣超，籌碼要保守。" : "法人資料不足，籌碼方向不明。";
+  const positionSize = risk.label === "高" || liquidity === "偏低" ? "很小" : risk.label === "中" ? "小" : "小到中";
   const strengths = [];
   const cautions = [];
 
@@ -1359,6 +1467,16 @@ function renderSmallCapSelection(item, rank) {
     <section>
       <strong>觀察建議</strong>
       <p>${escapeHtml(decision.text)} ${escapeHtml(risk.text)}。${escapeHtml(smallCapAdvice(item))}</p>
+    </section>
+    <section>
+      <strong>小型股保護指標</strong>
+      <ul>
+        <li>流動性：${escapeHtml(liquidity)}。${escapeHtml(volumeProtection)}</li>
+        <li>急漲檢查：${escapeHtml(surgeProtection)}</li>
+        <li>營收支撐：${escapeHtml(revenueProtection)}</li>
+        <li>法人方向：${escapeHtml(institutionProtection)}</li>
+        <li>單檔部位：建議 ${escapeHtml(positionSize)} 部位，不適合一次重押。</li>
+      </ul>
     </section>
     <section>
       <strong>比較適合的做法</strong>
@@ -1634,6 +1752,7 @@ function renderHoldings(holdings) {
     const yearlyDividend = val?.yieldRate && marketValue ? marketValue * (val.yieldRate / 100) : null;
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
+    const warning = dataWarning(val, rev, inst);
     const card = document.createElement("article");
     card.className = "holding-card";
     card.innerHTML = `
@@ -1656,7 +1775,7 @@ function renderHoldings(holdings) {
         <div class="metric"><span>狀態</span><strong><span class="pill ${decision.tone}">${decision.label}</span></strong></div>
         <div class="metric"><span>風險等級</span><strong><span class="pill ${risk.tone}">${risk.label}</span></strong></div>
       </div>
-      <p class="holding-note">${decision.text} ${risk.text}。${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
+      <p class="holding-note">${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
       watchList = watchList.filter((entry) => entry.code !== item.code);
@@ -1672,7 +1791,18 @@ function renderHoldings(holdings) {
 }
 
 function renderNews() {
-  const items = (market.news?.length ? market.news : sampleNews).slice(0, 6);
+  const source = market.news?.length ? market.news : sampleNews;
+  const strongSectors = summarizeSectors(latestRanking.length ? latestRanking : market.daily).map((item) => item.name);
+  const items = source.map((item) => {
+    const title = item.title || "";
+    const relatedHolding = watchList.some((entry) => title.includes(entry.code));
+    const relatedSector = strongSectors.some((sector) => title.includes(sector));
+    const warning = /跌|賣超|衰退|下修|風險|警訊/.test(title);
+    return {
+      ...item,
+      category: relatedHolding ? "我的持股" : relatedSector ? "強勢族群" : warning ? "風險警訊" : item.category || "大盤新聞"
+    };
+  }).slice(0, 8);
   els.newsList.innerHTML = items.map((item) => `
     <a class="news-card" href="${escapeAttribute(item.url)}" target="_blank" rel="noopener noreferrer">
       <div>
@@ -1750,6 +1880,7 @@ function renderWatchList(tracked) {
     const inst = getInstitutional(item.code);
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
+    const warning = dataWarning(val, rev, inst);
     const card = document.createElement("article");
     card.className = "stock-card";
     card.innerHTML = `
@@ -1767,7 +1898,7 @@ function renderWatchList(tracked) {
         <div class="metric"><span>持有損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
       </div>
-      <p class="signal">${decision.text} ${risk.text}。</p>
+      <p class="signal">${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning}</p>
       <p class="card-meta">本益比 ${val?.pe ?? "--"} ｜ 殖利率 ${val?.yieldRate ?? "--"}% ｜ 月營收年增 ${rev?.yoy ?? "--"}%</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
@@ -1794,6 +1925,7 @@ async function openStockDetail(entry) {
   const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
   const decision = stockDecision(signal, stock, val, rev, inst);
   const risk = riskLevel(stock, val, rev, inst, pnlRate);
+  const warning = dataWarning(val, rev, inst);
 
   els.detailTitle.textContent = `${item.code} ${stock?.name || val?.name || rev?.name || ""}`;
   els.detailPrice.textContent = stock ? money(stock.close) : "--";
@@ -1806,7 +1938,8 @@ async function openStockDetail(entry) {
     ? `持有 ${money(shares)} 股，投入 ${compactMoney(costValue)}，目前損益 ${pnl === null ? "--" : compactMoney(pnl)}，損益率 ${pnlRate === null ? "--" : percent(pnlRate)}。`
     : "尚未填入買進價與股數，可以先當作觀察標的。";
   els.detailInstitutionalText.textContent = institutionalText(inst);
-  els.detailAiAdviceText.textContent = `${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
+  els.detailAiAdviceText.textContent = `${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
+  renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning });
   els.detailChartStatus.textContent = "線圖讀取中";
   els.detailModal.hidden = false;
 
@@ -1819,6 +1952,33 @@ async function openStockDetail(entry) {
   activeChartHistory = history;
   resizeChartCanvas();
   drawPriceChart(history);
+}
+
+function renderDetailConclusions({ stock, val, rev, inst, decision, risk, pnlRate, warning }) {
+  const strengths = [];
+  const cautions = [];
+  if (rev?.yoy > 0) strengths.push(`營收年增 ${percent(rev.yoy)}`);
+  if (inst?.total > 0) strengths.push(`法人買超 ${formatShareFlow(inst.total)}`);
+  if (stock?.changePercent > 0) strengths.push(`今日上漲 ${percent(stock.changePercent)}`);
+  if (val?.yieldRate >= 3) strengths.push(`殖利率 ${val.yieldRate}%`);
+  if (stock?.changePercent > 6) cautions.push("短線漲幅偏大");
+  if (rev?.yoy < 0) cautions.push(`營收年減 ${percent(rev.yoy)}`);
+  if (inst?.total < 0) cautions.push(`法人賣超 ${formatShareFlow(inst.total)}`);
+  if (val?.pe > 35) cautions.push(`本益比 ${val.pe} 偏高`);
+  if (pnlRate < -8) cautions.push(`持有虧損 ${percent(pnlRate)}`);
+  if (warning) cautions.push(warning);
+
+  const rows = [
+    ["目前狀態", `${decision.label}，風險 ${risk.label}`, decision.tone],
+    ["最大優點", strengths[0] || "尚未看到明確優勢", strengths.length ? "good" : "warn"],
+    ["最大風險", cautions[0] || "暫無明顯警訊", cautions.length ? "bad" : "good"]
+  ];
+  els.detailConclusionList.innerHTML = rows.map(([title, text, tone]) => `
+    <article class="detail-conclusion-card">
+      <span>${title}</span>
+      <strong class="${tone === "bad" ? "price-down" : tone === "good" ? "price-up" : ""}">${text}</strong>
+    </article>
+  `).join("");
 }
 
 function movingAverage(values, days) {
@@ -2139,11 +2299,13 @@ function renderFinance(tracked) {
     const inst = getInstitutional(item.code);
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst);
+    const warning = dataWarning(val, rev, inst);
     return `
     <article class="finance-card">
       <strong>${item.code} ${stock?.name || val?.name || rev?.name || ""}</strong>
       <p class="signal">${decision.label}，風險 ${risk.label}：${decision.text}</p>
       <p class="signal">月營收 ${rev ? compactMoney(rev.amount * 1000) : "--"}，年增 ${rev ? percent(rev.yoy) : "--"}，月增 ${rev ? percent(rev.mom) : "--"}。</p>
+      ${warning ? `<p class="signal">${warning}</p>` : ""}
       <small>本益比 ${val?.pe ?? "--"} ｜ 殖利率 ${val?.yieldRate ?? "--"}% ｜ 股價淨值比 ${val?.pb ?? "--"}</small>
     </article>
   `;
