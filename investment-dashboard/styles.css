@@ -408,6 +408,20 @@ select:focus {
 .small-cap-card {
   display: grid;
   gap: 10px;
+  cursor: pointer;
+}
+
+.small-cap-card.active,
+.small-cap-card:hover,
+.small-cap-card:focus-visible {
+  border-color: rgba(47, 95, 143, 0.55);
+  box-shadow: 0 8px 24px rgba(47, 95, 143, 0.12);
+  outline: none;
+}
+
+.small-cap-card.active {
+  background: #f8fbff;
+  box-shadow: inset 5px 0 0 var(--blue);
 }
 
 .small-cap-head {
@@ -440,10 +454,42 @@ select:focus {
   font-weight: 800;
 }
 
-.ai-card p {
+.ai-card p,
+.small-cap-ai-body p {
   margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.small-cap-ai-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.62;
+  font-weight: 800;
+}
+
+.small-cap-ai-body section {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.small-cap-ai-body section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.small-cap-ai-body strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.small-cap-ai-body ul {
+  display: grid;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding-left: 18px;
 }
 
 .trend-guide {

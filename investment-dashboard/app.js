@@ -128,6 +128,7 @@ let trendRequestKey = "";
 let latestTrendItems = [];
 let smallCapRequestKey = "";
 let latestSmallCapItems = [];
+let selectedSmallCapCode = "";
 
 const sampleDaily = [
   row("2330", "台積電", 108500000, 104800000000, 968, 984, 960, 981, 12, 64000),
@@ -1147,6 +1148,7 @@ async function renderSmallCapGuide() {
 
   if (!key) {
     latestSmallCapItems = [];
+    selectedSmallCapCode = "";
     els.smallCapList.innerHTML = '<p class="empty">目前沒有找到 100 元以下且資料足夠的候選股。</p>';
     els.smallCapAiTitle.textContent = "等待資料";
     els.smallCapAiText.textContent = "小型股需要更重視流動性與停損，等待資料更新後再判讀。";
@@ -1205,7 +1207,7 @@ function renderSmallCapResults(items) {
   }
 
   els.smallCapList.innerHTML = items.map((item, index) => `
-    <article class="small-cap-card">
+    <article class="small-cap-card" data-code="${escapeHtml(item.stock.code)}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(item.stock.code)} ${escapeHtml(item.stock.name)} 觀察建議">
       <div class="small-cap-head">
         <div>
           <strong>${index + 1}. ${escapeHtml(item.stock.code)} ${escapeHtml(item.stock.name)}</strong>
@@ -1218,15 +1220,87 @@ function renderSmallCapResults(items) {
     </article>
   `).join("");
 
-  const top = items[0];
-  const sectors = summarizeTrendSectors(items.map((item) => ({
-    sector: item.sector,
-    recentReturn: item.recentReturn,
-    monthReturn: item.monthReturn
-  })));
-  els.smallCapAiTitle.textContent = `${top.stock.code} ${top.stock.name} 分數最高`;
-  els.smallCapAiText.textContent = `${sectors[0]?.name || top.sector} 目前較集中。這 20 檔只代表「可觀察候選」，進場上建議等回檔不破支撐、成交量沒有失控放大，再用小部位分批測試。`;
+  els.smallCapList.querySelectorAll(".small-cap-card").forEach((card) => {
+    const select = () => {
+      selectedSmallCapCode = card.dataset.code;
+      const selected = items.find((item) => item.stock.code === selectedSmallCapCode);
+      if (selected) renderSmallCapSelection(selected, items.indexOf(selected) + 1);
+    };
+    card.addEventListener("click", select);
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        select();
+      }
+    });
+  });
+
+  const selected = items.find((item) => item.stock.code === selectedSmallCapCode) || items[0];
+  selectedSmallCapCode = selected.stock.code;
+  renderSmallCapSelection(selected, items.indexOf(selected) + 1);
   els.smallCapStatus.textContent = `小型股：已篩選 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
+}
+
+function renderSmallCapSelection(item, rank) {
+  els.smallCapList.querySelectorAll(".small-cap-card").forEach((card) => {
+    card.classList.toggle("active", card.dataset.code === item.stock.code);
+  });
+
+  const signal = scoreStock(item.stock, item.val, item.rev);
+  const decision = stockDecision(signal, item.stock, item.val, item.rev, item.inst);
+  const risk = riskLevel(item.stock, item.val, item.rev, item.inst);
+  const strengths = [];
+  const cautions = [];
+
+  if (item.stock.close < 100) strengths.push(`股價 ${money(item.stock.close)} 元，符合百元以下候選`);
+  if (item.monthReturn > 0) strengths.push(`近月 ${percent(item.monthReturn)}，價格有轉強跡象`);
+  if (item.recentReturn > 0) strengths.push(`近 3 日 ${percent(item.recentReturn)}，短線仍有買盤`);
+  if (item.rev?.yoy > 0) strengths.push(`月營收年增 ${percent(item.rev.yoy)}，基本面沒有明顯轉弱`);
+  if (item.val?.pe > 0 && item.val.pe < 25) strengths.push(`本益比 ${item.val.pe}，估值相對沒有過熱`);
+  if (item.inst?.total > 0) strengths.push(`法人合計 ${formatShareFlow(item.inst.total)}，籌碼偏買超`);
+
+  if (item.recentReturn > 8) cautions.push("近 3 日漲幅偏大，追高容易遇到回檔");
+  if (item.monthReturn > 25) cautions.push("近月已大漲，進場要等拉回或突破確認");
+  if (!item.rev || !Number.isFinite(item.rev.yoy)) cautions.push("營收資料不足，不能只看股價表現");
+  if (item.rev?.yoy < 0) cautions.push(`月營收年減 ${percent(item.rev.yoy)}，要確認衰退原因`);
+  if (item.val?.pe > 30) cautions.push(`本益比 ${item.val.pe} 偏高，估值風險較大`);
+  if (item.inst?.total < 0) cautions.push(`法人合計 ${formatShareFlow(item.inst.total)}，籌碼偏賣超`);
+  if (!item.inst) cautions.push("法人資料不足，籌碼方向不明");
+
+  const entryRules = [
+    "不要看到上榜就直接買，先等回檔沒有跌破前一段支撐。",
+    "如果是突破型進場，要確認成交量放大但沒有爆量失控。",
+    "第一次只適合小部位測試，後續再用營收與價格是否續強來加減碼。"
+  ];
+  const avoidRules = [
+    "連續急漲、開高走低或量放太大時，不適合追。",
+    "如果下一期營收轉弱、法人連續賣超，先移出優先名單。",
+    "若買進理由只是「便宜」或「排名很前面」，風險不夠清楚。"
+  ];
+
+  els.smallCapAiTitle.textContent = `${rank}. ${item.stock.code} ${item.stock.name}：${decision.label}，風險 ${risk.label}`;
+  els.smallCapAiText.innerHTML = `
+    <section>
+      <strong>為什麼會上榜</strong>
+      <ul>${(strengths.length ? strengths : ["目前主要靠價格與成交熱度入榜，基本面訊號還需要更多資料確認。"]).map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <strong>需要小心</strong>
+      <ul>${(cautions.length ? cautions : ["暫無明顯警訊，但小型股仍要注意流動性與波動。"]).map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <strong>觀察建議</strong>
+      <p>${escapeHtml(decision.text)} ${escapeHtml(risk.text)}。${escapeHtml(smallCapAdvice(item))}</p>
+    </section>
+    <section>
+      <strong>比較適合的做法</strong>
+      <ul>${entryRules.map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <strong>先不要碰的情況</strong>
+      <ul>${avoidRules.map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
+    </section>
+  `;
 }
 
 function smallCapAdvice(item) {
