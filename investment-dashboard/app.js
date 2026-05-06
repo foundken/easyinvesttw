@@ -52,6 +52,12 @@ const els = {
   dealerNet: document.querySelector("#dealerNet"),
   institutionTotalNet: document.querySelector("#institutionTotalNet"),
   institutionStatus: document.querySelector("#institutionStatus"),
+  chipThemeTitle: document.querySelector("#chipThemeTitle"),
+  chipThemeText: document.querySelector("#chipThemeText"),
+  tradeThemeTitle: document.querySelector("#tradeThemeTitle"),
+  tradeThemeText: document.querySelector("#tradeThemeText"),
+  sectorThemeTitle: document.querySelector("#sectorThemeTitle"),
+  sectorThemeText: document.querySelector("#sectorThemeText"),
   watchList: document.querySelector("#watchList"),
   holdingList: document.querySelector("#holdingList"),
   newsList: document.querySelector("#newsList"),
@@ -567,6 +573,7 @@ function render() {
   renderFinance(tracked);
   renderMarketIndex();
   renderInstitutional();
+  renderMarketThemes(ranking);
 }
 
 function formatShareFlow(value) {
@@ -601,6 +608,65 @@ function renderInstitutional() {
   els.institutionStatus.textContent = data.source === "TWSE"
     ? "法人：TWSE 盤後統計，非逐筆即時"
     : "法人：範例資料，等待 TWSE 更新";
+}
+
+function renderMarketThemes(ranking) {
+  const data = market.institutional || sampleInstitutional;
+  const flows = [
+    ["外資", number(data.foreign)],
+    ["投信", number(data.trust)],
+    ["自營商", number(data.dealer)]
+  ].filter(([, value]) => Number.isFinite(value));
+  const leader = flows.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
+  const total = number(data.total);
+
+  els.chipThemeTitle.textContent = Number.isFinite(total)
+    ? total > 0 ? "法人偏買超" : total < 0 ? "法人偏賣超" : "法人中性"
+    : "--";
+  els.chipThemeTitle.className = Number.isFinite(total) ? total >= 0 ? "price-up" : "price-down" : "";
+  els.chipThemeText.textContent = leader
+    ? `${leader[0]}影響最大，${formatShareFlow(leader[1])}；三大法人合計 ${formatShareFlow(total)}。`
+    : "等待三大法人盤後資料。";
+
+  const hotStocks = ranking.slice(0, 3).map((stock) => `${stock.code} ${stock.name}`);
+  els.tradeThemeTitle.textContent = ranking[0] ? `${ranking[0].code} ${ranking[0].name}` : "--";
+  els.tradeThemeText.textContent = hotStocks.length
+    ? `成交金額集中在 ${hotStocks.join("、")}。`
+    : "等待今日成交排行。";
+
+  const sectors = summarizeSectors(ranking);
+  els.sectorThemeTitle.textContent = sectors[0]?.name || "--";
+  els.sectorThemeText.textContent = sectors.length
+    ? `資金較集中：${sectors.map((item) => `${item.name} ${item.count} 檔`).join("、")}。`
+    : "等待產業族群判斷。";
+}
+
+function summarizeSectors(stocks) {
+  const totals = new Map();
+  stocks.slice(0, 10).forEach((stock) => {
+    const sector = inferSector(stock);
+    const current = totals.get(sector) || { name: sector, count: 0, value: 0 };
+    current.count += 1;
+    current.value += stock.value || 0;
+    totals.set(sector, current);
+  });
+  return Array.from(totals.values())
+    .sort((a, b) => b.value - a.value || b.count - a.count)
+    .slice(0, 3);
+}
+
+function inferSector(stock) {
+  const text = `${stock.code || ""} ${stock.name || ""}`;
+  if (/台積|聯發科|聯電|日月光|矽|半導體|創意|世芯|力積/.test(text)) return "半導體";
+  if (/鴻海|廣達|緯創|英業達|仁寶|和碩|電子|電腦|伺服器|光寶|台達電/.test(text)) return "電子製造";
+  if (/富邦|國泰|中信金|玉山|元大金|兆豐|第一金|合庫|金控|銀行|保險/.test(text)) return "金融";
+  if (/航|運|長榮|陽明|萬海|華航|貨櫃/.test(text)) return "航運";
+  if (/鋼|中鋼|燁輝|東和/.test(text)) return "鋼鐵";
+  if (/塑|台塑|南亞|台化|化/.test(text)) return "塑化";
+  if (/建|營造|水泥|亞泥|台泥/.test(text)) return "傳產";
+  if (/藥|醫|生技|保瑞|藥華/.test(text)) return "生技醫療";
+  if (/0050|0056|ETF|元大|富邦台|國泰永續/.test(text)) return "ETF";
+  return "其他";
 }
 
 function formatUpdateTime(value) {
