@@ -437,6 +437,9 @@ label span {
 }
 
 .panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   padding: 18px;
 }
 
@@ -457,7 +460,47 @@ label span {
 .news-list {
   display: grid;
   gap: 10px;
+  max-height: clamp(300px, 42vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding-top: 14px;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.holding-list,
+.news-list {
+  max-height: clamp(320px, 44vh, 560px);
+}
+
+.watch-list::-webkit-scrollbar,
+.holding-list::-webkit-scrollbar,
+.ranking-list::-webkit-scrollbar,
+.finance-list::-webkit-scrollbar,
+.insight-list::-webkit-scrollbar,
+.news-list::-webkit-scrollbar {
+  width: 9px;
+}
+
+.watch-list::-webkit-scrollbar-track,
+.holding-list::-webkit-scrollbar-track,
+.ranking-list::-webkit-scrollbar-track,
+.finance-list::-webkit-scrollbar-track,
+.insight-list::-webkit-scrollbar-track,
+.news-list::-webkit-scrollbar-track {
+  background: #f4eee4;
+  border-radius: 999px;
+}
+
+.watch-list::-webkit-scrollbar-thumb,
+.holding-list::-webkit-scrollbar-thumb,
+.ranking-list::-webkit-scrollbar-thumb,
+.finance-list::-webkit-scrollbar-thumb,
+.insight-list::-webkit-scrollbar-thumb,
+.news-list::-webkit-scrollbar-thumb {
+  background: #d2c7b7;
+  border-radius: 999px;
 }
 
 .stock-card,
@@ -831,6 +874,16 @@ body.chart-expanded .chart-wrap canvas {
 
   .news-card {
     grid-template-columns: 1fr;
+  }
+
+  .watch-list,
+  .holding-list,
+  .ranking-list,
+  .finance-list,
+  .insight-list,
+  .news-list {
+    max-height: 360px;
+    padding-right: 3px;
   }
 
   .market-groups {
