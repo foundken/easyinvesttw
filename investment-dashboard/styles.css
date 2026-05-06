@@ -981,6 +981,7 @@ label span {
 }
 
 .watch-list,
+.holding-overview,
 .holding-list,
 .ranking-list,
 .finance-list,
@@ -997,6 +998,49 @@ label span {
   padding-right: 6px;
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
+}
+
+.holding-overview {
+  max-height: none;
+  overflow: visible;
+}
+
+.holding-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.holding-overview-grid article {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.holding-overview-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.holding-overview-grid strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+.holding-overview-note {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f2ea;
+  color: var(--muted);
+  line-height: 1.6;
+  font-weight: 900;
 }
 
 .holding-list,
@@ -1468,6 +1512,7 @@ body.chart-expanded .chart-wrap canvas {
   .professional-grid,
   .preflight-list,
   .discipline-list,
+  .holding-overview-grid,
   .trend-chart-stats,
   .summary-grid,
   .layout,

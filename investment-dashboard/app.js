@@ -74,6 +74,7 @@ const els = {
   sectorThemeText: document.querySelector("#sectorThemeText"),
   sectorThemeCard: document.querySelector("#sectorThemeCard"),
   watchList: document.querySelector("#watchList"),
+  holdingOverview: document.querySelector("#holdingOverview"),
   holdingList: document.querySelector("#holdingList"),
   newsList: document.querySelector("#newsList"),
   holdingNewsList: document.querySelector("#holdingNewsList"),
@@ -635,6 +636,7 @@ function render() {
   renderPortfolioHealth(holdings, tracked, holdingValue);
   renderPreflightChecklist(tracked, ranking);
   renderDisciplineList(holdings, tracked, holdingValue);
+  renderHoldingOverview(holdings);
   renderHoldings(holdings);
   renderNews();
   renderHoldingNews(tracked);
@@ -910,6 +912,69 @@ function renderDisciplineList(holdings, tracked, holdingValue) {
       <p>${text}</p>
     </article>
   `).join("");
+}
+
+function holdingMetrics(entry) {
+  const { item, stock, val } = entry;
+  const cost = number(item.cost);
+  const shares = number(item.shares);
+  const marketValue = stock && shares ? stock.close * shares : null;
+  const costValue = cost && shares ? cost * shares : null;
+  const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
+  const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
+  const yearlyDividend = val?.yieldRate && marketValue ? marketValue * (val.yieldRate / 100) : null;
+  return { cost, shares, marketValue, costValue, pnl, pnlRate, yearlyDividend };
+}
+
+function renderHoldingOverview(holdings) {
+  if (!els.holdingOverview) return;
+  if (!holdings.length) {
+    els.holdingOverview.innerHTML = '<p class="empty">新增「我的存股」後，這裡會自動計算總市值、總成本、總損益與預估股息。</p>';
+    return;
+  }
+
+  const rows = holdings.map((entry) => ({ ...entry, metrics: holdingMetrics(entry) }));
+  const totalMarketValue = rows.reduce((sum, row) => sum + (row.metrics.marketValue || 0), 0);
+  const totalCost = rows.reduce((sum, row) => sum + (row.metrics.costValue || 0), 0);
+  const totalPnl = totalMarketValue && totalCost ? totalMarketValue - totalCost : null;
+  const totalPnlRate = totalPnl !== null && totalCost ? (totalPnl / totalCost) * 100 : null;
+  const totalDividend = rows.reduce((sum, row) => sum + (row.metrics.yearlyDividend || 0), 0);
+  const averageYield = totalMarketValue ? (totalDividend / totalMarketValue) * 100 : null;
+  const profitable = rows.filter((row) => row.metrics.pnl > 0);
+  const losing = rows.filter((row) => row.metrics.pnl < 0);
+  const best = rows.filter((row) => row.metrics.pnl !== null).sort((a, b) => b.metrics.pnl - a.metrics.pnl)[0];
+  const worst = rows.filter((row) => row.metrics.pnl !== null).sort((a, b) => a.metrics.pnl - b.metrics.pnl)[0];
+  const aiTone = totalPnlRate === null
+    ? "請先補齊買進價與股數，才能判讀總損益。"
+    : totalPnlRate >= 10
+      ? "整體獲利不錯，重點是守住停利與避免單檔過度集中。"
+      : totalPnlRate <= -8
+        ? "整體虧損偏大，先檢查弱勢股原因，不建議盲目攤平。"
+        : "整體仍在可控範圍，持續追蹤營收、法人與族群集中度。";
+
+  const cards = [
+    ["總市值", totalMarketValue ? compactMoney(totalMarketValue) : "--", ""],
+    ["總投入成本", totalCost ? compactMoney(totalCost) : "--", ""],
+    ["總帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down"],
+    ["總損益率", totalPnlRate === null ? "--" : percent(totalPnlRate), totalPnlRate >= 0 ? "price-up" : "price-down"],
+    ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
+    ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
+    ["獲利 / 虧損", `${profitable.length} / ${losing.length} 檔`, ""],
+    ["最大獲利股", best ? `${best.item.code} ${compactMoney(best.metrics.pnl)}` : "--", "price-up"],
+    ["最大虧損股", worst ? `${worst.item.code} ${compactMoney(worst.metrics.pnl)}` : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
+  ];
+
+  els.holdingOverview.innerHTML = `
+    <div class="holding-overview-grid">
+      ${cards.map(([label, value, tone]) => `
+        <article>
+          <span>${label}</span>
+          <strong class="${tone}">${value}</strong>
+        </article>
+      `).join("")}
+    </div>
+    <p class="holding-overview-note">${aiTone}</p>
+  `;
 }
 
 function formatShareFlow(value) {
@@ -1743,13 +1808,7 @@ function renderHoldings(holdings) {
 
   holdings.forEach(({ item, stock, val, rev, signal }) => {
     const inst = getInstitutional(item.code);
-    const cost = number(item.cost);
-    const shares = number(item.shares);
-    const marketValue = stock && shares ? stock.close * shares : null;
-    const costValue = cost && shares ? cost * shares : null;
-    const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
-    const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
-    const yearlyDividend = val?.yieldRate && marketValue ? marketValue * (val.yieldRate / 100) : null;
+    const { cost, shares, marketValue, costValue, pnl, pnlRate, yearlyDividend } = holdingMetrics({ item, stock, val });
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
     const warning = dataWarning(val, rev, inst);
