@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>投資導航儀</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero" aria-label="投資總覽">
+      <div>
+        <p class="eyebrow">投資導航儀</p>
+        <h1>把股市線圖翻成白話訊號</h1>
+        <p class="hero-copy">用成交熱度、價格位置、月營收與估值資料，幫你整理「可以觀察」與「需要小心」的地方。</p>
+      </div>
+      <div class="status-card">
+        <span>資料狀態</span>
+        <strong id="dataStatus">準備更新</strong>
+        <small id="updatedAt">尚未同步</small>
+      </div>
+    </section>
+
+    <section class="market-tape" aria-label="大盤即時資訊">
+      <div class="market-main">
+        <div>
+          <p class="eyebrow">大盤即時</p>
+          <h2 id="marketIndexName">加權指數</h2>
+        </div>
+        <div class="index-price">
+          <strong id="marketIndexPrice">--</strong>
+          <span id="marketIndexChange">--</span>
+        </div>
+      </div>
+      <canvas id="marketIndexChart" width="980" height="230"></canvas>
+      <div class="freshness-grid">
+        <span id="marketRealtimeStatus">大盤：等待資料</span>
+        <span id="quoteRealtimeStatus">個股：等待資料</span>
+        <span>成交排名：TWSE 公開排行，非逐筆即時</span>
+        <span>財報：月營收與估值資料，非即時</span>
+      </div>
+      <p id="marketLastUpdated" class="last-updated">最後更新：尚未同步</p>
+    </section>
+
+    <section class="control-panel" aria-label="管理持股">
+      <form id="watchForm" autocomplete="off">
+        <label>
+          <span>股票代號</span>
+          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
+        </label>
+        <label>
+          <span>買進價</span>
+          <input id="costInput" type="number" min="0" step="0.01" placeholder="可留空">
+        </label>
+        <label>
+          <span>股數</span>
+          <input id="sharesInput" type="number" min="0" step="1" placeholder="可留空">
+        </label>
+        <label>
+          <span>分類</span>
+          <select id="typeInput">
+            <option value="holding">我的存股</option>
+            <option value="watch">觀察名單</option>
+          </select>
+        </label>
+        <button type="submit">加入追蹤</button>
+      </form>
+      <div class="actions">
+        <button id="refreshButton" type="button">立即更新</button>
+        <button id="demoButton" type="button">載入範例</button>
+      </div>
+    </section>
+
+    <section class="summary-grid" aria-label="摘要">
+      <article>
+        <span>追蹤股票</span>
+        <strong id="watchCount">0</strong>
+      </article>
+      <article>
+        <span>存股市值</span>
+        <strong id="holdingValue">--</strong>
+      </article>
+      <article>
+        <span>今日成交最熱</span>
+        <strong id="topHotStock">--</strong>
+      </article>
+      <article>
+        <span>高風險提醒</span>
+        <strong id="riskCount">0</strong>
+      </article>
+      <article>
+        <span>資料來源</span>
+        <strong id="sourceLabel">TWSE</strong>
+      </article>
+    </section>
+
+    <section class="panel" aria-label="我的存股">
+      <div class="panel-head">
+        <h2>我的存股</h2>
+        <span>長期持有與股息觀察</span>
+      </div>
+      <div id="holdingList" class="holding-list"></div>
+    </section>
+
+    <section class="layout">
+      <section class="panel" aria-label="我的追蹤">
+        <div class="panel-head">
+          <h2>觀察名單</h2>
+          <span>自動保存於本機</span>
+        </div>
+        <div id="watchList" class="watch-list"></div>
+      </section>
+
+      <section class="panel" aria-label="白話解讀">
+        <div class="panel-head">
+          <h2>今日觀察點</h2>
+          <span>非投資建議</span>
+        </div>
+        <div id="insightList" class="insight-list"></div>
+      </section>
+    </section>
+
+    <section class="market-grid">
+      <section class="panel" aria-label="成交排行">
+        <div class="panel-head">
+          <h2>今日成交排名</h2>
+          <span>成交金額排序</span>
+        </div>
+        <div id="rankingList" class="ranking-list"></div>
+      </section>
+
+      <section class="panel" aria-label="財報資訊">
+        <div class="panel-head">
+          <h2>最新財務摘要</h2>
+          <span>月營收與估值</span>
+        </div>
+        <div id="financeList" class="finance-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <section id="detailModal" class="modal" hidden aria-label="個股詳細資訊">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">個股詳細</p>
+          <h2 id="detailTitle">--</h2>
+        </div>
+        <button id="closeDetailButton" class="close-button" type="button" aria-label="關閉">×</button>
+      </div>
+
+      <div class="detail-summary">
+        <article>
+          <span>目前價格</span>
+          <strong id="detailPrice">--</strong>
+        </article>
+        <article>
+          <span>近月表現</span>
+          <strong id="detailMonthReturn">--</strong>
+        </article>
+        <article>
+          <span>本益比</span>
+          <strong id="detailPe">--</strong>
+        </article>
+        <article>
+          <span>月營收年增</span>
+          <strong id="detailRevenue">--</strong>
+        </article>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart-head">
+          <strong>近月價格線圖</strong>
+          <div class="chart-tools">
+            <span id="detailChartStatus">讀取中</span>
+            <button id="expandChartButton" class="chart-button" type="button">放大</button>
+          </div>
+        </div>
+        <canvas id="priceChart" width="980" height="320"></canvas>
+      </div>
+
+      <div class="detail-grid">
+        <article class="finance-card">
+          <strong>白話判讀</strong>
+          <p id="detailPlainText" class="signal">--</p>
+        </article>
+        <article class="finance-card">
+          <strong>持有狀況</strong>
+          <p id="detailHoldingText" class="signal">--</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
