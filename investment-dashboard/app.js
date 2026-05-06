@@ -13,6 +13,14 @@ const els = {
   type: document.querySelector("#typeInput"),
   refresh: document.querySelector("#refreshButton"),
   demo: document.querySelector("#demoButton"),
+  authForm: document.querySelector("#authForm"),
+  authName: document.querySelector("#authNameInput"),
+  authEmail: document.querySelector("#authEmailInput"),
+  authPassword: document.querySelector("#authPasswordInput"),
+  authTitle: document.querySelector("#authTitle"),
+  authStatus: document.querySelector("#authStatus"),
+  register: document.querySelector("#registerButton"),
+  logout: document.querySelector("#logoutButton"),
   dataStatus: document.querySelector("#dataStatus"),
   updatedAt: document.querySelector("#updatedAt"),
   watchCount: document.querySelector("#watchCount"),
@@ -115,7 +123,11 @@ const els = {
   smallCapStatus: document.querySelector("#smallCapStatus")
 };
 
-let watchList = loadWatchList();
+let watchList = [];
+let cloudClient = null;
+let currentUser = null;
+let cloudEnabled = false;
+let loadingCloudData = false;
 let market = {
   daily: [],
   valuation: [],
@@ -273,8 +285,95 @@ function loadWatchList() {
   }
 }
 
-function saveWatchList() {
+async function saveWatchList() {
+  if (cloudEnabled && currentUser) {
+    const { error } = await cloudClient
+      .from("watchlists")
+      .upsert({
+        user_id: currentUser.id,
+        items: watchList,
+        updated_at: new Date().toISOString()
+      });
+    if (error) setAuthStatus(`雲端同步失敗：${error.message}`, true);
+    else setAuthStatus(`已登入：${currentUser.email}，持股資料已同步雲端。`);
+    return;
+  }
   localStorage.setItem(WATCH_KEY, JSON.stringify(watchList));
+}
+
+function getCloudConfig() {
+  const config = window.EASYINVEST_CONFIG || {};
+  const supabaseUrl = config.supabaseUrl || "";
+  const supabaseAnonKey = config.supabaseAnonKey || "";
+  const ready = supabaseUrl.startsWith("https://") && !supabaseUrl.includes("PASTE_") && supabaseAnonKey && !supabaseAnonKey.includes("PASTE_");
+  return { supabaseUrl, supabaseAnonKey, ready };
+}
+
+function setAuthStatus(message, isError = false) {
+  if (!els.authStatus) return;
+  els.authStatus.textContent = message;
+  els.authStatus.className = isError ? "auth-error" : "";
+}
+
+function updateAuthUi() {
+  if (!els.authTitle) return;
+  if (!cloudEnabled) {
+    els.authTitle.textContent = "尚未啟用跨裝置同步";
+    setAuthStatus("請先設定 Supabase URL 與 anon key，完成後即可跨手機/電腦登入同步。", true);
+    return;
+  }
+  if (currentUser) {
+    els.authTitle.textContent = `已登入：${currentUser.user_metadata?.name || currentUser.email}`;
+    setAuthStatus("雲端同步已啟用。新增、刪除或修改持股後會同步到你的帳號。");
+  } else {
+    els.authTitle.textContent = "雲端帳號登入";
+    setAuthStatus("請註冊或登入，同一帳號可在手機與電腦查詢同一份資料。");
+  }
+}
+
+async function loadCloudWatchList() {
+  if (!cloudEnabled || !currentUser) {
+    watchList = loadWatchList();
+    render();
+    return;
+  }
+  loadingCloudData = true;
+  const { data, error } = await cloudClient
+    .from("watchlists")
+    .select("items")
+    .eq("user_id", currentUser.id)
+    .maybeSingle();
+  if (error) {
+    setAuthStatus(`讀取雲端資料失敗：${error.message}`, true);
+    watchList = [];
+  } else {
+    watchList = Array.isArray(data?.items) ? data.items : [];
+    if (!data) await saveWatchList();
+  }
+  loadingCloudData = false;
+  render();
+  fetchMarket();
+}
+
+async function initCloudAuth() {
+  const config = getCloudConfig();
+  if (!config.ready || !window.supabase) {
+    cloudEnabled = false;
+    watchList = loadWatchList();
+    updateAuthUi();
+    return;
+  }
+  cloudEnabled = true;
+  cloudClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  const { data } = await cloudClient.auth.getSession();
+  currentUser = data.session?.user || null;
+  updateAuthUi();
+  if (currentUser) await loadCloudWatchList();
+  cloudClient.auth.onAuthStateChange(async (_event, session) => {
+    currentUser = session?.user || null;
+    updateAuthUi();
+    if (!loadingCloudData) await loadCloudWatchList();
+  });
 }
 
 function number(value) {
@@ -2373,6 +2472,10 @@ function renderFinance(tracked) {
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (cloudEnabled && !currentUser) {
+    setAuthStatus("請先登入，持股資料才會同步到你的雲端帳號。", true);
+    return;
+  }
   const code = els.symbol.value.trim();
   if (!/^\d{4,6}$/.test(code)) return;
 
@@ -2387,6 +2490,61 @@ els.form.addEventListener("submit", (event) => {
 
   saveWatchList();
   els.form.reset();
+  render();
+});
+
+els.authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!cloudEnabled) {
+    setAuthStatus("尚未設定 Supabase，無法跨裝置登入。", true);
+    return;
+  }
+  const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
+  const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    setAuthStatus(`登入失敗：${error.message}`, true);
+    return;
+  }
+  currentUser = data.user;
+  els.authPassword.value = "";
+  updateAuthUi();
+  await loadCloudWatchList();
+});
+
+els.register.addEventListener("click", async () => {
+  if (!cloudEnabled) {
+    setAuthStatus("尚未設定 Supabase，無法註冊雲端帳號。", true);
+    return;
+  }
+  const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
+  const name = els.authName.value.trim();
+  if (!email || password.length < 8) {
+    setAuthStatus("請輸入 Email，密碼至少 8 碼。", true);
+    return;
+  }
+  const { data, error } = await cloudClient.auth.signUp({
+    email,
+    password,
+    options: { data: { name } }
+  });
+  if (error) {
+    setAuthStatus(`註冊失敗：${error.message}`, true);
+    return;
+  }
+  currentUser = data.user;
+  els.authPassword.value = "";
+  setAuthStatus(data.session ? "註冊完成，已登入並啟用雲端同步。" : "註冊完成，請到信箱確認後再登入。");
+  updateAuthUi();
+  if (currentUser) await loadCloudWatchList();
+});
+
+els.logout.addEventListener("click", async () => {
+  if (cloudEnabled && cloudClient) await cloudClient.auth.signOut();
+  currentUser = null;
+  watchList = [];
+  updateAuthUi();
   render();
 });
 
@@ -2456,6 +2614,10 @@ window.addEventListener("keydown", (event) => {
   }
 });
 els.demo.addEventListener("click", () => {
+  if (cloudEnabled && !currentUser) {
+    setAuthStatus("請先登入，範例資料才會存到你的雲端帳號。", true);
+    return;
+  }
   watchList = [
     { code: "2330", cost: "920", shares: "1000", type: "holding" },
     { code: "0050", cost: "180", shares: "1000", type: "holding" },
@@ -2465,5 +2627,14 @@ els.demo.addEventListener("click", () => {
   render();
 });
 
-fetchMarket();
+async function initApp() {
+  await initCloudAuth();
+  if (!cloudEnabled || !currentUser) {
+    watchList = loadWatchList();
+    render();
+  }
+  fetchMarket();
+}
+
+initApp();
 setInterval(fetchMarket, REFRESH_MS);

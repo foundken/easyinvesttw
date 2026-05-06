@@ -21,6 +21,38 @@
       </div>
     </section>
 
+    <section class="auth-panel" aria-label="使用者註冊與安全登入">
+      <div class="auth-copy">
+        <p class="eyebrow">安全帳號</p>
+        <h2 id="authTitle">建立或登入使用者</h2>
+        <p id="authStatus">登入後，持股資料會存到雲端並依使用者分開查詢。</p>
+      </div>
+      <form id="authForm" class="auth-form" autocomplete="off">
+        <label>
+          <span>姓名</span>
+          <input id="authNameInput" placeholder="例如：Ken">
+        </label>
+        <label>
+          <span>Email</span>
+          <input id="authEmailInput" type="email" placeholder="例如：you@example.com" required>
+        </label>
+        <label>
+          <span>密碼</span>
+          <input id="authPasswordInput" type="password" minlength="8" placeholder="至少 8 碼" required>
+        </label>
+        <button id="loginButton" type="submit">登入</button>
+        <button id="registerButton" class="secondary" type="button">註冊</button>
+      </form>
+      <div class="auth-actions">
+        <button id="logoutButton" class="secondary" type="button">登出/鎖定</button>
+      </div>
+      <div class="security-notes">
+        <span>安全機制</span>
+        <strong>使用 Supabase Auth，密碼由驗證服務保護。</strong>
+        <small>持股資料存於雲端資料表，搭配 RLS 權限規則，使用者只能讀寫自己的資料。</small>
+      </div>
+    </section>
+
     <section class="beginner-brief" aria-label="今日新手導讀">
       <div class="panel-head">
         <div>
@@ -444,6 +476,8 @@
     </div>
   </section>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="cloud-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

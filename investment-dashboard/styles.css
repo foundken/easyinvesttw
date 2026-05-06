@@ -906,6 +906,59 @@ label span {
   margin-bottom: 5px;
 }
 
+.auth-panel {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap: 14px;
+  align-items: end;
+  margin-top: 14px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.auth-copy p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-weight: 800;
+}
+
+.auth-form {
+  grid-template-columns: 0.8fr 1.1fr 1fr auto auto;
+}
+
+.auth-actions {
+  display: flex;
+}
+
+.security-notes {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f2ea;
+}
+
+.security-notes span,
+.security-notes small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.security-notes strong {
+  display: block;
+  margin: 4px 0;
+}
+
+.auth-error {
+  color: var(--red) !important;
+}
+
 .control-panel {
   display: flex;
   gap: 14px;
@@ -1506,6 +1559,7 @@ body.chart-expanded .chart-wrap canvas {
   }
 
   form,
+  .auth-panel,
   .brief-grid,
   .market-score-panel,
   .score-list,
@@ -1524,6 +1578,14 @@ body.chart-expanded .chart-wrap canvas {
   .actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .auth-form {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-actions {
+    display: grid;
   }
 
   .detail-summary,

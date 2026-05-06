@@ -1,5 +1,30 @@
 # 投資導航儀
 
+## 跨手機/電腦登入同步
+
+本專案已支援 Supabase Auth + RLS 雲端同步。設定後，同一個 Email/密碼登入即可在手機與電腦讀取同一份持股資料。
+
+1. 到 Supabase 建立新專案。
+2. 在 SQL Editor 執行 `supabase-schema.sql`。
+3. 到 Project Settings > API 複製：
+   - Project URL
+   - anon public key
+4. 打開 `cloud-config.js`，貼上：
+
+```js
+window.EASYINVEST_CONFIG = {
+  supabaseUrl: "你的 Project URL",
+  supabaseAnonKey: "你的 anon public key"
+};
+```
+
+安全重點：
+
+- 密碼由 Supabase Auth 處理，不會存在本網站程式碼。
+- 持股資料存在 `watchlists` 資料表。
+- RLS 已限制每個登入者只能讀寫自己的資料。
+- anon key 可以放在前端，真正的保護是 RLS 規則。
+
 這是一個給不熟悉股市線圖的人使用的台股投資管理儀表板。
 
 ## 目前功能
