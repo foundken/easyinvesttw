@@ -51,6 +51,7 @@
           <p>輸入持股或觀察股，系統會幫你整理損益與白話提醒。</p>
         </article>
       </div>
+      <p id="todayConclusion" class="brief-conclusion">今日結論：等待資料更新後，會整理今天該先觀察什麼、該避開什麼。</p>
     </section>
 
     <section class="control-panel" aria-label="管理持股">
@@ -103,6 +104,32 @@
         <span>資料來源</span>
         <strong id="sourceLabel">TWSE</strong>
       </article>
+    </section>
+
+    <section class="professional-grid" aria-label="專業檢查">
+      <section class="panel data-quality-panel" aria-label="資料可信度">
+        <div class="panel-head">
+          <h2>資料可信度</h2>
+          <span>先確認資料能不能拿來決策</span>
+        </div>
+        <div id="dataQualityList" class="quality-list"></div>
+      </section>
+
+      <section class="panel portfolio-health-panel" aria-label="投資組合健康度">
+        <div class="panel-head">
+          <h2>投資組合健康度</h2>
+          <span>避免單檔或同族群太集中</span>
+        </div>
+        <div id="portfolioHealthList" class="health-list"></div>
+      </section>
+    </section>
+
+    <section class="panel preflight-panel" aria-label="下單前檢查表">
+      <div class="panel-head">
+        <h2>下單前檢查表</h2>
+        <span>防止新手追高或重押</span>
+      </div>
+      <div id="preflightList" class="preflight-list"></div>
     </section>
 
     <section class="market-tape" aria-label="大盤即時資訊">
@@ -241,8 +268,9 @@
     <section class="panel small-cap-panel" aria-label="小型股投資指南">
       <div class="panel-head">
         <h2>小型股投資指南</h2>
-        <span>100 元以下，篩選 20 檔可觀察候選</span>
+        <span>高波動候選，不等於買進名單</span>
       </div>
+      <p class="risk-banner">小型股容易快速上漲也快速回檔，這裡只做觀察名單。進場前請確認流動性、停損點與單檔部位。</p>
       <div class="small-cap-layout">
         <div id="smallCapList" class="small-cap-list"></div>
         <article class="ai-card">
@@ -268,6 +296,14 @@
         <span>來源：鉅亨網，點選開原文</span>
       </div>
       <div id="newsList" class="news-list"></div>
+    </section>
+
+    <section class="panel" aria-label="持股相關新聞">
+      <div class="panel-head">
+        <h2>持股相關新聞</h2>
+        <span>自動比對我的存股與觀察名單</span>
+      </div>
+      <div id="holdingNewsList" class="news-list"></div>
     </section>
 
     <section class="layout">

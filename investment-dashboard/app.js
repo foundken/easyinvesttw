@@ -25,6 +25,10 @@ const els = {
   beginnerTrendText: document.querySelector("#beginnerTrendText"),
   beginnerRiskText: document.querySelector("#beginnerRiskText"),
   beginnerNextText: document.querySelector("#beginnerNextText"),
+  todayConclusion: document.querySelector("#todayConclusion"),
+  dataQualityList: document.querySelector("#dataQualityList"),
+  portfolioHealthList: document.querySelector("#portfolioHealthList"),
+  preflightList: document.querySelector("#preflightList"),
   marketIndexName: document.querySelector("#marketIndexName"),
   marketIndexPrice: document.querySelector("#marketIndexPrice"),
   marketIndexChange: document.querySelector("#marketIndexChange"),
@@ -67,6 +71,7 @@ const els = {
   watchList: document.querySelector("#watchList"),
   holdingList: document.querySelector("#holdingList"),
   newsList: document.querySelector("#newsList"),
+  holdingNewsList: document.querySelector("#holdingNewsList"),
   rankingList: document.querySelector("#rankingList"),
   financeList: document.querySelector("#financeList"),
   insightList: document.querySelector("#insightList"),
@@ -617,8 +622,12 @@ function render() {
   els.sourceLabel.textContent = market.source === "sample" ? "範例" : market.source;
 
   renderBeginnerBrief(ranking, tracked);
+  renderDataQuality();
+  renderPortfolioHealth(holdings, tracked, holdingValue);
+  renderPreflightChecklist(tracked, ranking);
   renderHoldings(holdings);
   renderNews();
+  renderHoldingNews(tracked);
   renderWatchList(watchOnly);
   renderInsights(tracked, ranking);
   renderRanking(ranking);
@@ -678,6 +687,125 @@ function renderBeginnerBrief(ranking, tracked) {
   els.beginnerNextText.textContent = watchList.length
     ? `先看你的 ${watchList.length} 檔股票`
     : topStocks.length ? `可先觀察 ${topStocks[0]}` : "加入你的股票";
+
+  const sectorText = sectors[0] ? `${sectors[0].name}` : "資金方向未明";
+  const riskText = riskTracked.length ? `${riskTracked.length} 檔持股需小心` : els.beginnerRiskText.textContent;
+  const tone = els.beginnerMarketTone.textContent;
+  els.todayConclusion.textContent = `今日結論：${tone}，資金主要看 ${sectorText}；${riskText}。先觀察族群是否延續，再決定是否分批。`;
+}
+
+function dataBadge(label, level, text) {
+  return `
+    <article class="quality-card">
+      <span class="data-badge ${level}">${label}</span>
+      <p>${text}</p>
+    </article>
+  `;
+}
+
+function renderDataQuality() {
+  const hasFugle = market.source.includes("Fugle");
+  const hasRealMarket = market.source !== "sample";
+  const hasInstitutional = (market.institutional || sampleInstitutional).source === "TWSE";
+  els.dataQualityList.innerHTML = [
+    dataBadge(hasRealMarket ? "即時/公開" : "範例", hasRealMarket ? "good" : "warn", hasRealMarket ? "大盤與成交資料已連接公開資料來源。" : "目前使用範例資料，不能作為實際下單依據。"),
+    dataBadge(hasFugle ? "即時" : "延遲", hasFugle ? "good" : "warn", hasFugle ? "個股報價使用 Fugle 即時行情。" : "個股多為 TWSE 公開資料或盤後資料，非逐筆即時。"),
+    dataBadge(hasInstitutional ? "盤後" : "估算", hasInstitutional ? "warn" : "bad", hasInstitutional ? "法人資料為 TWSE 盤後統計，適合看方向，不是即時籌碼。" : "法人資料尚未完整連接，先當參考。"),
+    dataBadge("非建議", "warn", "AI 只整理訊號與風險，不保證獲利；下單前仍要檢查部位與停損。")
+  ].join("");
+}
+
+function stockDecision(signal, stock, val, rev, inst) {
+  if (!stock) return { label: "資料不足", tone: "warn", text: "先確認股票代號與資料來源。" };
+  if (signal.tone === "bad" || rev?.yoy < -10 || inst?.total < 0 && stock.change < 0) {
+    return { label: "風險偏高", tone: "bad", text: "價格、法人或基本面偏弱，先等轉強。" };
+  }
+  if (signal.tone === "good" && rev?.yoy >= 0 && (!inst || inst.total >= 0)) {
+    return { label: "可觀察", tone: "good", text: "訊號偏正面，但仍建議等回檔或突破確認。" };
+  }
+  if (val?.pe > 35 || stock.changePercent > 6) {
+    return { label: "等回檔", tone: "warn", text: "短線或估值偏熱，不適合急追。" };
+  }
+  return { label: "等待確認", tone: "warn", text: "訊號還不一致，先放觀察名單。" };
+}
+
+function riskLevel(stock, val, rev, inst, pnlRate = null) {
+  let score = 0;
+  const notes = [];
+  if (stock?.changePercent > 6) {
+    score += 2;
+    notes.push("追高風險");
+  }
+  if (stock?.changePercent < -4) {
+    score += 1;
+    notes.push("波動風險");
+  }
+  if (inst?.total < 0) {
+    score += 1;
+    notes.push("法人賣超");
+  }
+  if (rev?.yoy < -10) {
+    score += 2;
+    notes.push("基本面轉弱");
+  }
+  if (val?.pe > 35 || val?.pb > 6) {
+    score += 1;
+    notes.push("估值偏高");
+  }
+  if (pnlRate !== null && pnlRate < -8) {
+    score += 1;
+    notes.push("虧損擴大");
+  }
+  if (score >= 3) return { label: "高", tone: "bad", text: notes.join("、") || "風險偏高" };
+  if (score >= 1) return { label: "中", tone: "warn", text: notes.join("、") || "有部分風險" };
+  return { label: "低", tone: "good", text: "暫無明顯風險" };
+}
+
+function renderPortfolioHealth(holdings, tracked, holdingValue) {
+  const sectorMap = new Map();
+  holdings.forEach(({ stock, item }) => {
+    if (!stock) return;
+    const shares = number(item.shares);
+    const value = shares ? stock.close * shares : 0;
+    const sector = inferSector(stock);
+    sectorMap.set(sector, (sectorMap.get(sector) || 0) + value);
+  });
+  const largestSector = Array.from(sectorMap.entries()).sort((a, b) => b[1] - a[1])[0];
+  const weakCount = tracked.filter((entry) => entry.signal.tone === "bad").length;
+  const noCostCount = watchList.filter((item) => !number(item.cost) || !number(item.shares)).length;
+  const concentration = largestSector && holdingValue ? (largestSector[1] / holdingValue) * 100 : 0;
+  const cards = [
+    ["持股數量", holdings.length ? `${holdings.length} 檔` : "尚未建立", holdings.length >= 3 ? "good" : "warn", holdings.length >= 3 ? "分散度開始建立。" : "可逐步建立 3 檔以上，不要只看單一股票。"],
+    ["最大族群", largestSector ? `${largestSector[0]} ${percent(concentration)}` : "--", concentration > 55 ? "bad" : "warn", largestSector ? "同族群過高時，容易一起漲跌。" : "輸入持股後會計算族群集中度。"],
+    ["風險持股", `${weakCount} 檔`, weakCount ? "bad" : "good", weakCount ? "先檢查買進理由、停損與是否需要減碼。" : "目前追蹤股沒有明顯弱訊號。"],
+    ["資料完整度", noCostCount ? `${noCostCount} 檔未填成本` : "完整", noCostCount ? "warn" : "good", noCostCount ? "填入買進價與股數，系統才能判讀損益。" : "可正常計算持股狀況。"]
+  ];
+  els.portfolioHealthList.innerHTML = cards.map(([title, value, tone, text]) => `
+    <article class="health-card">
+      <span>${title}</span>
+      <strong class="${tone === "bad" ? "price-down" : tone === "good" ? "price-up" : ""}">${value}</strong>
+      <p>${text}</p>
+    </article>
+  `).join("");
+}
+
+function renderPreflightChecklist(tracked, ranking) {
+  const hot = ranking[0] ? `${ranking[0].code} ${ranking[0].name}` : "今日熱門股";
+  const checks = [
+    ["知道為什麼漲嗎？", `先看成交族群、新聞與法人，避免只因 ${hot} 很熱門就追。`],
+    ["有設定停損嗎？", "進場前先寫下跌多少要減碼，不要等虧損後才想。"],
+    ["單檔會不會太重？", "新手單檔部位盡量不要過度集中，尤其小型股更要小部位。"],
+    ["資料是否即時？", "確認該區塊標示是即時、盤後還是範例，避免用延遲資料做短線決策。"]
+  ];
+  els.preflightList.innerHTML = checks.map(([title, text], index) => `
+    <article class="preflight-card">
+      <span>${index + 1}</span>
+      <div>
+        <strong>${title}</strong>
+        <p>${text}</p>
+      </div>
+    </article>
+  `).join("");
 }
 
 function formatShareFlow(value) {
@@ -1362,6 +1490,8 @@ function renderHoldings(holdings) {
     const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
     const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
     const yearlyDividend = val?.yieldRate && marketValue ? marketValue * (val.yieldRate / 100) : null;
+    const decision = stockDecision(signal, stock, val, rev, inst);
+    const risk = riskLevel(stock, val, rev, inst, pnlRate);
     const card = document.createElement("article");
     card.className = "holding-card";
     card.innerHTML = `
@@ -1381,9 +1511,10 @@ function renderHoldings(holdings) {
         <div class="metric"><span>估年股息</span><strong>${yearlyDividend === null ? "--" : compactMoney(yearlyDividend)}</strong></div>
         <div class="metric"><span>月營收年增</span><strong>${rev ? percent(rev.yoy) : "--"}</strong></div>
         <div class="metric"><span>法人合計</span><strong class="${inst ? inst.total >= 0 ? "price-up" : "price-down" : ""}">${inst ? formatShareFlow(inst.total) : "--"}</strong></div>
-        <div class="metric"><span>狀態</span><strong>${signal.level}</strong></div>
+        <div class="metric"><span>狀態</span><strong><span class="pill ${decision.tone}">${decision.label}</span></strong></div>
+        <div class="metric"><span>風險等級</span><strong><span class="pill ${risk.tone}">${risk.label}</span></strong></div>
       </div>
-      <p class="holding-note">${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
+      <p class="holding-note">${decision.text} ${risk.text}。${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
       watchList = watchList.filter((entry) => entry.code !== item.code);
@@ -1409,6 +1540,35 @@ function renderNews() {
       <span class="pill source-pill">${escapeHtml(item.source || "鉅亨網")}</span>
     </a>
   `).join("");
+}
+
+function renderHoldingNews(tracked) {
+  const keywords = tracked
+    .flatMap((entry) => [entry.item.code, entry.stock?.name])
+    .filter(Boolean);
+  const news = market.news?.length ? market.news : sampleNews;
+  const matched = news.filter((item) => keywords.some((keyword) => item.title.includes(keyword))).slice(0, 6);
+  const fallback = tracked.slice(0, 4).map((entry) => {
+    const stock = entry.stock;
+    const inst = getInstitutional(entry.item.code);
+    return {
+      title: `${entry.item.code} ${stock?.name || "追蹤股票"}：${entry.signal.level}，${inst ? `法人合計 ${formatShareFlow(inst.total)}` : "等待法人資料"}`,
+      category: "持股提醒",
+      date: new Date(),
+      source: "系統整理",
+      url: "https://www.cnyes.com/"
+    };
+  });
+  const items = matched.length ? matched : fallback;
+  els.holdingNewsList.innerHTML = items.length ? items.map((item) => `
+    <a class="news-card" href="${escapeAttribute(item.url)}" target="_blank" rel="noopener noreferrer">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(item.category || "持股")} ｜ ${escapeHtml(formatNewsDate(item.date))}</small>
+      </div>
+      <span class="pill source-pill">${escapeHtml(item.source || "系統整理")}</span>
+    </a>
+  `).join("") : '<p class="empty">加入持股或觀察名單後，這裡會整理和你股票相關的新聞與提醒。</p>';
 }
 
 function formatNewsDate(value) {
@@ -1445,13 +1605,17 @@ function renderWatchList(tracked) {
     const shares = number(item.shares);
     const pnl = stock && cost && shares ? (stock.close - cost) * shares : null;
     const pnlRate = stock && cost ? ((stock.close - cost) / cost) * 100 : null;
+    const inst = getInstitutional(item.code);
+    const decision = stockDecision(signal, stock, val, rev, inst);
+    const risk = riskLevel(stock, val, rev, inst, pnlRate);
     const card = document.createElement("article");
     card.className = "stock-card";
     card.innerHTML = `
       <div class="stock-top">
         <div class="stock-title">
           <strong>${item.code} ${stock?.name || "查無名稱"}</strong>
-          <span class="pill ${signal.tone}">${signal.level}</span>
+          <span class="pill ${decision.tone}">${decision.label}</span>
+          <span class="pill ${risk.tone}">風險 ${risk.label}</span>
         </div>
         <button class="delete" type="button" aria-label="刪除">×</button>
       </div>
@@ -1461,7 +1625,7 @@ function renderWatchList(tracked) {
         <div class="metric"><span>持有損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
       </div>
-      <p class="signal">${signal.text}</p>
+      <p class="signal">${decision.text} ${risk.text}。</p>
       <p class="card-meta">本益比 ${val?.pe ?? "--"} ｜ 殖利率 ${val?.yieldRate ?? "--"}% ｜ 月營收年增 ${rev?.yoy ?? "--"}%</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
@@ -1486,6 +1650,8 @@ async function openStockDetail(entry) {
   const costValue = cost && shares ? cost * shares : null;
   const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
   const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
+  const decision = stockDecision(signal, stock, val, rev, inst);
+  const risk = riskLevel(stock, val, rev, inst, pnlRate);
 
   els.detailTitle.textContent = `${item.code} ${stock?.name || val?.name || rev?.name || ""}`;
   els.detailPrice.textContent = stock ? money(stock.close) : "--";
@@ -1493,12 +1659,12 @@ async function openStockDetail(entry) {
   els.detailRevenue.textContent = rev ? percent(rev.yoy) : "--";
   els.detailInstitutional.textContent = inst ? formatShareFlow(inst.total) : "--";
   els.detailInstitutional.className = inst ? inst.total >= 0 ? "price-up" : "price-down" : "";
-  els.detailPlainText.textContent = `${signal.level}：${signal.text}`;
+  els.detailPlainText.textContent = `${decision.label}，風險 ${risk.label}：${decision.text} ${risk.text}。`;
   els.detailHoldingText.textContent = cost && shares
     ? `持有 ${money(shares)} 股，投入 ${compactMoney(costValue)}，目前損益 ${pnl === null ? "--" : compactMoney(pnl)}，損益率 ${pnlRate === null ? "--" : percent(pnlRate)}。`
     : "尚未填入買進價與股數，可以先當作觀察標的。";
   els.detailInstitutionalText.textContent = institutionalText(inst);
-  els.detailAiAdviceText.textContent = aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0);
+  els.detailAiAdviceText.textContent = `${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
   els.detailChartStatus.textContent = "線圖讀取中";
   els.detailModal.hidden = false;
 
@@ -1801,12 +1967,15 @@ function renderRanking(ranking) {
       type: "watch"
     };
     const signal = scoreStock(stock, val, rev);
+    const inst = getInstitutional(stock.code);
+    const decision = stockDecision(signal, stock, val, rev, inst);
+    const risk = riskLevel(stock, val, rev, inst);
     const row = document.createElement("article");
     row.className = "rank-row";
     row.innerHTML = `
       <div>
         <strong>${index + 1}. ${stock.code} ${stock.name}</strong>
-        <small>成交金額 ${compactMoney(stock.value)} ｜ 成交量 ${compactMoney(stock.volume)}</small>
+        <small>成交金額 ${compactMoney(stock.value)} ｜ 成交量 ${compactMoney(stock.volume)} ｜ ${decision.label} ｜ 風險 ${risk.label}</small>
       </div>
       <span class="${stock.change >= 0 ? "price-up" : "price-down"}">${money(stock.close)} / ${money(stock.change)}</span>
     `;
@@ -1824,13 +1993,19 @@ function renderFinance(tracked) {
     return;
   }
 
-  els.financeList.innerHTML = rows.map(({ item, stock, val, rev }) => `
+  els.financeList.innerHTML = rows.map(({ item, stock, val, rev, signal }) => {
+    const inst = getInstitutional(item.code);
+    const decision = stockDecision(signal, stock, val, rev, inst);
+    const risk = riskLevel(stock, val, rev, inst);
+    return `
     <article class="finance-card">
       <strong>${item.code} ${stock?.name || val?.name || rev?.name || ""}</strong>
+      <p class="signal">${decision.label}，風險 ${risk.label}：${decision.text}</p>
       <p class="signal">月營收 ${rev ? compactMoney(rev.amount * 1000) : "--"}，年增 ${rev ? percent(rev.yoy) : "--"}，月增 ${rev ? percent(rev.mom) : "--"}。</p>
       <small>本益比 ${val?.pe ?? "--"} ｜ 殖利率 ${val?.yieldRate ?? "--"}% ｜ 股價淨值比 ${val?.pb ?? "--"}</small>
     </article>
-  `).join("");
+  `;
+  }).join("");
 }
 
 els.form.addEventListener("submit", (event) => {

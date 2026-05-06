@@ -584,6 +584,119 @@ label span {
   font-weight: 800;
 }
 
+.brief-conclusion,
+.risk-banner {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f2ea;
+  color: var(--muted);
+  line-height: 1.6;
+  font-weight: 900;
+}
+
+.professional-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.quality-list,
+.health-list,
+.preflight-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.quality-card,
+.health-card,
+.preflight-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.quality-card {
+  grid-template-columns: 72px 1fr;
+  align-items: start;
+}
+
+.data-badge {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.data-badge.good {
+  background: var(--green);
+}
+
+.data-badge.warn {
+  background: var(--amber);
+}
+
+.data-badge.bad {
+  background: var(--red);
+}
+
+.quality-card p,
+.health-card p,
+.preflight-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  font-weight: 800;
+}
+
+.health-card span {
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.health-card strong {
+  font-size: 22px;
+}
+
+.preflight-panel {
+  margin-top: 14px;
+}
+
+.preflight-list {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.preflight-card {
+  grid-template-columns: 34px 1fr;
+}
+
+.preflight-card > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 900;
+}
+
+.preflight-card strong {
+  display: block;
+  margin-bottom: 5px;
+}
+
 .control-panel {
   display: flex;
   gap: 14px;
@@ -663,7 +776,9 @@ label span {
 .ranking-list,
 .finance-list,
 .insight-list,
-.news-list {
+.news-list,
+.quality-list,
+.health-list {
   display: grid;
   gap: 10px;
   max-height: clamp(300px, 42vh, 520px);
@@ -685,7 +800,9 @@ label span {
 .ranking-list::-webkit-scrollbar,
 .finance-list::-webkit-scrollbar,
 .insight-list::-webkit-scrollbar,
-.news-list::-webkit-scrollbar {
+.news-list::-webkit-scrollbar,
+.quality-list::-webkit-scrollbar,
+.health-list::-webkit-scrollbar {
   width: 9px;
 }
 
@@ -694,7 +811,9 @@ label span {
 .ranking-list::-webkit-scrollbar-track,
 .finance-list::-webkit-scrollbar-track,
 .insight-list::-webkit-scrollbar-track,
-.news-list::-webkit-scrollbar-track {
+.news-list::-webkit-scrollbar-track,
+.quality-list::-webkit-scrollbar-track,
+.health-list::-webkit-scrollbar-track {
   background: #f4eee4;
   border-radius: 999px;
 }
@@ -704,7 +823,9 @@ label span {
 .ranking-list::-webkit-scrollbar-thumb,
 .finance-list::-webkit-scrollbar-thumb,
 .insight-list::-webkit-scrollbar-thumb,
-.news-list::-webkit-scrollbar-thumb {
+.news-list::-webkit-scrollbar-thumb,
+.quality-list::-webkit-scrollbar-thumb,
+.health-list::-webkit-scrollbar-thumb {
   background: #d2c7b7;
   border-radius: 999px;
 }
@@ -1105,6 +1226,8 @@ body.chart-expanded .chart-wrap canvas {
 
   form,
   .brief-grid,
+  .professional-grid,
+  .preflight-list,
   .summary-grid,
   .layout,
   .market-grid,
