@@ -8,7 +8,7 @@ const endpoints = {
 
 function getMarketEndpoint() {
   const host = window.location.hostname;
-  if (host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return NETLIFY_MARKET_ENDPOINT;
+  if (!host || host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return NETLIFY_MARKET_ENDPOINT;
   return "/.netlify/functions/market";
 }
 
@@ -1240,6 +1240,15 @@ async function renderTrendPanel(ranking) {
     drawTrendChart([]);
     return;
   }
+
+  if (market.source === "sample") {
+    els.trendGuide.innerHTML = `
+      <strong>目前是範例資料</strong>
+      <p>這欄需要市場資料 API 才能計算真實的近月漲勢。若看到多檔股票數字一樣，代表網站目前沒有抓到即時資料，不能拿來判斷投資方向。</p>
+    `;
+    els.trendStatus.textContent = "趨勢：目前使用範例資料，等待市場 API 連線";
+  }
+
   if (trendRequestKey === key && latestTrendItems.length) {
     drawTrendChart(latestTrendItems);
     return;
