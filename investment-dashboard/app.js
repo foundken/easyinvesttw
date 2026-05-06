@@ -870,7 +870,7 @@ function drawTrendChart(items) {
   const rect = canvas.getBoundingClientRect();
   const ratio = window.devicePixelRatio || 1;
   const width = Math.max(640, Math.round(rect.width * ratio));
-  const height = Math.max(250, Math.round(rect.height * ratio));
+  const height = Math.max(560 * ratio, Math.round(rect.height * ratio));
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
@@ -886,24 +886,24 @@ function drawTrendChart(items) {
     return;
   }
 
-  const top = items.slice(0, 10);
-  const padding = { top: 24 * ratio, right: 78 * ratio, bottom: 22 * ratio, left: 138 * ratio };
+  const top = items.slice(0, 20);
+  const padding = { top: 18 * ratio, right: 78 * ratio, bottom: 18 * ratio, left: 138 * ratio };
   const chartWidth = width - padding.left - padding.right;
   const rowHeight = (height - padding.top - padding.bottom) / top.length;
   const maxValue = Math.max(...top.map((item) => Math.abs(item.recentReturn)), 1);
 
   top.forEach((item, index) => {
     const y = padding.top + rowHeight * index + rowHeight * 0.18;
-    const barHeight = rowHeight * 0.5;
+    const barHeight = Math.max(10 * ratio, rowHeight * 0.5);
     const barWidth = (Math.abs(item.recentReturn) / maxValue) * chartWidth;
     context.fillStyle = "#242423";
-    context.font = `${14 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+    context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
     context.fillText(`${item.code} ${item.name}`.slice(0, 12), 14 * ratio, y + barHeight * 0.68);
     context.fillStyle = item.recentReturn >= 0 ? "#ad3032" : "#176b55";
     roundedRect(context, padding.left, y, Math.max(4 * ratio, barWidth), barHeight, 5 * ratio);
     context.fill();
     context.fillStyle = "#242423";
-    context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+    context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
     context.fillText(percent(item.recentReturn), padding.left + barWidth + 10 * ratio, y + barHeight * 0.68);
   });
 }

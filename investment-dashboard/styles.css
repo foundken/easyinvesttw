@@ -361,7 +361,7 @@ select:focus {
 }
 
 .trend-layout canvas {
-  height: 330px;
+  height: 560px;
   margin-top: 0;
 }
 
@@ -1068,7 +1068,7 @@ body.chart-expanded .chart-wrap canvas {
   }
 
   .trend-layout canvas {
-    height: 280px;
+    height: 620px;
   }
 
   .small-cap-head,
