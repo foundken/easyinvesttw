@@ -591,7 +591,7 @@ async function fetchMarket() {
       revenue: normalizeRevenue(payload.revenue || []),
       index: normalizeIndex(payload.index) || sampleIndex,
       usIndex: normalizeUsMarket(payload.usIndex) || sampleUsMarket,
-      institutional: normalizeInstitutional(payload.institutional) || sampleInstitutional,
+      institutional: normalizeInstitutional(payload.institutional),
       news: normalizeNews(payload.news || []),
       source: payload.realtimeSource === "Fugle" ? "TWSE + Fugle" : "TWSE"
     };
@@ -824,7 +824,7 @@ function renderBeginnerBrief(ranking, tracked) {
     ? market.usIndex?.groups?.listed
     : market.index;
   const changePercent = number(index?.changePercent);
-  const totalFlow = number((market.institutional || sampleInstitutional).total);
+  const totalFlow = number(market.institutional?.total);
   const sectors = summarizeSectors(ranking);
   const topStocks = ranking.slice(0, 3).map((stock) => `${stock.code} ${stock.name}`);
   const riskTracked = tracked.filter((entry) => entry.signal.tone === "bad");
@@ -889,7 +889,7 @@ function renderMarketScore(ranking, tracked) {
   const hotCount = ranking.filter((stock) => stock.changePercent > 3).length;
   const dropCount = ranking.filter((stock) => stock.changePercent < -3).length;
   const weakTracked = tracked.filter((entry) => entry.signal.tone === "bad").length;
-  const totalFlow = number((market.institutional || sampleInstitutional).total);
+  const totalFlow = number(market.institutional?.total);
   let score = 50;
   if (Number.isFinite(changePercent)) score += Math.max(-18, Math.min(18, changePercent * 8));
   score += Math.min(12, hotCount * 2);
@@ -922,7 +922,7 @@ function renderMarketScore(ranking, tracked) {
 function renderDataQuality() {
   const hasFugle = market.source.includes("Fugle");
   const hasRealMarket = market.source !== "sample";
-  const hasInstitutional = (market.institutional || sampleInstitutional).source === "TWSE";
+  const hasInstitutional = market.institutional?.source === "TWSE";
   els.dataQualityList.innerHTML = [
     dataBadge(hasRealMarket ? "即時/公開" : "範例", hasRealMarket ? "good" : "warn", hasRealMarket ? "大盤與成交資料已連接公開資料來源。" : "目前使用範例資料，不能作為實際下單依據。"),
     dataBadge(hasFugle ? "即時" : "延遲", hasFugle ? "good" : "warn", hasFugle ? "個股報價使用 Fugle 即時行情。" : "個股多為 TWSE 公開資料或盤後資料，非逐筆即時。"),
@@ -1160,7 +1160,17 @@ function setFlowClass(element, value) {
 }
 
 function renderInstitutional() {
-  const data = market.institutional || sampleInstitutional;
+  const data = market.institutional;
+  if (!data || data.source !== "TWSE") {
+    [els.foreignNet, els.trustNet, els.dealerNet, els.institutionTotalNet].forEach((element) => {
+      element.textContent = "--";
+      element.className = "";
+    });
+    els.institutionDate.textContent = "資料日期：尚未公布";
+    els.institutionStatus.textContent = "法人：TWSE 通常盤後公布，目前尚未回傳今日資料";
+    return;
+  }
+
   const rows = [
     [els.foreignNet, data.foreign],
     [els.trustNet, data.trust],
@@ -1180,22 +1190,29 @@ function renderInstitutional() {
 }
 
 function renderMarketThemes(ranking) {
-  const data = market.institutional || sampleInstitutional;
+  const data = market.institutional;
+  if (!data || data.source !== "TWSE") {
+    els.chipThemeTitle.textContent = "等待法人盤後";
+    els.chipThemeTitle.className = "";
+    els.chipThemeText.textContent = "三大法人買賣超通常盤後公布，公布前不以範例資料代替。";
+  }
   const flows = [
-    ["外資", number(data.foreign)],
-    ["投信", number(data.trust)],
-    ["自營商", number(data.dealer)]
+    ["外資", number(data?.foreign)],
+    ["投信", number(data?.trust)],
+    ["自營商", number(data?.dealer)]
   ].filter(([, value]) => Number.isFinite(value));
   const leader = flows.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
-  const total = number(data.total);
+  const total = number(data?.total);
 
-  els.chipThemeTitle.textContent = Number.isFinite(total)
-    ? total > 0 ? "法人偏買超" : total < 0 ? "法人偏賣超" : "法人中性"
-    : "--";
-  els.chipThemeTitle.className = Number.isFinite(total) ? total >= 0 ? "price-up" : "price-down" : "";
-  els.chipThemeText.textContent = leader
-    ? `${leader[0]}影響最大，${formatShareFlow(leader[1])}；三大法人合計 ${formatShareFlow(total)}。`
-    : "等待三大法人盤後資料。";
+  if (data?.source === "TWSE") {
+    els.chipThemeTitle.textContent = Number.isFinite(total)
+      ? total > 0 ? "法人偏買超" : total < 0 ? "法人偏賣超" : "法人中性"
+      : "--";
+    els.chipThemeTitle.className = Number.isFinite(total) ? total >= 0 ? "price-up" : "price-down" : "";
+    els.chipThemeText.textContent = leader
+      ? `${leader[0]}影響最大，${formatShareFlow(leader[1])}；三大法人合計 ${formatShareFlow(total)}。`
+      : "等待三大法人盤後資料。";
+  }
 
   const hotStocks = ranking.slice(0, 3).map((stock) => `${stock.code} ${stock.name}`);
   els.tradeThemeTitle.textContent = ranking[0] ? `${ranking[0].code} ${ranking[0].name}` : "--";
