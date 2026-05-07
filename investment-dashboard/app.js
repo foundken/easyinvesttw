@@ -1,6 +1,6 @@
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const MARKET_REFRESH_FAST_MS = 10000;
-const MARKET_REFRESH_SLOW_MS = 5 * 60000;
+const MARKET_REFRESH_SLOW_MS = 10 * 60000;
 
 const endpoints = {
   bundle: getMarketEndpoint()
