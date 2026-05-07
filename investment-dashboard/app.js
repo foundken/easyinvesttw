@@ -40,6 +40,7 @@ const els = {
   beginnerTrendText: document.querySelector("#beginnerTrendText"),
   beginnerRiskText: document.querySelector("#beginnerRiskText"),
   beginnerNextText: document.querySelector("#beginnerNextText"),
+  beginnerNextNote: document.querySelector("#beginnerNextNote"),
   todayConclusion: document.querySelector("#todayConclusion"),
   marketScoreTitle: document.querySelector("#marketScoreTitle"),
   marketScoreText: document.querySelector("#marketScoreText"),
@@ -826,7 +827,7 @@ function renderBeginnerBrief(ranking, tracked) {
   const changePercent = number(index?.changePercent);
   const totalFlow = number(market.institutional?.total);
   const sectors = summarizeSectors(ranking);
-  const topStocks = ranking.slice(0, 3).map((stock) => `${stock.code} ${stock.name}`);
+  const beginnerCandidate = pickBeginnerCandidate(ranking);
   const riskTracked = tracked.filter((entry) => entry.signal.tone === "bad");
 
   if (Number.isFinite(changePercent)) {
@@ -864,14 +865,69 @@ function renderBeginnerBrief(ranking, tracked) {
     els.beginnerRiskText.className = "";
   }
 
-  els.beginnerNextText.textContent = watchList.length
-    ? `先看你的 ${watchList.length} 檔股票`
-    : topStocks.length ? `可先觀察 ${topStocks[0]}` : "加入你的股票";
+  if (watchList.length) {
+    els.beginnerNextText.textContent = `先看你的 ${watchList.length} 檔股票`;
+    if (els.beginnerNextNote) {
+      els.beginnerNextNote.textContent = "你已經有追蹤股票，優先看自己的損益、風險與白話提醒。";
+    }
+  } else if (beginnerCandidate.stock) {
+    els.beginnerNextText.textContent = `可先觀察 ${formatStockLabel(beginnerCandidate.stock)}`;
+    if (els.beginnerNextNote) {
+      els.beginnerNextNote.textContent = beginnerCandidate.reason;
+    }
+  } else {
+    els.beginnerNextText.textContent = "加入你的股票";
+    if (els.beginnerNextNote) {
+      els.beginnerNextNote.textContent = "輸入持股或觀察股，系統會幫你整理損益與白話提醒。";
+    }
+  }
 
   const sectorText = sectors[0] ? `${sectors[0].name}` : "資金方向未明";
   const riskText = riskTracked.length ? `${riskTracked.length} 檔持股需小心` : els.beginnerRiskText.textContent;
   const tone = els.beginnerMarketTone.textContent;
   els.todayConclusion.textContent = `今日結論：${tone}，資金主要看 ${sectorText}；${riskText}。先觀察族群是否延續，再決定是否分批。`;
+}
+
+function formatStockLabel(stock) {
+  if (!stock) return "";
+  return `${stock.code} ${stock.name}`;
+}
+
+function pickBeginnerCandidate(ranking) {
+  const trendCandidate = latestTrendItems
+    .filter((item) => Number.isFinite(item.recentReturn))
+    .filter((item) => item.recentReturn > -1 && item.monthReturn > -8)
+    .sort((a, b) => {
+      const aScore = (number(a.trendScore) || 0)
+        + Math.min(Math.max(number(a.value) || 0, 0) / 1_000_000_000, 8) * 0.25
+        - (a.monthReturn > 80 ? 8 : 0)
+        - (a.recentReturn > 9 ? 4 : 0);
+      const bScore = (number(b.trendScore) || 0)
+        + Math.min(Math.max(number(b.value) || 0, 0) / 1_000_000_000, 8) * 0.25
+        - (b.monthReturn > 80 ? 8 : 0)
+        - (b.recentReturn > 9 ? 4 : 0);
+      return bScore - aScore;
+    })[0];
+
+  if (trendCandidate) {
+    return {
+      stock: trendCandidate,
+      reason: "依近月趨勢、今天強弱與成交熱度挑一檔先觀察；這不是買進建議，先看是否延續。"
+    };
+  }
+
+  const rankingCandidate = ranking
+    .slice(0, 10)
+    .find((stock) => stock.changePercent > 0 && stock.changePercent <= 8) || ranking[0];
+
+  if (rankingCandidate) {
+    return {
+      stock: rankingCandidate,
+      reason: "目前先用成交熱度挑觀察股；等近月趨勢資料算完後，這裡會再自動更新。"
+    };
+  }
+
+  return { stock: null, reason: "" };
 }
 
 function dataBadge(label, level, text) {
@@ -1388,6 +1444,12 @@ function renderTrendResults(items) {
   els.trendStatus.textContent = `趨勢：已分析 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
   renderTrendChartStats(items, sectors);
   drawTrendChart(items);
+  renderBeginnerBrief(latestRanking, watchList.map((item) => {
+    const stock = getStock(item.code);
+    const val = getValuation(item.code);
+    const rev = getRevenue(item.code);
+    return { item, stock, val, rev, signal: scoreStock(stock, val, rev) };
+  }));
 }
 
 function updateTrendGuide(items, sectors = summarizeTrendSectors(items)) {
