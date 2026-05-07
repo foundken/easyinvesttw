@@ -1691,13 +1691,14 @@ body.chart-expanded .chart-wrap canvas {
   .news-list,
   .trend-list,
   .small-cap-list {
-    max-height: 360px;
+    max-height: none;
+    overflow: visible;
     overscroll-behavior: auto;
     padding-right: 3px;
   }
 
   .small-cap-list {
-    max-height: 520px;
+    max-height: none;
   }
 
   .market-groups {
@@ -1829,6 +1830,6 @@ body.chart-expanded .chart-wrap canvas {
   .news-list,
   .trend-list,
   .small-cap-list {
-    max-height: 320px;
+    max-height: none;
   }
 }
