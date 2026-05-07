@@ -62,31 +62,35 @@
         <span>從結論開始，再往下看細節</span>
       </div>
       <div class="brief-grid">
-        <article>
+        <article class="brief-card" role="button" tabindex="0" data-target="#marketTape" aria-label="查看市場狀態詳細資料">
           <span>1. 市場狀態</span>
           <strong id="beginnerMarketTone">等待資料</strong>
           <p id="beginnerMarketText">更新後會判斷今天偏強、震盪或偏弱。</p>
+          <small>查看大盤行情</small>
         </article>
-        <article>
+        <article class="brief-card" role="button" tabindex="0" data-target="#trendPanel" aria-label="查看資金方向詳細資料">
           <span>2. 資金方向</span>
           <strong id="beginnerTrendText">等待族群</strong>
           <p>同一族群多檔上榜，代表資金可能正在集中。</p>
+          <small>查看漲勢族群</small>
         </article>
-        <article>
+        <article class="brief-card" role="button" tabindex="0" data-target="#marketScorePanel" aria-label="查看風險提醒詳細資料">
           <span>3. 風險提醒</span>
           <strong id="beginnerRiskText">先等資料</strong>
           <p>近月大漲但今天轉弱的股票，不急著追。</p>
+          <small>查看風險評分</small>
         </article>
-        <article>
+        <article class="brief-card" role="button" tabindex="0" data-target="#watchForm" aria-label="前往加入持股或觀察股">
           <span>4. 下一步</span>
           <strong id="beginnerNextText">加入你的股票</strong>
           <p>輸入持股或觀察股，系統會幫你整理損益與白話提醒。</p>
+          <small>加入追蹤</small>
         </article>
       </div>
       <p id="todayConclusion" class="brief-conclusion">今日結論：等待資料更新後，會整理今天該先觀察什麼、該避開什麼。</p>
     </section>
 
-    <section class="market-score-panel" aria-label="今日總評分">
+    <section id="marketScorePanel" class="market-score-panel" aria-label="今日總評分">
       <div>
         <p class="eyebrow">今日總評分</p>
         <h2 id="marketScoreTitle">等待資料</h2>
@@ -182,7 +186,7 @@
       <div id="disciplineList" class="discipline-list"></div>
     </section>
 
-    <section class="market-tape" aria-label="大盤即時資訊">
+    <section id="marketTape" class="market-tape" aria-label="大盤即時資訊">
       <div class="market-tabs">
         <strong>大盤行情</strong>
         <button class="market-tab active" type="button" data-market="tw">台股</button>
@@ -290,7 +294,7 @@
       </div>
     </section>
 
-    <section class="panel trend-panel" aria-label="近期大盤漲勢集中族群">
+    <section id="trendPanel" class="panel trend-panel" aria-label="近期大盤漲勢集中族群">
       <div class="panel-head">
         <h2>近期大盤漲勢集中族群</h2>
         <span>近一個月，每天整理一次</span>

@@ -127,7 +127,8 @@ const els = {
   smallCapList: document.querySelector("#smallCapList"),
   smallCapAiTitle: document.querySelector("#smallCapAiTitle"),
   smallCapAiText: document.querySelector("#smallCapAiText"),
-  smallCapStatus: document.querySelector("#smallCapStatus")
+  smallCapStatus: document.querySelector("#smallCapStatus"),
+  briefCards: document.querySelectorAll(".brief-card")
 };
 
 let watchList = [];
@@ -659,6 +660,15 @@ function normalizeNews(items) {
 function setStatus(status, time) {
   els.dataStatus.textContent = status;
   els.updatedAt.textContent = time;
+}
+
+function openBriefTarget(card) {
+  const target = document.querySelector(card.dataset.target);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (card.dataset.target === "#watchForm") {
+    window.setTimeout(() => els.symbol?.focus(), 450);
+  }
 }
 
 function getStock(code) {
@@ -2621,6 +2631,14 @@ els.marketTabs.forEach((tab) => {
     selectedMarket = tab.dataset.market;
     selectedGroup = "listed";
     renderMarketIndex();
+  });
+});
+els.briefCards.forEach((card) => {
+  card.addEventListener("click", () => openBriefTarget(card));
+  card.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openBriefTarget(card);
   });
 });
 els.groupCards.forEach((card) => {

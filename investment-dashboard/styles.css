@@ -756,6 +756,19 @@ label span {
   background: #fff;
 }
 
+.brief-card {
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.brief-card:hover,
+.brief-card:focus-visible {
+  border-color: var(--blue);
+  box-shadow: 0 8px 20px rgba(42, 64, 89, 0.12);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .brief-grid span {
   color: var(--blue);
   font-size: 13px;
@@ -773,6 +786,13 @@ label span {
   color: var(--muted);
   line-height: 1.55;
   font-weight: 800;
+}
+
+.brief-grid small {
+  margin-top: auto;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .brief-conclusion,
