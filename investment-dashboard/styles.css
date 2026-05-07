@@ -384,6 +384,7 @@ select:focus {
   max-height: 560px;
   gap: 8px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding-right: 6px;
 }
 
@@ -419,6 +420,7 @@ select:focus {
   max-height: 760px;
   gap: 10px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding-right: 6px;
 }
 
@@ -1547,7 +1549,7 @@ canvas {
   height: 320px;
   margin-top: 12px;
   cursor: crosshair;
-  touch-action: none;
+  touch-action: pan-y;
 }
 
 body.chart-expanded {
@@ -1571,6 +1573,7 @@ body.chart-expanded .chart-wrap canvas {
   flex: 1;
   height: auto;
   min-height: 0;
+  touch-action: none;
 }
 
 .detail-grid {
@@ -1689,6 +1692,7 @@ body.chart-expanded .chart-wrap canvas {
   .trend-list,
   .small-cap-list {
     max-height: 360px;
+    overscroll-behavior: auto;
     padding-right: 3px;
   }
 
