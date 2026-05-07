@@ -1038,6 +1038,25 @@ label span {
   font-size: 26px;
 }
 
+.section-divider {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 22px 0 10px;
+  padding: 0 4px;
+}
+
+.section-divider span {
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.section-divider strong {
+  font-size: 24px;
+  line-height: 1.25;
+}
+
 .layout,
 .market-grid {
   display: grid;
@@ -1619,6 +1638,16 @@ body.chart-expanded .chart-wrap canvas {
     width: 100%;
     min-width: 0;
     justify-items: start;
+  }
+
+  .section-divider {
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 18px;
+  }
+
+  .section-divider strong {
+    font-size: 21px;
   }
 
   form,

@@ -21,38 +21,6 @@
       </div>
     </section>
 
-    <section class="auth-panel" aria-label="使用者註冊與安全登入">
-      <div class="auth-copy">
-        <p class="eyebrow">安全帳號</p>
-        <h2 id="authTitle">建立或登入使用者</h2>
-        <p id="authStatus">登入後，持股資料會存到雲端並依使用者分開查詢。</p>
-      </div>
-      <form id="authForm" class="auth-form" autocomplete="off">
-        <label>
-          <span>姓名</span>
-          <input id="authNameInput" placeholder="例如：Ken">
-        </label>
-        <label>
-          <span>Email</span>
-          <input id="authEmailInput" type="email" placeholder="例如：you@example.com" required>
-        </label>
-        <label>
-          <span>密碼</span>
-          <input id="authPasswordInput" type="password" minlength="8" placeholder="至少 8 碼" required>
-        </label>
-        <button id="loginButton" type="submit">登入</button>
-        <button id="registerButton" class="secondary" type="button">註冊</button>
-      </form>
-      <div class="auth-actions">
-        <button id="logoutButton" class="secondary" type="button">登出/鎖定</button>
-      </div>
-      <div class="security-notes">
-        <span>安全機制</span>
-        <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
-        <small>持股資料存於 Firestore，搭配 Security Rules，使用者只能讀寫自己的資料。</small>
-      </div>
-    </section>
-
     <section class="beginner-brief" aria-label="今日新手導讀">
       <div class="panel-head">
         <div>
@@ -100,35 +68,6 @@
       <div id="marketScoreList" class="score-list"></div>
     </section>
 
-    <section class="control-panel" aria-label="管理持股">
-      <form id="watchForm" autocomplete="off">
-        <label>
-          <span>股票代號</span>
-          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
-        </label>
-        <label>
-          <span>買進價</span>
-          <input id="costInput" type="number" min="0" step="0.01" placeholder="可留空">
-        </label>
-        <label>
-          <span>股數</span>
-          <input id="sharesInput" type="number" min="0" step="1" placeholder="可留空">
-        </label>
-        <label>
-          <span>分類</span>
-          <select id="typeInput">
-            <option value="holding">我的存股</option>
-            <option value="watch">觀察名單</option>
-          </select>
-        </label>
-        <button type="submit">加入追蹤</button>
-      </form>
-      <div class="actions">
-        <button id="refreshButton" type="button">立即更新</button>
-        <button id="demoButton" type="button">載入範例</button>
-      </div>
-    </section>
-
     <section class="summary-grid" aria-label="摘要">
       <article>
         <span>追蹤股票</span>
@@ -152,39 +91,10 @@
       </article>
     </section>
 
-    <section class="professional-grid" aria-label="專業檢查">
-      <section class="panel data-quality-panel" aria-label="資料可信度">
-        <div class="panel-head">
-          <h2>資料可信度</h2>
-          <span>先確認資料能不能拿來決策</span>
-        </div>
-        <div id="dataQualityList" class="quality-list"></div>
-      </section>
-
-      <section class="panel portfolio-health-panel" aria-label="投資組合健康度">
-        <div class="panel-head">
-          <h2>投資組合健康度</h2>
-          <span>避免單檔或同族群太集中</span>
-        </div>
-        <div id="portfolioHealthList" class="health-list"></div>
-      </section>
-    </section>
-
-    <section class="panel preflight-panel" aria-label="下單前檢查表">
-      <div class="panel-head">
-        <h2>下單前檢查表</h2>
-        <span>防止新手追高或重押</span>
-      </div>
-      <div id="preflightList" class="preflight-list"></div>
-    </section>
-
-    <section class="panel discipline-panel" aria-label="我的投資紀律">
-      <div class="panel-head">
-        <h2>我的投資紀律</h2>
-        <span>下單前先檢查資金與行為風險</span>
-      </div>
-      <div id="disciplineList" class="discipline-list"></div>
-    </section>
+    <div class="section-divider">
+      <span>第一步</span>
+      <strong>先判斷今天市場能不能追</strong>
+    </div>
 
     <section id="marketTape" class="market-tape" aria-label="大盤即時資訊">
       <div class="market-tabs">
@@ -247,6 +157,11 @@
       </div>
       <p id="marketLastUpdated" class="last-updated">最後更新：尚未同步</p>
     </section>
+
+    <div class="section-divider">
+      <span>第二步</span>
+      <strong>再看資金集中在哪裡</strong>
+    </div>
 
     <section class="institution-strip" aria-label="三大法人買賣超">
       <div class="institution-head">
@@ -320,6 +235,120 @@
       <p id="trendStatus" class="last-updated">趨勢：等待近月資料</p>
     </section>
 
+    <div class="section-divider">
+      <span>第三步</span>
+      <strong>輸入自己的股票，看損益與提醒</strong>
+    </div>
+
+    <section class="control-panel" aria-label="管理持股">
+      <form id="watchForm" autocomplete="off">
+        <label>
+          <span>股票代號</span>
+          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
+        </label>
+        <label>
+          <span>買進價</span>
+          <input id="costInput" type="number" min="0" step="0.01" placeholder="可留空">
+        </label>
+        <label>
+          <span>股數</span>
+          <input id="sharesInput" type="number" min="0" step="1" placeholder="可留空">
+        </label>
+        <label>
+          <span>分類</span>
+          <select id="typeInput">
+            <option value="holding">我的存股</option>
+            <option value="watch">觀察名單</option>
+          </select>
+        </label>
+        <button type="submit">加入追蹤</button>
+      </form>
+      <div class="actions">
+        <button id="refreshButton" type="button">立即更新</button>
+        <button id="demoButton" type="button">載入範例</button>
+      </div>
+    </section>
+
+    <section class="auth-panel" aria-label="使用者註冊與安全登入">
+      <div class="auth-copy">
+        <p class="eyebrow">安全帳號</p>
+        <h2 id="authTitle">建立或登入使用者</h2>
+        <p id="authStatus">登入後，持股資料會存到雲端並依使用者分開查詢。</p>
+      </div>
+      <form id="authForm" class="auth-form" autocomplete="off">
+        <label>
+          <span>姓名</span>
+          <input id="authNameInput" placeholder="例如：Ken">
+        </label>
+        <label>
+          <span>Email</span>
+          <input id="authEmailInput" type="email" placeholder="例如：you@example.com" required>
+        </label>
+        <label>
+          <span>密碼</span>
+          <input id="authPasswordInput" type="password" minlength="8" placeholder="至少 8 碼" required>
+        </label>
+        <button id="loginButton" type="submit">登入</button>
+        <button id="registerButton" class="secondary" type="button">註冊</button>
+      </form>
+      <div class="auth-actions">
+        <button id="logoutButton" class="secondary" type="button">登出/鎖定</button>
+      </div>
+      <div class="security-notes">
+        <span>安全機制</span>
+        <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
+        <small>持股資料存於 Firestore，搭配 Security Rules，使用者只能讀寫自己的資料。</small>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="我的存股">
+      <div class="panel-head">
+        <h2>我的存股</h2>
+        <span>長期持有與股息觀察</span>
+      </div>
+      <div id="holdingOverview" class="holding-overview"></div>
+      <div id="holdingList" class="holding-list"></div>
+    </section>
+
+    <section class="layout">
+      <section class="panel" aria-label="我的追蹤">
+        <div class="panel-head">
+          <h2>觀察名單</h2>
+          <span>還沒買，先觀察的股票</span>
+        </div>
+        <div id="watchList" class="watch-list"></div>
+      </section>
+
+      <section class="panel" aria-label="白話解讀">
+        <div class="panel-head">
+          <h2>今日觀察點</h2>
+          <span>非投資建議</span>
+        </div>
+        <div id="insightList" class="insight-list"></div>
+      </section>
+    </section>
+
+    <section class="panel" aria-label="持股相關新聞">
+      <div class="panel-head">
+        <h2>持股相關新聞</h2>
+        <span>自動比對我的存股與觀察名單</span>
+      </div>
+      <div id="holdingNewsList" class="news-list"></div>
+    </section>
+
+    <section class="panel" aria-label="市場新聞">
+      <div class="panel-head">
+        <h2>市場新聞</h2>
+        <span>來源：鉅亨網，點選開原文</span>
+      </div>
+      <div id="newsList" class="news-list"></div>
+    </section>
+
+    <div class="section-divider">
+      <span>第四步</span>
+      <strong>進階觀察，最後再看</strong>
+    </div>
+
     <section class="panel small-cap-panel" aria-label="小型股投資指南">
       <div class="panel-head">
         <h2>小型股投資指南</h2>
@@ -337,47 +366,38 @@
       <p id="smallCapStatus" class="last-updated">小型股：等待資料</p>
     </section>
 
-    <section class="panel" aria-label="我的存股">
-      <div class="panel-head">
-        <h2>我的存股</h2>
-        <span>長期持有與股息觀察</span>
-      </div>
-      <div id="holdingOverview" class="holding-overview"></div>
-      <div id="holdingList" class="holding-list"></div>
-    </section>
-
-    <section class="panel" aria-label="市場新聞">
-      <div class="panel-head">
-        <h2>市場新聞</h2>
-        <span>來源：鉅亨網，點選開原文</span>
-      </div>
-      <div id="newsList" class="news-list"></div>
-    </section>
-
-    <section class="panel" aria-label="持股相關新聞">
-      <div class="panel-head">
-        <h2>持股相關新聞</h2>
-        <span>自動比對我的存股與觀察名單</span>
-      </div>
-      <div id="holdingNewsList" class="news-list"></div>
-    </section>
-
-    <section class="layout">
-      <section class="panel" aria-label="我的追蹤">
+    <section class="professional-grid" aria-label="專業檢查">
+      <section class="panel data-quality-panel" aria-label="資料可信度">
         <div class="panel-head">
-          <h2>觀察名單</h2>
-          <span>自動保存於本機</span>
+          <h2>資料可信度</h2>
+          <span>先確認資料能不能拿來決策</span>
         </div>
-        <div id="watchList" class="watch-list"></div>
+        <div id="dataQualityList" class="quality-list"></div>
       </section>
 
-      <section class="panel" aria-label="白話解讀">
+      <section class="panel portfolio-health-panel" aria-label="投資組合健康度">
         <div class="panel-head">
-          <h2>今日觀察點</h2>
-          <span>非投資建議</span>
+          <h2>投資組合健康度</h2>
+          <span>避免單檔或同族群太集中</span>
         </div>
-        <div id="insightList" class="insight-list"></div>
+        <div id="portfolioHealthList" class="health-list"></div>
       </section>
+    </section>
+
+    <section class="panel preflight-panel" aria-label="下單前檢查表">
+      <div class="panel-head">
+        <h2>下單前檢查表</h2>
+        <span>防止新手追高或重押</span>
+      </div>
+      <div id="preflightList" class="preflight-list"></div>
+    </section>
+
+    <section class="panel discipline-panel" aria-label="我的投資紀律">
+      <div class="panel-head">
+        <h2>我的投資紀律</h2>
+        <span>下單前先檢查資金與行為風險</span>
+      </div>
+      <div id="disciplineList" class="discipline-list"></div>
     </section>
 
     <section class="market-grid">
