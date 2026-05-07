@@ -718,7 +718,7 @@ async function fetchHistory(code) {
     historyCache.set(code, history);
     return history;
   } catch {
-    const history = sampleHistory(code);
+    const history = [];
     historyCache.set(code, history);
     return history;
   }
@@ -2201,7 +2201,7 @@ async function openStockDetail(entry) {
   const last = history.at(-1)?.close;
   const monthReturn = first && last ? ((last - first) / first) * 100 : null;
   els.detailMonthReturn.textContent = monthReturn === null ? "--" : percent(monthReturn);
-  els.detailChartStatus.textContent = market.source === "TWSE" ? "證交所月成交資料" : "本機範例線圖";
+  els.detailChartStatus.textContent = history.length ? "近月歷史成交資料" : "歷史資料不足";
   activeChartHistory = history;
   resizeChartCanvas();
   drawPriceChart(history);
@@ -2262,6 +2262,15 @@ function drawPriceChart(history, hoverIndex = null) {
   const width = canvas.width;
   const height = canvas.height;
   const padding = { top: 26, right: 72, bottom: 46, left: 68 };
+  if (!history.length) {
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#fffdf8";
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = "#6f6a61";
+    context.font = "18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    context.fillText("目前沒有取得可靠的近月歷史資料", padding.left, height / 2);
+    return;
+  }
   const prices = history.map((item) => item.close);
   const volumes = history.map((item) => item.volume || 0);
   const minPrice = Math.min(...prices);

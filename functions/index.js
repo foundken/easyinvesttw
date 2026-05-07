@@ -390,6 +390,18 @@ function taipeiDate() {
   return `${get("year")}${get("month")}${get("day")}`;
 }
 
+function taipeiIsoDate(daysAgo = 0) {
+  const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type).value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
 function cleanTwseCell(value) {
   return String(value || "").replaceAll("=", "").replaceAll('"', "").trim();
 }
@@ -466,12 +478,22 @@ async function fetchYahooIndex(symbol, fallbackName) {
 }
 
 async function fetchHistory(code) {
+  const fugleHistory = await fetchFugleHistory(code);
+  if (fugleHistory.length) return fugleHistory;
+
   const months = recentMonths(6);
   const results = await Promise.all(months.map(async (date) => {
     const url = `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${date}&stockNo=${encodeURIComponent(code)}&response=json`;
-    const response = await fetch(url, { headers: { accept: "application/json" } });
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+        "user-agent": "Mozilla/5.0 EasyInvestTW historical price reader"
+      }
+    });
     if (!response.ok) return [];
     const payload = await response.json();
+    if (payload.stat && payload.stat !== "OK") return [];
     return (payload.data || []).map((row) => ({
       date: row[0],
       volume: row[1],
@@ -486,6 +508,40 @@ async function fetchHistory(code) {
   }));
 
   return results.flat();
+}
+
+async function fetchFugleHistory(code) {
+  const apiKey = process.env.FUGLE_API_KEY;
+  if (!apiKey) return [];
+
+  const params = new URLSearchParams({
+    from: taipeiIsoDate(75),
+    to: taipeiIsoDate(),
+    timeframe: "D",
+    adjusted: "false",
+    fields: "open,high,low,close,volume,turnover,change",
+    sort: "asc"
+  });
+  const response = await fetch(`${FUGLE_BASE}/historical/candles/${encodeURIComponent(code)}?${params}`, {
+    headers: {
+      accept: "application/json",
+      "X-API-KEY": apiKey
+    }
+  });
+  if (!response.ok) return [];
+  const payload = await response.json();
+  return (payload.data || []).map((row) => ({
+    date: row.date,
+    volume: row.volume,
+    value: row.turnover,
+    open: row.open,
+    high: row.high,
+    low: row.low,
+    close: row.close,
+    change: row.change,
+    trades: null,
+    source: "Fugle"
+  })).filter((row) => Number.isFinite(toNumber(row.close)));
 }
 
 function recentMonths(count) {
