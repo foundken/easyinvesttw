@@ -668,6 +668,14 @@ async function safeFetchFugleQuotes(symbols) {
   }
 }
 
+async function safeFetchFugleActiveRanking() {
+  try {
+    return await fetchFugleActiveRanking();
+  } catch {
+    return [];
+  }
+}
+
 async function safeFetchTwseIndex() {
   try {
     const index = await fetchTwseIndex();
