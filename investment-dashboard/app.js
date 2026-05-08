@@ -2311,7 +2311,8 @@ function drawMarketBoardChart(points, index, isUp) {
 
   const width = canvas.width;
   const height = canvas.height;
-  const padding = { top: 24 * ratio, right: 124 * ratio, bottom: 50 * ratio, left: 14 * ratio };
+  const rightRail = Math.min(190, Math.max(142, rect.width * 0.15)) * ratio;
+  const padding = { top: 24 * ratio, right: rightRail, bottom: 50 * ratio, left: 14 * ratio };
   const values = points.map((item) => item.close).filter(Number.isFinite);
   if (Number.isFinite(index.previousClose)) values.push(index.previousClose);
   const min = Math.min(...values);
@@ -2371,31 +2372,39 @@ function drawMarketBoardChart(points, index, isUp) {
   });
 
   const latest = points.at(-1);
+  const latestY = latest ? pointY(latest.close) : null;
+  const previousY = Number.isFinite(index.previousClose) ? pointY(index.previousClose) : null;
   if (latest) {
     const x = pointX(points.length - 1);
-    const y = pointY(latest.close);
     context.fillStyle = "#242423";
     context.beginPath();
-    context.arc(x, y, 4, 0, Math.PI * 2);
+    context.arc(x, latestY, 4, 0, Math.PI * 2);
     context.fill();
-    drawCanvasPill(context, money(latest.close), width - 10 * ratio, y, {
+    const latestLabelY = previousY !== null && Math.abs(previousY - latestY) < 34 * ratio
+      ? latestY + (latestY < chartHeight / 2 ? -14 * ratio : 14 * ratio)
+      : latestY;
+    drawCanvasPill(context, money(latest.close), width - 12 * ratio, latestLabelY, {
       ratio,
       background: color,
       fontSize: 13,
       height: 27,
       maxX: width - 8 * ratio,
+      minY: padding.top + 4 * ratio,
       maxY: height - padding.bottom - 6 * ratio
     });
   }
 
-  if (Number.isFinite(index.previousClose)) {
-    const y = pointY(index.previousClose);
-    drawCanvasPill(context, money(index.previousClose), width - 10 * ratio, y, {
+  if (previousY !== null) {
+    const previousLabelY = latestY !== null && Math.abs(previousY - latestY) < 34 * ratio
+      ? previousY + (previousY < chartHeight / 2 ? 18 * ratio : -18 * ratio)
+      : previousY;
+    drawCanvasPill(context, money(index.previousClose), width - 12 * ratio, previousLabelY, {
       ratio,
       background: "#5d6470",
       fontSize: 13,
       height: 27,
       maxX: width - 8 * ratio,
+      minY: padding.top + 4 * ratio,
       maxY: height - padding.bottom - 6 * ratio
     });
   }
@@ -2406,7 +2415,7 @@ function drawMarketBoardChart(points, index, isUp) {
     const value = max - (range / 3) * i;
     const y = pointY(value);
     context.textAlign = "left";
-    context.fillText(money(value), width - padding.right + 12 * ratio, y + 4 * ratio);
+    context.fillText(money(value), width - padding.right + 14 * ratio, y + 4 * ratio);
   }
   ["09", "10", "11", "12", "13"].forEach((label, index) => {
     const x = padding.left + (chartWidth / 4) * index;
