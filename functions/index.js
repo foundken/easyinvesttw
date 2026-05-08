@@ -28,16 +28,18 @@ exports.market = onRequest({
       });
     }
 
-    const [daily, valuation, revenue, realtime, index, usIndex, institutional, news] = await Promise.all([
+    const [twseDaily, valuation, revenue, realtime, fugleActiveRanking, index, usIndex, institutional, news] = await Promise.all([
       safeFetchJson(endpoints.daily),
       safeFetchJson(endpoints.valuation),
       safeFetchJson(endpoints.revenue),
       safeFetchFugleQuotes(symbols),
+      safeFetchFugleActiveRanking(),
       safeFetchTwseIndex(),
       safeFetchUsMarket(),
       safeFetchInstitutional(),
       safeFetchMarketNews()
     ]);
+    const daily = mergeMarketRows(twseDaily, fugleActiveRanking);
 
     return sendJson(res, 200, {
       ok: true,
@@ -50,6 +52,7 @@ exports.market = onRequest({
       usIndex,
       institutional,
       news,
+      dailySource: fugleActiveRanking.length ? "Fugle" : twseDaily.length ? "TWSE" : null,
       realtimeSource: realtime.length ? "Fugle" : null
     });
   } catch (error) {
@@ -89,6 +92,84 @@ async function fetchFugleQuotes(symbols) {
   }));
 
   return quotes.filter(Boolean);
+}
+
+async function fetchFugleActiveRanking() {
+  const apiKey = process.env.FUGLE_API_KEY;
+  if (!apiKey) return [];
+
+  const markets = ["TSE", "OTC"];
+  const batches = await Promise.all(markets.map(async (market) => {
+    const params = new URLSearchParams({
+      trade: "value",
+      type: "ALLBUT0999"
+    });
+    const response = await fetch(`${FUGLE_BASE}/snapshot/actives/${market}?${params}`, {
+      headers: {
+        accept: "application/json",
+        "X-API-KEY": apiKey
+      }
+    });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return rowsFromFuglePayload(payload).map((row) => normalizeFugleSnapshot(row)).filter(Boolean);
+  }));
+
+  return batches
+    .flat()
+    .filter((row) => row.code && Number.isFinite(row.close))
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, 80);
+}
+
+function rowsFromFuglePayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.stocks)) return payload.stocks;
+  return [];
+}
+
+function normalizeFugleSnapshot(row) {
+  const code = String(row.symbol || row.code || row.stockNo || row.stockId || "").trim();
+  if (!/^\d{4,6}$/.test(code)) return null;
+  const close = toNumber(row.closePrice ?? row.lastPrice ?? row.close);
+  const previousClose = toNumber(row.previousClose ?? row.referencePrice ?? row.previousPrice);
+  const change = toNumber(row.change) ?? (Number.isFinite(close) && Number.isFinite(previousClose) ? close - previousClose : null);
+  const changePercent = toNumber(row.changePercent) ?? (Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null);
+  return {
+    Code: code,
+    Name: row.name || row.companyName || row.shortName || code,
+    TradeVolume: toNumber(row.total?.tradeVolume ?? row.tradeVolume ?? row.volume),
+    TradeValue: toNumber(row.total?.tradeValue ?? row.tradeValue ?? row.turnover ?? row.value),
+    OpeningPrice: toNumber(row.openPrice ?? row.open),
+    HighestPrice: toNumber(row.highPrice ?? row.high),
+    LowestPrice: toNumber(row.lowPrice ?? row.low),
+    ClosingPrice: close,
+    PreviousClose: previousClose,
+    Change: change,
+    ChangePercent: changePercent,
+    Transaction: toNumber(row.total?.transaction ?? row.transaction ?? row.trades),
+    QuoteTime: row.lastUpdated || row.date || row.time,
+    Source: "Fugle"
+  };
+}
+
+function mergeMarketRows(twseRows, fugleRows) {
+  if (!Array.isArray(twseRows) || !twseRows.length) return fugleRows;
+  if (!Array.isArray(fugleRows) || !fugleRows.length) return twseRows;
+
+  const byCode = new Map(twseRows.map((row) => [String(row.Code || row["證券代號"] || row.code || "").trim(), row]));
+  fugleRows.forEach((row) => {
+    const code = String(row.Code || row.code || "").trim();
+    const current = byCode.get(code) || {};
+    byCode.set(code, {
+      ...current,
+      ...row,
+      Name: row.Name || current.Name || current["證券名稱"] || code
+    });
+  });
+  return Array.from(byCode.values());
 }
 
 async function fetchTwseIndex() {
@@ -557,7 +638,10 @@ function recentMonths(count) {
 async function fetchJson(path) {
   const response = await fetch(`${BASE}${path}`, {
     headers: {
-      accept: "application/json"
+      accept: "application/json",
+      "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+      "cache-control": "no-cache",
+      "user-agent": "Mozilla/5.0 EasyInvestTW market data reader"
     }
   });
 

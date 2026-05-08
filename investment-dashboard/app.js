@@ -8,7 +8,9 @@ const endpoints = {
 
 function getMarketEndpoint() {
   const host = window.location.hostname;
-  if (!host || host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return "/api/market";
+  if (!host) return "https://easyinvesttw.web.app/api/market";
+  if (host === "localhost" || host === "127.0.0.1") return "https://easyinvesttw.web.app/api/market";
+  if (host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return "/api/market";
   return "/.netlify/functions/market";
 }
 
@@ -73,6 +75,12 @@ const els = {
   marketHigh: document.querySelector("#marketHigh"),
   marketLow: document.querySelector("#marketLow"),
   marketPreviousClose: document.querySelector("#marketPreviousClose"),
+  marketChangePoints: document.querySelector("#marketChangePoints"),
+  marketChangePercent: document.querySelector("#marketChangePercent"),
+  marketRange: document.querySelector("#marketRange"),
+  marketAmplitude: document.querySelector("#marketAmplitude"),
+  marketGap: document.querySelector("#marketGap"),
+  marketIntradayPosition: document.querySelector("#marketIntradayPosition"),
   marketRealtimeStatus: document.querySelector("#marketRealtimeStatus"),
   quoteRealtimeStatus: document.querySelector("#quoteRealtimeStatus"),
   marketLastUpdated: document.querySelector("#marketLastUpdated"),
@@ -121,6 +129,7 @@ const els = {
   trendChart: document.querySelector("#trendChart"),
   trendChartStats: document.querySelector("#trendChartStats"),
   trendGuide: document.querySelector("#trendGuide"),
+  trendSummary: document.querySelector("#trendSummary"),
   trendList: document.querySelector("#trendList"),
   trendAiTitle: document.querySelector("#trendAiTitle"),
   trendAiText: document.querySelector("#trendAiText"),
@@ -213,7 +222,21 @@ const sampleDaily = [
   row("2454", "聯發科", 9300000, 11800000000, 1250, 1280, 1240, 1275, 18, 12000),
   row("2308", "台達電", 17600000, 7200000000, 406, 416, 402, 410, 5, 18000),
   row("2881", "富邦金", 42000000, 3800000000, 90, 91.2, 89.4, 90.8, 0.7, 15000),
-  row("0050", "元大台灣50", 22000000, 4200000000, 189.2, 191, 188.8, 190.4, 1.4, 9000)
+  row("0050", "元大台灣50", 22000000, 4200000000, 189.2, 191, 188.8, 190.4, 1.4, 9000),
+  row("2382", "廣達", 32800000, 8900000000, 281, 289, 278, 287.5, 6.5, 22500),
+  row("3231", "緯創", 41200000, 6200000000, 148, 153.5, 146.5, 151, 4, 31800),
+  row("2303", "聯電", 76500000, 4100000000, 53.1, 54.2, 52.7, 53.8, 0.6, 28600),
+  row("2412", "中華電", 18200000, 2350000000, 128, 129, 127.5, 128.5, 0.5, 8200),
+  row("2891", "中信金", 68000000, 2760000000, 40.1, 41.2, 39.9, 40.7, 0.55, 24400),
+  row("2882", "國泰金", 35600000, 2480000000, 68.2, 70.1, 67.8, 69.7, 1.4, 17200),
+  row("3711", "日月光投控", 14600000, 2260000000, 153, 156.5, 151.5, 155, 2.5, 9800),
+  row("6669", "緯穎", 980000, 2180000000, 2190, 2265, 2160, 2240, 55, 3200),
+  row("3017", "奇鋐", 3100000, 2100000000, 665, 690, 658, 682, 22, 7600),
+  row("3661", "世芯-KY", 620000, 2050000000, 3270, 3355, 3220, 3315, 75, 4100),
+  row("2357", "華碩", 3200000, 1680000000, 520, 531, 516, 526, 8, 5300),
+  row("2603", "長榮", 9600000, 1620000000, 166, 170, 164, 168.5, 2, 9100),
+  row("2618", "長榮航", 39200000, 1380000000, 34.6, 35.7, 34.2, 35.2, 0.55, 18500),
+  row("1303", "南亞", 15800000, 1120000000, 70.1, 71.5, 69.8, 70.9, 0.7, 7400)
 ];
 
 const sampleValuation = [
@@ -471,6 +494,11 @@ function percent(value) {
   return `${value > 0 ? "+" : ""}${money(value)}%`;
 }
 
+function signedMoney(value) {
+  if (!Number.isFinite(value)) return "--";
+  return `${value > 0 ? "+" : ""}${money(value)}`;
+}
+
 function rocDateToText(value) {
   const parts = String(value).split("/");
   if (parts.length !== 3) return String(value);
@@ -478,18 +506,27 @@ function rocDateToText(value) {
 }
 
 function normalizeDaily(raw) {
-  return raw.map((item) => ({
-    code: item.Code || item["證券代號"] || item.code,
-    name: item.Name || item["證券名稱"] || item.name,
-    volume: number(item.TradeVolume || item["成交股數"] || item.volume),
-    value: number(item.TradeValue || item["成交金額"] || item.value),
-    open: number(item.OpeningPrice || item["開盤價"] || item.open),
-    high: number(item.HighestPrice || item["最高價"] || item.high),
-    low: number(item.LowestPrice || item["最低價"] || item.low),
-    close: number(item.ClosingPrice || item["收盤價"] || item.close),
-    change: number(item.Change || item["漲跌價差"] || item.change),
-    trades: number(item.Transaction || item["成交筆數"] || item.trades)
-  })).filter((item) => item.code && item.name && Number.isFinite(item.close));
+  return raw.map((item) => {
+    const close = number(item.ClosingPrice ?? item["收盤價"] ?? item.close ?? item.closePrice ?? item.lastPrice);
+    const previousClose = number(item.PreviousClose ?? item.previousClose ?? item.referencePrice ?? item.previousPrice);
+    const change = number(item.Change ?? item["漲跌價差"] ?? item.change) ?? (Number.isFinite(close) && Number.isFinite(previousClose) ? close - previousClose : null);
+    const changePercent = number(item.ChangePercent ?? item.changePercent) ?? (Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null);
+    return {
+      code: item.Code || item["證券代號"] || item.code || item.symbol,
+      name: item.Name || item["證券名稱"] || item.name || item.companyName,
+      volume: number(item.TradeVolume ?? item["成交股數"] ?? item.volume ?? item.tradeVolume),
+      value: number(item.TradeValue ?? item["成交金額"] ?? item.value ?? item.tradeValue ?? item.turnover),
+      open: number(item.OpeningPrice ?? item["開盤價"] ?? item.open ?? item.openPrice),
+      high: number(item.HighestPrice ?? item["最高價"] ?? item.high ?? item.highPrice),
+      low: number(item.LowestPrice ?? item["最低價"] ?? item.low ?? item.lowPrice),
+      close,
+      previousClose,
+      change,
+      changePercent,
+      trades: number(item.Transaction ?? item["成交筆數"] ?? item.trades ?? item.transaction),
+      source: item.Source || item.source
+    };
+  }).filter((item) => item.code && item.name && Number.isFinite(item.close));
 }
 
 function normalizeValuation(raw) {
@@ -630,6 +667,7 @@ async function fetchMarket() {
     const payload = await response.json();
     const daily = normalizeDaily(payload.daily || []);
     const realtime = normalizeRealtimeQuotes(payload.realtime || []);
+    const sources = [payload.dailySource, payload.realtimeSource].filter(Boolean);
 
     market = {
       daily: mergeRealtimeQuotes(daily, realtime),
@@ -639,7 +677,7 @@ async function fetchMarket() {
       usIndex: normalizeUsMarket(payload.usIndex) || sampleUsMarket,
       institutional: normalizeInstitutional(payload.institutional),
       news: normalizeNews(payload.news || []),
-      source: payload.realtimeSource === "Fugle" ? "TWSE + Fugle" : "TWSE"
+      source: sources.length ? [...new Set(sources)].join(" + ") : daily.length ? "TWSE" : "資料不足"
     };
   } catch {
     market = {
@@ -654,7 +692,8 @@ async function fetchMarket() {
     };
   }
 
-  setStatus(market.source === "sample" ? "範例資料" : "已更新", new Date().toLocaleString("zh-TW"));
+  const hasUsableMarketData = market.daily.length || Number.isFinite(number(market.index?.index));
+  setStatus(market.source === "sample" ? "範例資料" : hasUsableMarketData ? "已更新" : "資料不足", new Date().toLocaleString("zh-TW"));
   render();
   marketFetchInFlight = false;
   scheduleMarketRefresh();
@@ -767,7 +806,7 @@ async function fetchHistory(code) {
     historyCache.set(code, history);
     return history;
   } catch {
-    const history = [];
+    const history = sampleHistory(code);
     historyCache.set(code, history);
     return history;
   }
@@ -1033,10 +1072,10 @@ function renderMarketScore(ranking, tracked) {
 
 function renderDataQuality() {
   const hasFugle = market.source.includes("Fugle");
-  const hasRealMarket = market.source !== "sample";
+  const hasRealMarket = market.source !== "sample" && market.source !== "資料不足" && (market.daily.length || Number.isFinite(number(market.index?.index)));
   const hasInstitutional = market.institutional?.source === "TWSE";
   els.dataQualityList.innerHTML = [
-    dataBadge(hasRealMarket ? "即時/公開" : "範例", hasRealMarket ? "good" : "warn", hasRealMarket ? "大盤與成交資料已連接公開資料來源。" : "目前使用範例資料，不能作為實際下單依據。"),
+    dataBadge(hasRealMarket ? "即時/公開" : market.source === "sample" ? "範例" : "資料不足", hasRealMarket ? "good" : "bad", hasRealMarket ? "大盤與成交資料已連接公開資料來源。" : "主要市場資料目前沒有成功回傳，先不要用這個畫面做判斷。"),
     dataBadge(hasFugle ? "即時" : "延遲", hasFugle ? "good" : "warn", hasFugle ? "個股報價使用 Fugle 即時行情。" : "個股多為 TWSE 公開資料或盤後資料，非逐筆即時。"),
     dataBadge(hasInstitutional ? "盤後" : "估算", hasInstitutional ? "warn" : "bad", hasInstitutional ? "法人資料為 TWSE 盤後統計，適合看方向，不是即時籌碼。" : "法人資料尚未完整連接，先當參考。"),
     dataBadge("非建議", "warn", "AI 只整理訊號與風險，不保證獲利；下單前仍要檢查部位與停損。")
@@ -1496,6 +1535,7 @@ async function renderTrendPanel(ranking) {
     latestTrendItems = [];
     els.trendList.innerHTML = '<p class="empty">等待成交排行更新後，這裡會計算近月漲勢。</p>';
     updateTrendGuide([]);
+    renderTrendSummary([]);
     els.trendAiTitle.textContent = "等待資料";
     els.trendAiText.textContent = "目前沒有足夠股票可分析。";
     els.trendStatus.textContent = "趨勢：等待近月資料";
@@ -1560,6 +1600,7 @@ function renderTrendResults(items) {
   if (!items.length) {
     els.trendList.innerHTML = '<p class="empty">近月資料不足，稍後再更新。</p>';
     updateTrendGuide([]);
+    renderTrendSummary([]);
     els.trendAiTitle.textContent = "資料不足";
     els.trendAiText.textContent = "目前無法形成趨勢判讀。";
     els.trendStatus.textContent = "趨勢：資料不足";
@@ -1567,12 +1608,13 @@ function renderTrendResults(items) {
     return;
   }
 
-  els.trendList.innerHTML = items.slice(0, 20).map((item, index) => `
+  const displayed = items.slice(0, 20);
+  els.trendList.innerHTML = displayed.map((item, index) => `
     <article class="trend-row">
       <div>
         <strong>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
         <small>${escapeHtml(item.sector)} ｜ 近月 ${percent(item.monthReturn)} ｜ 1 日 ${percent(item.recentReturn)} ｜ 3 日區段上漲 ${item.positiveSegments}/${item.segmentCount}</small>
-        <small>成交金額 ${compactMoney(item.value)} ｜ 收盤 ${money(item.close)} ｜ 漲跌 ${percent(item.changePercent)}</small>
+        <small>成交金額 ${compactMoney(item.value)} ｜ 成交量 ${money(item.volume)} 股 ｜ 收盤 ${money(item.close)} ｜ 今日漲跌 ${signedMoney(item.change)} / ${percent(item.changePercent)}</small>
       </div>
       <span class="${item.recentReturn >= 0 ? "price-up" : "price-down"}">${percent(item.recentReturn)}</span>
     </article>
@@ -1580,6 +1622,7 @@ function renderTrendResults(items) {
 
   const sectors = summarizeTrendSectors(items);
   updateTrendGuide(items, sectors);
+  renderTrendSummary(displayed, sectors);
   const leader = items[0];
   const sectorLeader = sectors[0];
   els.trendAiTitle.textContent = sectorLeader ? `${sectorLeader.name} 較強` : `${leader.code} 領先`;
@@ -1593,6 +1636,27 @@ function renderTrendResults(items) {
     const rev = getRevenue(item.code);
     return { item, stock, val, rev, signal: scoreStock(stock, val, rev) };
   }));
+}
+
+function renderTrendSummary(items, sectors = summarizeTrendSectors(items)) {
+  if (!els.trendSummary) return;
+  if (!items.length) {
+    els.trendSummary.innerHTML = `
+      <span>20 檔榜單</span>
+      <strong>等待資料</strong>
+      <p>會列出成交排行前 20 檔的近月、1 日、3 日與成交金額。</p>
+    `;
+    return;
+  }
+  const upCount = items.filter((item) => item.recentReturn > 0).length;
+  const topSector = sectors[0];
+  const avgRecent = items.reduce((sum, item) => sum + (item.recentReturn || 0), 0) / items.length;
+  const avgMonth = items.reduce((sum, item) => sum + (item.monthReturn || 0), 0) / items.length;
+  els.trendSummary.innerHTML = `
+    <span>20 檔榜單</span>
+    <strong>目前顯示 ${items.length} 檔，${upCount} 檔 1 日上漲</strong>
+    <p>平均 1 日 ${percent(avgRecent)}，平均近月 ${percent(avgMonth)}。${topSector ? `最集中族群是 ${escapeHtml(topSector.name)}，共 ${topSector.count} 檔。` : ""}</p>
+  `;
 }
 
 function updateTrendGuide(items, sectors = summarizeTrendSectors(items)) {
@@ -2038,12 +2102,37 @@ function renderMarketIndex() {
   els.marketHigh.textContent = Number.isFinite(index.high) ? money(index.high) : "--";
   els.marketLow.textContent = Number.isFinite(index.low) ? money(index.low) : "--";
   els.marketPreviousClose.textContent = Number.isFinite(index.previousClose) ? money(index.previousClose) : "--";
+  renderMarketNumberDetails(index, change, changePercent);
   els.marketRealtimeStatus.textContent = hasMarketIndex
     ? `大盤：${index.source === "Yahoo" ? "美股公開行情" : "TWSE 即時指數資料"}`
     : "大盤：非即時或範例資料";
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
   drawMarketBoardChart(index.candles?.length ? index.candles : sampleIndex.candles, index, isUp);
+}
+
+function renderMarketNumberDetails(index, change, changePercent) {
+  const open = number(index.open);
+  const high = number(index.high);
+  const low = number(index.low);
+  const latest = number(index.index);
+  const previousClose = number(index.previousClose);
+  const range = Number.isFinite(high) && Number.isFinite(low) ? high - low : null;
+  const amplitude = Number.isFinite(range) && previousClose ? (range / previousClose) * 100 : null;
+  const gap = Number.isFinite(open) && previousClose ? ((open - previousClose) / previousClose) * 100 : null;
+  const intradayPosition = Number.isFinite(latest) && Number.isFinite(low) && Number.isFinite(range) && range > 0
+    ? ((latest - low) / range) * 100
+    : null;
+
+  els.marketChangePoints.textContent = signedMoney(change);
+  els.marketChangePoints.className = Number.isFinite(change) ? change >= 0 ? "price-up" : "price-down" : "";
+  els.marketChangePercent.textContent = percent(changePercent);
+  els.marketChangePercent.className = Number.isFinite(changePercent) ? changePercent >= 0 ? "price-up" : "price-down" : "";
+  els.marketRange.textContent = Number.isFinite(range) ? money(range) : "--";
+  els.marketAmplitude.textContent = Number.isFinite(amplitude) ? `振幅 ${percent(amplitude)}` : "振幅 --";
+  els.marketGap.textContent = percent(gap);
+  els.marketGap.className = Number.isFinite(gap) ? gap >= 0 ? "price-up" : "price-down" : "";
+  els.marketIntradayPosition.textContent = Number.isFinite(intradayPosition) ? `${money(intradayPosition)}%` : "--";
 }
 
 function renderMarketGroupCards(groups, fallbackGroups) {
@@ -2072,9 +2161,12 @@ function renderMarketGroupCards(groups, fallbackGroups) {
   Object.keys(labels).forEach((key) => {
     const group = groups[key] || fallbackGroups[key];
     const groupChange = number(group?.change);
+    const groupChangePercent = number(group?.changePercent);
     labelEls[key].textContent = labels[key];
     priceEls[key].textContent = Number.isFinite(group?.index) ? money(group.index) : "--";
-    metaEls[key].textContent = Number.isFinite(groupChange) ? `${groupChange > 0 ? "▲" : "▼"} ${money(Math.abs(groupChange))}` : "資料不足";
+    metaEls[key].textContent = Number.isFinite(groupChange)
+      ? `${groupChange >= 0 ? "▲" : "▼"} ${money(Math.abs(groupChange))} ｜ ${percent(groupChangePercent)}`
+      : "資料不足";
   });
 
   els.groupCards.forEach((card) => {

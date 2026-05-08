@@ -287,6 +287,43 @@ select:focus {
   font-size: 23px;
 }
 
+.market-number-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+
+.market-number-grid article {
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.market-number-grid span,
+.market-number-grid small {
+  display: block;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.market-number-grid span {
+  font-size: 13px;
+}
+
+.market-number-grid strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
+}
+
+.market-number-grid small {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
 #marketIndexChart {
   height: 360px;
 }
@@ -535,6 +572,7 @@ button.tier-tab[aria-selected="true"] {
 .trend-row,
 .ai-card,
 .trend-guide,
+.trend-summary,
 .small-cap-card {
   padding: 13px;
   border: 1px solid var(--line);
@@ -638,6 +676,34 @@ button.tier-tab[aria-selected="true"] {
 
 .trend-guide {
   background: #f7f2ea;
+}
+
+.trend-summary {
+  background: #fff;
+  box-shadow: inset 4px 0 0 var(--blue);
+}
+
+.trend-summary span,
+.trend-summary p {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.trend-summary span {
+  font-size: 13px;
+}
+
+.trend-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.trend-summary p {
+  margin-top: 6px;
 }
 
 .trend-guide strong {
@@ -2250,6 +2316,7 @@ body.chart-expanded .chart-wrap canvas {
   .market-board,
   .market-main,
   .index-metrics,
+  .market-number-grid,
   .institution-grid,
   .theme-grid,
   .trend-layout,

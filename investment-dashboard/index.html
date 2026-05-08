@@ -220,6 +220,28 @@
             <article><span>最低</span><strong id="marketLow">--</strong></article>
             <article><span>昨收</span><strong id="marketPreviousClose">--</strong></article>
           </div>
+          <div class="market-number-grid" aria-label="大盤詳細數字">
+            <article>
+              <span>漲跌點數</span>
+              <strong id="marketChangePoints">--</strong>
+              <small id="marketChangePercent">--</small>
+            </article>
+            <article>
+              <span>高低差</span>
+              <strong id="marketRange">--</strong>
+              <small id="marketAmplitude">振幅 --</small>
+            </article>
+            <article>
+              <span>開盤跳空</span>
+              <strong id="marketGap">--</strong>
+              <small>開盤對昨收</small>
+            </article>
+            <article>
+              <span>收盤位置</span>
+              <strong id="marketIntradayPosition">--</strong>
+              <small>今日區間內</small>
+            </article>
+          </div>
           <canvas id="marketIndexChart" width="980" height="360"></canvas>
         </div>
       </div>
@@ -297,6 +319,11 @@
           <article id="trendGuide" class="trend-guide">
             <strong>這張圖怎麼看</strong>
             <p>紅色前 5 名是短線強勢股；近月大漲但今天轉綠要先等回穩；同一族群多檔上榜，代表資金可能正在集中。</p>
+          </article>
+          <article id="trendSummary" class="trend-summary">
+            <span>20 檔榜單</span>
+            <strong>等待資料</strong>
+            <p>會列出成交排行前 20 檔的近月、1 日、3 日與成交金額。</p>
           </article>
           <article class="ai-card">
             <span>AI 趨勢分析</span>
