@@ -6,9 +6,83 @@
   <title>投資導航儀</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body data-view-mode="full" data-theme="light">
+  <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
+    <button id="viewModeToggle" type="button" class="toolbar-button" aria-pressed="false">
+      <span class="toolbar-label">檢視模式</span>
+      <span class="toolbar-value" id="viewModeLabel">完整</span>
+    </button>
+    <button id="themeToggle" type="button" class="toolbar-button" aria-pressed="false">
+      <span class="toolbar-label">主題</span>
+      <span class="toolbar-value" id="themeLabel">日間</span>
+    </button>
+  </div>
+
   <main class="shell">
-    <section class="hero" aria-label="投資總覽">
+    <section class="today-pnl" aria-label="今日總損益">
+      <div class="today-pnl-head">
+        <p class="eyebrow">今日損益</p>
+        <small id="todayPnlUpdatedAt">資料更新時間：尚未同步</small>
+      </div>
+      <div class="today-pnl-main">
+        <strong id="todayPnlAmount" class="today-pnl-amount">--</strong>
+        <span id="todayPnlPercent" class="today-pnl-percent">--</span>
+      </div>
+      <div class="today-pnl-meta">
+        <article>
+          <span>持有檔數</span>
+          <strong id="todayPnlCount">--</strong>
+        </article>
+        <article>
+          <span>總市值</span>
+          <strong id="todayPnlMarketValue">--</strong>
+        </article>
+        <article>
+          <span>累計損益</span>
+          <strong id="todayPnlAccumulated">--</strong>
+        </article>
+      </div>
+      <p id="todayPnlNote" class="today-pnl-note">登入並新增持股後，這裡會顯示「今天賺多少 / 賠多少」。</p>
+    </section>
+
+    <section class="quick-add-panel" aria-label="快速加入股票">
+      <div class="quick-add-head">
+        <div>
+          <p class="eyebrow">快速加入</p>
+          <h2>輸入股票代號查詢</h2>
+        </div>
+        <span class="quick-add-hint">支援代號或股票名稱</span>
+      </div>
+      <form id="quickAddForm" class="quick-add-form" autocomplete="off">
+        <div class="search-wrapper">
+          <input id="quickSymbolInput" inputmode="numeric" placeholder="例如：2330 或 台積電" autocomplete="off">
+          <div id="searchResults" class="search-results" hidden>
+            <div class="search-results-list"></div>
+          </div>
+        </div>
+        <div class="quick-form-fields">
+          <label>
+            <span>買進價</span>
+            <input id="quickCostInput" type="number" min="0" step="0.01" placeholder="可留空">
+          </label>
+          <label>
+            <span>股數</span>
+            <input id="quickSharesInput" type="number" min="0" step="1" placeholder="可留空">
+          </label>
+          <label>
+            <span>分類</span>
+            <select id="quickTypeInput">
+              <option value="holding">我的存股</option>
+              <option value="watch">觀察名單</option>
+            </select>
+          </label>
+          <button type="submit" class="quick-add-submit">加入</button>
+        </div>
+      </form>
+      <div id="quickAddedStocks" class="quick-added-stocks"></div>
+    </section>
+
+    <section class="hero advanced-section" aria-label="投資總覽">
       <div>
         <p class="eyebrow">投資導航儀</p>
         <h1>把股市線圖翻成白話訊號</h1>
@@ -21,7 +95,7 @@
       </div>
     </section>
 
-    <section class="beginner-brief" aria-label="今日新手導讀">
+    <section class="beginner-brief advanced-section" aria-label="今日新手導讀">
       <div class="panel-head">
         <div>
           <p class="eyebrow">今日新手導讀</p>
@@ -58,7 +132,7 @@
       <p id="todayConclusion" class="brief-conclusion">今日結論：等待資料更新後，會整理今天該先觀察什麼、該避開什麼。</p>
     </section>
 
-    <section id="marketScorePanel" class="market-score-panel" aria-label="今日總評分">
+    <section id="marketScorePanel" class="market-score-panel advanced-section" aria-label="今日總評分">
       <div>
         <p class="eyebrow">今日總評分</p>
         <h2 id="marketScoreTitle">等待資料</h2>
@@ -68,7 +142,7 @@
       <div id="marketScoreList" class="score-list"></div>
     </section>
 
-    <section class="summary-grid" aria-label="摘要">
+    <section class="summary-grid advanced-section" aria-label="摘要">
       <article>
         <span>追蹤股票</span>
         <strong id="watchCount">0</strong>
@@ -91,12 +165,12 @@
       </article>
     </section>
 
-    <div class="section-divider">
+    <div class="section-divider advanced-section">
       <span>第一步</span>
       <strong>先判斷今天市場能不能追</strong>
     </div>
 
-    <section id="marketTape" class="market-tape" aria-label="大盤即時資訊">
+    <section id="marketTape" class="market-tape advanced-section" aria-label="大盤即時資訊">
       <div class="market-tabs">
         <strong>大盤行情</strong>
         <button class="market-tab active" type="button" data-market="tw">台股</button>
@@ -158,12 +232,12 @@
       <p id="marketLastUpdated" class="last-updated">最後更新：尚未同步</p>
     </section>
 
-    <div class="section-divider">
+    <div class="section-divider advanced-section">
       <span>第二步</span>
       <strong>再看資金集中在哪裡</strong>
     </div>
 
-    <section class="institution-strip" aria-label="三大法人買賣超">
+    <section class="institution-strip advanced-section" aria-label="三大法人買賣超">
       <div class="institution-head">
         <div>
           <p class="eyebrow">法人籌碼</p>
@@ -209,7 +283,7 @@
       </div>
     </section>
 
-    <section id="trendPanel" class="panel trend-panel" aria-label="近期大盤漲勢集中族群">
+    <section id="trendPanel" class="panel trend-panel advanced-section" aria-label="近期大盤漲勢集中族群">
       <div class="panel-head">
         <h2>近期大盤漲勢集中族群</h2>
         <span>近一個月，每天整理一次</span>
@@ -224,7 +298,6 @@
             <strong>這張圖怎麼看</strong>
             <p>紅色前 5 名是短線強勢股；近月大漲但今天轉綠要先等回穩；同一族群多檔上榜，代表資金可能正在集中。</p>
           </article>
-          <div id="trendList" class="trend-list"></div>
           <article class="ai-card">
             <span>AI 趨勢分析</span>
             <strong id="trendAiTitle">等待資料</strong>
@@ -232,11 +305,12 @@
           </article>
         </div>
       </div>
+      <div id="trendList" class="trend-list trend-list-horizontal"></div>
       <p id="trendStatus" class="last-updated">趨勢：等待近月資料</p>
     </section>
 
     <div class="section-divider">
-      <span>第三步</span>
+      <span>管理持股</span>
       <strong>輸入自己的股票，看損益與提醒</strong>
     </div>
 
@@ -275,6 +349,11 @@
         <h2 id="authTitle">建立或登入使用者</h2>
         <p id="authStatus">登入後，持股資料會存到雲端並依使用者分開查詢。</p>
       </div>
+      <button id="googleSignInButton" type="button" class="google-signin">
+        <span class="google-icon" aria-hidden="true">G</span>
+        <span>用 Google 帳號一鍵登入</span>
+      </button>
+      <p class="auth-divider"><span>或使用 Email 登入</span></p>
       <form id="authForm" class="auth-form" autocomplete="off">
         <label>
           <span>姓名</span>
@@ -291,9 +370,12 @@
         <button id="loginButton" type="submit">登入</button>
         <button id="registerButton" class="secondary" type="button">註冊</button>
       </form>
-      <div class="auth-actions">
-        <button id="logoutButton" class="secondary" type="button">登出/鎖定</button>
-      </div>
+      <details class="auth-advanced">
+        <summary>更多帳號設定</summary>
+        <div class="auth-actions">
+          <button id="logoutButton" class="secondary" type="button">登出 / 鎖定裝置</button>
+        </div>
+      </details>
       <div class="security-notes">
         <span>安全機制</span>
         <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
@@ -336,7 +418,7 @@
       <div id="holdingNewsList" class="news-list"></div>
     </section>
 
-    <section class="panel" aria-label="市場新聞">
+    <section class="panel advanced-section" aria-label="市場新聞">
       <div class="panel-head">
         <h2>市場新聞</h2>
         <span>來源：鉅亨網，點選開原文</span>
@@ -344,29 +426,62 @@
       <div id="newsList" class="news-list"></div>
     </section>
 
-    <div class="section-divider">
+    <div class="section-divider advanced-section">
       <span>第四步</span>
       <strong>進階觀察，最後再看</strong>
     </div>
 
-    <section class="panel small-cap-panel" aria-label="小型股投資指南">
+    <section class="panel small-cap-panel advanced-section" aria-label="價位帶投資指南">
       <div class="panel-head">
-        <h2>小型股投資指南</h2>
-        <span>高波動候選，不等於買進名單</span>
+        <h2>價位帶投資指南</h2>
+        <span>三種價位的觀察名單，不等於買進名單</span>
       </div>
-      <p class="risk-banner">小型股容易快速上漲也快速回檔，這裡只做觀察名單。進場前請確認流動性、停損點與單檔部位。</p>
-      <div class="small-cap-layout">
-        <div id="smallCapList" class="small-cap-list"></div>
-        <article class="ai-card">
-          <span>AI 觀察方向</span>
-          <strong id="smallCapAiTitle">等待資料</strong>
-          <div id="smallCapAiText" class="small-cap-ai-body">正在整理低價股的營收、估值與價格表現。</div>
-        </article>
+      <p class="risk-banner">所有股票皆有風險，這裡只做觀察名單。進場前請確認流動性、停損點與單檔部位。</p>
+
+      <div class="tier-tabs" role="tablist">
+        <button type="button" class="tier-tab active" data-tier="small" role="tab" aria-selected="true">小型股 ＜ 100 元</button>
+        <button type="button" class="tier-tab" data-tier="mid" role="tab" aria-selected="false">中型股 100–300 元</button>
+        <button type="button" class="tier-tab" data-tier="large" role="tab" aria-selected="false">大型股 ≥ 300 元</button>
       </div>
-      <p id="smallCapStatus" class="last-updated">小型股：等待資料</p>
+
+      <div class="tier-panel" data-tier="small">
+        <div class="small-cap-layout">
+          <div id="smallCapList" class="small-cap-list"></div>
+          <article class="ai-card">
+            <span>AI 觀察方向</span>
+            <strong id="smallCapAiTitle">等待資料</strong>
+            <div id="smallCapAiText" class="small-cap-ai-body">正在整理百元以下股票的營收、估值與價格表現。</div>
+          </article>
+        </div>
+        <p id="smallCapStatus" class="last-updated">小型股：等待資料</p>
+      </div>
+
+      <div class="tier-panel" data-tier="mid" hidden>
+        <div class="small-cap-layout">
+          <div id="midCapList" class="small-cap-list"></div>
+          <article class="ai-card">
+            <span>AI 觀察方向</span>
+            <strong id="midCapAiTitle">等待資料</strong>
+            <div id="midCapAiText" class="small-cap-ai-body">正在整理 100–300 元股票的營收、估值與價格表現。</div>
+          </article>
+        </div>
+        <p id="midCapStatus" class="last-updated">中型股：等待資料</p>
+      </div>
+
+      <div class="tier-panel" data-tier="large" hidden>
+        <div class="small-cap-layout">
+          <div id="largeCapList" class="small-cap-list"></div>
+          <article class="ai-card">
+            <span>AI 觀察方向</span>
+            <strong id="largeCapAiTitle">等待資料</strong>
+            <div id="largeCapAiText" class="small-cap-ai-body">正在整理 300 元以上股票的營收、估值與價格表現。</div>
+          </article>
+        </div>
+        <p id="largeCapStatus" class="last-updated">大型股：等待資料</p>
+      </div>
     </section>
 
-    <section class="professional-grid" aria-label="專業檢查">
+    <section class="professional-grid advanced-section" aria-label="專業檢查">
       <section class="panel data-quality-panel" aria-label="資料可信度">
         <div class="panel-head">
           <h2>資料可信度</h2>
@@ -384,7 +499,7 @@
       </section>
     </section>
 
-    <section class="panel preflight-panel" aria-label="下單前檢查表">
+    <section class="panel preflight-panel advanced-section" aria-label="下單前檢查表">
       <div class="panel-head">
         <h2>下單前檢查表</h2>
         <span>防止新手追高或重押</span>
@@ -392,7 +507,7 @@
       <div id="preflightList" class="preflight-list"></div>
     </section>
 
-    <section class="panel discipline-panel" aria-label="我的投資紀律">
+    <section class="panel discipline-panel advanced-section" aria-label="我的投資紀律">
       <div class="panel-head">
         <h2>我的投資紀律</h2>
         <span>下單前先檢查資金與行為風險</span>
@@ -400,7 +515,7 @@
       <div id="disciplineList" class="discipline-list"></div>
     </section>
 
-    <section class="market-grid">
+    <section class="market-grid advanced-section">
       <section class="panel" aria-label="成交排行">
         <div class="panel-head">
           <h2>今日成交排名</h2>

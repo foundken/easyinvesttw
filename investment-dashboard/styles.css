@@ -3,14 +3,35 @@
   --bg: #f4f1eb;
   --panel: #fffdf8;
   --ink: #242423;
-  --muted: #6f6a61;
+  --muted: #5a554d;
   --line: #ded7cc;
-  --green: #176b55;
-  --red: #ad3032;
+  --green: #117a55;
+  --red: #c2272a;
   --amber: #b57a22;
   --blue: #2f5f8f;
   --soft: #ebe4d8;
   --shadow: 0 18px 48px rgba(58, 48, 36, 0.1);
+  --pnl-up-bg: linear-gradient(140deg, #ffe8e6, #fff5f1 70%);
+  --pnl-down-bg: linear-gradient(140deg, #e2f5ec, #f1faf3 70%);
+  --input-bg: #fff;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #16181c;
+  --panel: #20232a;
+  --ink: #f4f1eb;
+  --muted: #b6b2aa;
+  --line: #34373f;
+  --green: #4ad8a3;
+  --red: #ff7479;
+  --amber: #f0b656;
+  --blue: #6ea3d6;
+  --soft: #2a2d34;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+  --pnl-up-bg: linear-gradient(140deg, #3a1d20, #251416 70%);
+  --pnl-down-bg: linear-gradient(140deg, #143425, #0f261b 70%);
+  --input-bg: #2a2d34;
 }
 
 * {
@@ -32,6 +53,17 @@ body {
     var(--bg);
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+}
+
+/* 在「簡化模式」下才把整體字體放大（給爸爸用） */
+body[data-view-mode="simple"] {
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+/* 簡化檢視：藏起進階區塊 */
+body[data-view-mode="simple"] .advanced-section {
+  display: none !important;
 }
 
 button,
@@ -60,7 +92,24 @@ select {
   font-size: 16px;
   padding: 10px 12px;
   outline: none;
-  background: #fff;
+  background: var(--input-bg);
+  color: var(--ink);
+}
+
+/* 簡化模式才把按鈕和輸入框放大 */
+body[data-view-mode="simple"] button {
+  min-height: 50px;
+  border-radius: 10px;
+  padding: 0 20px;
+  font-size: 17px;
+}
+
+body[data-view-mode="simple"] input,
+body[data-view-mode="simple"] select {
+  min-height: 52px;
+  border-radius: 10px;
+  font-size: 17px;
+  padding: 12px 14px;
 }
 
 input:focus,
@@ -257,7 +306,7 @@ select:focus {
   border-radius: 8px;
   background: #f7f3ec;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -309,7 +358,7 @@ select:focus {
 .theme-grid span {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -366,6 +415,13 @@ select:focus {
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
   gap: 14px;
   padding-top: 14px;
+  align-items: stretch;
+}
+
+.small-cap-layout > .small-cap-list,
+.small-cap-layout > .ai-card {
+  align-self: stretch;
+  min-height: 100%;
 }
 
 .trend-layout canvas {
@@ -388,6 +444,57 @@ select:focus {
   padding-right: 6px;
 }
 
+.trend-list-horizontal {
+  margin-top: 14px;
+  max-height: none;
+  overflow-y: visible;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  padding-right: 0;
+}
+
+/* ===== 價位帶分頁 ===== */
+.tier-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 4px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+button.tier-tab {
+  flex: 1 1 auto;
+  min-width: 140px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+button.tier-tab:hover {
+  background: var(--line);
+}
+
+button.tier-tab.active,
+button.tier-tab[aria-selected="true"] {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+
+.tier-panel[hidden] {
+  display: none;
+}
+
 .trend-chart-stats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -405,7 +512,7 @@ select:focus {
 .trend-chart-stats span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -417,7 +524,8 @@ select:focus {
 
 .small-cap-list {
   display: grid;
-  max-height: 760px;
+  grid-auto-rows: max-content;
+  max-height: none;
   gap: 10px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -662,7 +770,7 @@ h2 {
 .card-meta,
 label span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -737,7 +845,7 @@ label span {
 
 .score-list span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -780,7 +888,7 @@ label span {
 
 .brief-grid span {
   color: var(--blue);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -800,7 +908,7 @@ label span {
 .brief-grid small {
   margin-top: auto;
   color: var(--blue);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -856,7 +964,7 @@ label span {
   justify-content: center;
   border-radius: 8px;
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -884,7 +992,7 @@ label span {
 
 .health-card span {
   color: var(--blue);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -903,7 +1011,7 @@ label span {
 
 .discipline-card span {
   color: var(--blue);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -975,7 +1083,7 @@ label span {
 .security-notes small {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -1048,7 +1156,7 @@ label span {
 
 .section-divider span {
   color: var(--blue);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 950;
 }
 
@@ -1123,7 +1231,7 @@ label span {
 .holding-overview-grid span {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -1239,7 +1347,7 @@ label span {
   border-radius: 999px;
   background: var(--soft);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -1302,7 +1410,7 @@ label span {
 .metric span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -1455,7 +1563,7 @@ label span {
 .detail-conclusion-card span {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -1476,7 +1584,7 @@ label span {
 .detail-summary span {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -1545,7 +1653,7 @@ label span {
 
 .chart-head span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -1599,10 +1707,464 @@ body.chart-expanded .chart-wrap canvas {
   grid-template-columns: 1fr 1fr;
 }
 
+/* ===== 頂部工具列（檢視模式 / 主題切換） ===== */
+.top-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: var(--shadow);
+}
+
+.toolbar-button .toolbar-label {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.toolbar-button .toolbar-value {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+/* ===== 今日總損益 Hero 卡片 ===== */
+.today-pnl {
+  margin-top: 14px;
+  padding: 24px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  transition: background 0.4s ease;
+}
+
+.today-pnl[data-pnl="up"] { background: var(--pnl-up-bg); }
+.today-pnl[data-pnl="down"] { background: var(--pnl-down-bg); }
+
+.today-pnl-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.today-pnl-head .eyebrow {
+  margin: 0;
+  font-size: 17px;
+}
+
+.today-pnl-head small {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.today-pnl-main {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.today-pnl-amount {
+  font-size: clamp(40px, 9vw, 64px);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: var(--ink);
+}
+
+.today-pnl-amount.price-up { color: var(--red); }
+.today-pnl-amount.price-down { color: var(--green); }
+
+.today-pnl-percent {
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 900;
+  color: var(--muted);
+}
+
+.today-pnl-percent.price-up { color: var(--red); }
+.today-pnl-percent.price-down { color: var(--green); }
+
+.today-pnl-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.today-pnl-meta article {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+}
+
+[data-theme="dark"] .today-pnl-meta article {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.today-pnl-meta article span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.today-pnl-meta article strong {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.today-pnl-meta article strong.price-up { color: var(--red); }
+.today-pnl-meta article strong.price-down { color: var(--green); }
+
+.today-pnl-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.55;
+  font-weight: 600;
+}
+
+/* ===== Google 登入 ===== */
+.google-signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid var(--line);
+  font-size: 17px;
+  font-weight: 800;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] .google-signin {
+  background: #2a2d34;
+  color: var(--ink);
+}
+
+.google-signin .google-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4285f4 0%, #34a853 35%, #fbbc05 65%, #ea4335 100%);
+  color: #fff;
+  font-weight: 900;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-advanced {
+  margin-top: 8px;
+}
+
+.auth-advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+  padding: 6px 0;
+}
+
+/* ===== 漲跌箭頭 ===== */
+.price-up::before,
+.price-down::before {
+  display: none;
+}
+
+.with-arrow.price-up::before {
+  content: "▲ ";
+}
+
+.with-arrow.price-down::before {
+  content: "▼ ";
+}
+
+/* ===== 暗黑模式微調 ===== */
+[data-theme="dark"] body {
+  background:
+    linear-gradient(140deg, rgba(110, 163, 214, 0.06), transparent 36%),
+    linear-gradient(315deg, rgba(74, 216, 163, 0.06), transparent 42%),
+    var(--bg);
+}
+
+[data-theme="dark"] .market-board,
+[data-theme="dark"] .group-card.active,
+[data-theme="dark"] .news-card,
+[data-theme="dark"] .finance-card {
+  background: var(--panel);
+}
+
+[data-theme="dark"] .group-card {
+  color: var(--ink);
+}
+
+[data-theme="dark"] .market-groups {
+  background: var(--soft);
+}
+
+[data-theme="dark"] .status-card {
+  background: #324b67;
+}
+
+/* ===== 快速加入面板 ===== */
+.quick-add-panel {
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.quick-add-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.quick-add-head h2 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--ink);
+}
+
+.quick-add-head .eyebrow {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.quick-add-hint {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.quick-add-form {
+  display: grid;
+  gap: 14px;
+}
+
+.search-wrapper {
+  position: relative;
+}
+
+.quick-add-form input[type="text"],
+.quick-add-form input[id="quickSymbolInput"] {
+  font-size: 18px;
+  padding: 12px 14px;
+}
+
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.search-results[hidden] {
+  display: none;
+}
+
+.search-results-list {
+  display: grid;
+  gap: 0;
+}
+
+.search-result-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.2s ease;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.search-result-item:last-child {
+  border-bottom: 0;
+}
+
+.search-result-item:hover {
+  background: var(--soft);
+}
+
+.search-result-info {
+  display: grid;
+  gap: 2px;
+}
+
+.search-result-code {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.search-result-name {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.search-result-price {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.quick-form-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.quick-form-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.quick-form-fields label span {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.quick-add-submit {
+  min-height: 46px;
+  padding: 0 20px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.quick-added-stocks {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.quick-stock-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+}
+
+.quick-stock-info {
+  display: grid;
+  gap: 2px;
+}
+
+.quick-stock-code {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.quick-stock-details {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.quick-stock-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.quick-stock-actions button {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 14px;
+  border-radius: 6px;
+}
+
+.quick-stock-edit {
+  background: var(--blue);
+}
+
+.quick-stock-delete {
+  background: var(--red);
+}
+
 @media (max-width: 880px) {
   .shell {
     width: calc(100% - 16px);
     padding: 10px 0 28px;
+  }
+
+  .quick-form-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .quick-add-submit {
+    grid-column: 1 / -1;
   }
 
   .hero,
@@ -1617,6 +2179,7 @@ body.chart-expanded .chart-wrap canvas {
   .market-tape,
   .institution-strip,
   .control-panel,
+  .quick-add-panel,
   .panel,
   .auth-panel,
   .market-score-panel,
@@ -1824,6 +2387,34 @@ body.chart-expanded .chart-wrap canvas {
 }
 
 @media (max-width: 520px) {
+  .top-toolbar {
+    padding: 8px 10px;
+  }
+
+  .toolbar-button {
+    padding: 0 12px;
+    min-height: 40px;
+  }
+
+  .today-pnl {
+    padding: 18px;
+  }
+
+  .today-pnl-meta {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .today-pnl-meta article {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+
+  .today-pnl-meta article strong {
+    text-align: right;
+  }
+
   .actions,
   .market-groups,
   .index-metrics {

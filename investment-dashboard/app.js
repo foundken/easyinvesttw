@@ -129,8 +129,42 @@ const els = {
   smallCapAiTitle: document.querySelector("#smallCapAiTitle"),
   smallCapAiText: document.querySelector("#smallCapAiText"),
   smallCapStatus: document.querySelector("#smallCapStatus"),
-  briefCards: document.querySelectorAll(".brief-card")
+  midCapList: document.querySelector("#midCapList"),
+  midCapAiTitle: document.querySelector("#midCapAiTitle"),
+  midCapAiText: document.querySelector("#midCapAiText"),
+  midCapStatus: document.querySelector("#midCapStatus"),
+  largeCapList: document.querySelector("#largeCapList"),
+  largeCapAiTitle: document.querySelector("#largeCapAiTitle"),
+  largeCapAiText: document.querySelector("#largeCapAiText"),
+  largeCapStatus: document.querySelector("#largeCapStatus"),
+  tierTabs: document.querySelectorAll(".tier-tab"),
+  tierPanels: document.querySelectorAll(".tier-panel"),
+  briefCards: document.querySelectorAll(".brief-card"),
+  todayPnlCard: document.querySelector(".today-pnl"),
+  todayPnlAmount: document.querySelector("#todayPnlAmount"),
+  todayPnlPercent: document.querySelector("#todayPnlPercent"),
+  todayPnlCount: document.querySelector("#todayPnlCount"),
+  todayPnlMarketValue: document.querySelector("#todayPnlMarketValue"),
+  todayPnlAccumulated: document.querySelector("#todayPnlAccumulated"),
+  todayPnlNote: document.querySelector("#todayPnlNote"),
+  todayPnlUpdatedAt: document.querySelector("#todayPnlUpdatedAt"),
+  viewModeToggle: document.querySelector("#viewModeToggle"),
+  viewModeLabel: document.querySelector("#viewModeLabel"),
+  themeToggle: document.querySelector("#themeToggle"),
+  themeLabel: document.querySelector("#themeLabel"),
+  googleSignIn: document.querySelector("#googleSignInButton"),
+  quickAddForm: document.querySelector("#quickAddForm"),
+  quickSymbolInput: document.querySelector("#quickSymbolInput"),
+  quickCostInput: document.querySelector("#quickCostInput"),
+  quickSharesInput: document.querySelector("#quickSharesInput"),
+  quickTypeInput: document.querySelector("#quickTypeInput"),
+  searchResults: document.querySelector("#searchResults"),
+  searchResultsList: document.querySelector(".search-results-list"),
+  quickAddedStocks: document.querySelector("#quickAddedStocks")
 };
+
+const VIEW_MODE_KEY = "easyinvest-view-mode";
+const THEME_KEY = "easyinvest-theme";
 
 let watchList = [];
 let cloudAuth = null;
@@ -159,6 +193,17 @@ let latestTrendItems = [];
 let smallCapRequestKey = "";
 let latestSmallCapItems = [];
 let selectedSmallCapCode = "";
+
+const TIER_CONFIG = {
+  small: { label: "小型股", min: 0, max: 100, listEl: "smallCapList", titleEl: "smallCapAiTitle", textEl: "smallCapAiText", statusEl: "smallCapStatus", emptyText: "百元以下" },
+  mid:   { label: "中型股", min: 100, max: 300, listEl: "midCapList", titleEl: "midCapAiTitle", textEl: "midCapAiText", statusEl: "midCapStatus", emptyText: "100–300 元" },
+  large: { label: "大型股", min: 300, max: Infinity, listEl: "largeCapList", titleEl: "largeCapAiTitle", textEl: "largeCapAiText", statusEl: "largeCapStatus", emptyText: "300 元以上" }
+};
+const tierState = {
+  small: { requestKey: "", items: [], selected: "" },
+  mid:   { requestKey: "", items: [], selected: "" },
+  large: { requestKey: "", items: [], selected: "" }
+};
 let refreshTimer = null;
 let marketFetchInFlight = false;
 
@@ -661,6 +706,9 @@ function normalizeNews(items) {
 function setStatus(status, time) {
   els.dataStatus.textContent = status;
   els.updatedAt.textContent = time;
+  if (els.todayPnlUpdatedAt) {
+    els.todayPnlUpdatedAt.textContent = `資料更新時間：${time || "尚未同步"}`;
+  }
 }
 
 function openBriefTarget(card) {
@@ -799,6 +847,8 @@ function render() {
   els.riskCount.textContent = tracked.filter((item) => item.signal.tone === "bad").length;
   els.sourceLabel.textContent = market.source === "sample" ? "範例" : market.source;
 
+  renderTodayPnl(holdings);
+  renderQuickAddedStocks();
   renderBeginnerBrief(ranking, tracked);
   renderMarketScore(ranking, tracked);
   renderDataQuality();
@@ -894,36 +944,42 @@ function formatStockLabel(stock) {
 }
 
 function pickBeginnerCandidate(ranking) {
-  const trendCandidate = latestTrendItems
+  const trendCandidates = latestTrendItems
     .filter((item) => Number.isFinite(item.recentReturn))
     .filter((item) => item.recentReturn > -1 && item.monthReturn > -8)
-    .sort((a, b) => {
-      const aScore = (number(a.trendScore) || 0)
-        + Math.min(Math.max(number(a.value) || 0, 0) / 1_000_000_000, 8) * 0.25
-        - (a.monthReturn > 80 ? 8 : 0)
-        - (a.recentReturn > 9 ? 4 : 0);
-      const bScore = (number(b.trendScore) || 0)
-        + Math.min(Math.max(number(b.value) || 0, 0) / 1_000_000_000, 8) * 0.25
-        - (b.monthReturn > 80 ? 8 : 0)
-        - (b.recentReturn > 9 ? 4 : 0);
-      return bScore - aScore;
-    })[0];
+    .map((item) => {
+      const score = (number(item.trendScore) || 0)
+        + Math.min(Math.max(number(item.value) || 0, 0) / 1_000_000_000, 8) * 0.08
+        - (item.monthReturn > 80 ? 8 : 0)
+        - (item.recentReturn > 9 ? 4 : 0);
+      return { item, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((entry) => entry.item);
 
-  if (trendCandidate) {
+  if (trendCandidates.length) {
+    // 用日期 + 分鐘輪替前 5 名候選，每分鐘會換一檔，當日不會跳太遠
+    const now = new Date();
+    const seed = now.getDate() * 13 + now.getHours() * 7 + now.getMinutes();
+    const trendCandidate = trendCandidates[seed % trendCandidates.length];
     return {
       stock: trendCandidate,
-      reason: "依近月趨勢、今天強弱與成交熱度挑一檔先觀察；這不是買進建議，先看是否延續。"
+      reason: `每分鐘從前 ${trendCandidates.length} 檔候選中輪替顯示一檔。依近月趨勢、今天強弱與成交熱度排序，先觀察是否延續，這不是買進建議。`
     };
   }
 
-  const rankingCandidate = ranking
+  const rankingCandidates = ranking
     .slice(0, 10)
-    .find((stock) => stock.changePercent > 0 && stock.changePercent <= 8) || ranking[0];
+    .filter((stock) => stock.changePercent > 0 && stock.changePercent <= 8);
+  const fallbackPool = rankingCandidates.length ? rankingCandidates.slice(0, 5) : ranking.slice(0, 5);
 
-  if (rankingCandidate) {
+  if (fallbackPool.length) {
+    const seed = new Date().getMinutes();
+    const rankingCandidate = fallbackPool[seed % fallbackPool.length];
     return {
       stock: rankingCandidate,
-      reason: "目前先用成交熱度挑觀察股；等近月趨勢資料算完後，這裡會再自動更新。"
+      reason: "目前先用成交熱度挑觀察股；趨勢資料算完後，這裡會自動換成近月走勢挑選。"
     };
   }
 
@@ -1150,6 +1206,93 @@ function holdingMetrics(entry) {
   return { cost, shares, marketValue, costValue, pnl, pnlRate, yearlyDividend };
 }
 
+function renderTodayPnl(holdings) {
+  if (!els.todayPnlAmount) return;
+
+  const valid = holdings
+    .map((entry) => ({ entry, m: holdingMetrics(entry) }))
+    .filter(({ entry, m }) => entry.stock && Number.isFinite(m.shares) && m.shares > 0);
+
+  // 今日損益 = sum(stock.change × shares)
+  let todayPnl = null;
+  let priorMarketValue = 0;
+  let totalMarketValue = 0;
+  let cumulativePnl = 0;
+  let hasPriorPrice = false;
+
+  valid.forEach(({ entry, m }) => {
+    const shares = m.shares;
+    const close = entry.stock.close;
+    const change = Number.isFinite(entry.stock.change) ? entry.stock.change : null;
+    if (Number.isFinite(close)) totalMarketValue += close * shares;
+    if (Number.isFinite(change)) {
+      todayPnl = (todayPnl || 0) + change * shares;
+      const prior = (close - change) * shares;
+      if (Number.isFinite(prior)) {
+        priorMarketValue += prior;
+        hasPriorPrice = true;
+      }
+    }
+    if (Number.isFinite(m.pnl)) cumulativePnl += m.pnl;
+  });
+
+  const todayPct = (todayPnl !== null && hasPriorPrice && priorMarketValue > 0)
+    ? (todayPnl / priorMarketValue) * 100
+    : null;
+
+  // 顯示金額
+  if (todayPnl === null) {
+    els.todayPnlAmount.textContent = valid.length ? "今日資料尚未公布" : "尚未新增持股";
+    els.todayPnlAmount.className = "today-pnl-amount";
+    els.todayPnlPercent.textContent = "--";
+    els.todayPnlPercent.className = "today-pnl-percent";
+    if (els.todayPnlCard) els.todayPnlCard.removeAttribute("data-pnl");
+  } else {
+    const sign = todayPnl > 0 ? "+" : "";
+    const arrow = todayPnl > 0 ? "▲ " : todayPnl < 0 ? "▼ " : "";
+    els.todayPnlAmount.textContent = `${arrow}${sign}${money(todayPnl)} 元`;
+    els.todayPnlAmount.className = `today-pnl-amount ${todayPnl > 0 ? "price-up" : todayPnl < 0 ? "price-down" : ""}`;
+    if (todayPct !== null) {
+      els.todayPnlPercent.textContent = `(${todayPct > 0 ? "+" : ""}${money(todayPct)}%)`;
+      els.todayPnlPercent.className = `today-pnl-percent ${todayPct > 0 ? "price-up" : todayPct < 0 ? "price-down" : ""}`;
+    } else {
+      els.todayPnlPercent.textContent = "";
+    }
+    if (els.todayPnlCard) {
+      els.todayPnlCard.setAttribute("data-pnl", todayPnl > 0 ? "up" : todayPnl < 0 ? "down" : "flat");
+    }
+  }
+
+  // Meta 區
+  els.todayPnlCount.textContent = valid.length ? `${valid.length} 檔` : "--";
+  els.todayPnlMarketValue.textContent = totalMarketValue ? compactMoney(totalMarketValue) : "--";
+
+  if (cumulativePnl !== 0) {
+    const sign = cumulativePnl > 0 ? "+" : "";
+    const arrow = cumulativePnl > 0 ? "▲ " : cumulativePnl < 0 ? "▼ " : "";
+    els.todayPnlAccumulated.textContent = `${arrow}${sign}${compactMoney(cumulativePnl)}`;
+    els.todayPnlAccumulated.className = cumulativePnl > 0 ? "price-up" : "price-down";
+  } else {
+    els.todayPnlAccumulated.textContent = valid.length ? "--" : "--";
+    els.todayPnlAccumulated.className = "";
+  }
+
+  // 提示文字
+  if (!holdings.length) {
+    els.todayPnlNote.textContent = "尚未新增持股，到下方「加入追蹤」輸入股票代號和股數即可。";
+  } else if (!valid.length) {
+    els.todayPnlNote.textContent = "持股還沒填股數，補上後就能算出每天的損益。";
+  } else if (todayPnl === null) {
+    els.todayPnlNote.textContent = "等收盤資料更新後，這裡會顯示今天賺多少 / 賠多少。";
+  } else if (todayPnl > 0) {
+    els.todayPnlNote.textContent = "今天整體上漲，記得不要追高，可以順手檢查一下停利點。";
+  } else if (todayPnl < 0) {
+    els.todayPnlNote.textContent = "今天整體下跌屬正常，先看是大盤拖累還是個股問題，再決定動作。";
+  } else {
+    els.todayPnlNote.textContent = "今天整體持平，慢慢等資料更新即可。";
+  }
+}
+
 function renderHoldingOverview(holdings) {
   if (!els.holdingOverview) return;
   if (!holdings.length) {
@@ -1184,20 +1327,20 @@ function renderHoldingOverview(holdings) {
     ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
     ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
     ["獲利 / 虧損", `${profitable.length} / ${losing.length} 檔`, ""],
-    ["最大獲利股", best ? `${best.item.code} ${compactMoney(best.metrics.pnl)}` : "--", "price-up"],
-    ["最大虧損股", worst ? `${worst.item.code} ${compactMoney(worst.metrics.pnl)}` : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
+    ["最大獲利股", best ? `${escapeHtml(best.item.code)} ${compactMoney(best.metrics.pnl)}` : "--", "price-up"],
+    ["最大虧損股", worst ? `${escapeHtml(worst.item.code)} ${compactMoney(worst.metrics.pnl)}` : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
   ];
 
   els.holdingOverview.innerHTML = `
     <div class="holding-overview-grid">
       ${cards.map(([label, value, tone]) => `
         <article>
-          <span>${label}</span>
-          <strong class="${tone}">${value}</strong>
+          <span>${escapeHtml(label)}</span>
+          <strong class="${escapeHtml(tone)}">${value}</strong>
         </article>
       `).join("")}
     </div>
-    <p class="holding-overview-note">${aiTone}</p>
+    <p class="holding-overview-note">${escapeHtml(aiTone)}</p>
   `;
 }
 
@@ -1618,8 +1761,24 @@ function drawTrendChart(items) {
 }
 
 async function renderSmallCapGuide() {
+  await Promise.all([
+    renderTierGuide("small"),
+    renderTierGuide("mid"),
+    renderTierGuide("large")
+  ]);
+}
+
+async function renderTierGuide(tier) {
+  const cfg = TIER_CONFIG[tier];
+  const state = tierState[tier];
+  const listEl = els[cfg.listEl];
+  const titleEl = els[cfg.titleEl];
+  const textEl = els[cfg.textEl];
+  const statusEl = els[cfg.statusEl];
+  if (!listEl) return;
+
   const baseCandidates = market.daily
-    .filter((stock) => stock.close > 0 && stock.close < 100 && /^\d{4}$/.test(stock.code) && inferSector(stock) !== "ETF")
+    .filter((stock) => stock.close >= cfg.min && stock.close < cfg.max && /^\d{4}$/.test(stock.code) && inferSector(stock) !== "ETF")
     .map((stock) => {
       const val = getValuation(stock.code);
       const rev = getRevenue(stock.code);
@@ -1638,30 +1797,37 @@ async function renderSmallCapGuide() {
   const key = baseCandidates.map((item) => item.stock.code).join(",");
 
   if (!key) {
-    latestSmallCapItems = [];
-    selectedSmallCapCode = "";
-    els.smallCapList.innerHTML = '<p class="empty">目前沒有找到 100 元以下且資料足夠的候選股。</p>';
-    els.smallCapAiTitle.textContent = "等待資料";
-    els.smallCapAiText.textContent = "小型股需要更重視流動性與停損，等待資料更新後再判讀。";
-    els.smallCapStatus.textContent = "小型股：等待資料";
+    state.items = [];
+    state.selected = "";
+    listEl.innerHTML = `<p class="empty">目前沒有找到 ${cfg.emptyText}且資料足夠的候選股。</p>`;
+    titleEl.textContent = "等待資料";
+    textEl.textContent = `${cfg.label}需要重視流動性與停損，等待資料更新後再判讀。`;
+    statusEl.textContent = `${cfg.label}：等待資料`;
     return;
   }
-  if (smallCapRequestKey === key && latestSmallCapItems.length) return;
+  if (state.requestKey === key && state.items.length) return;
 
-  smallCapRequestKey = key;
-  els.smallCapStatus.textContent = "小型股：正在分析近月表現";
-  els.smallCapList.innerHTML = '<p class="empty">正在篩選 100 元以下、營收與價格表現較佳的股票...</p>';
+  state.requestKey = key;
+  statusEl.textContent = `${cfg.label}：正在分析近月表現`;
+  listEl.innerHTML = `<p class="empty">正在篩選 ${cfg.emptyText}、營收與價格表現較佳的股票...</p>`;
 
   const items = await Promise.all(baseCandidates.map(async ({ stock, val, rev, inst, qualityScore }) => {
     const history = await fetchHistory(stock.code);
     return buildSmallCapItem(stock, val, rev, inst, qualityScore, history);
   }));
-  if (smallCapRequestKey !== key) return;
+  if (state.requestKey !== key) return;
 
-  latestSmallCapItems = items.filter(Boolean)
+  state.items = items.filter(Boolean)
     .sort((a, b) => b.score - a.score)
     .slice(0, 20);
-  renderSmallCapResults(latestSmallCapItems);
+
+  // 同步舊變數（小型股保留向後相容）
+  if (tier === "small") {
+    smallCapRequestKey = key;
+    latestSmallCapItems = state.items;
+    selectedSmallCapCode = state.selected;
+  }
+  renderTierResults(tier, state.items);
 }
 
 function buildSmallCapItem(stock, val, rev, inst, qualityScore, history) {
@@ -1688,16 +1854,23 @@ function buildSmallCapItem(stock, val, rev, inst, qualityScore, history) {
   };
 }
 
-function renderSmallCapResults(items) {
+function renderTierResults(tier, items) {
+  const cfg = TIER_CONFIG[tier];
+  const state = tierState[tier];
+  const listEl = els[cfg.listEl];
+  const titleEl = els[cfg.titleEl];
+  const textEl = els[cfg.textEl];
+  const statusEl = els[cfg.statusEl];
+
   if (!items.length) {
-    els.smallCapList.innerHTML = '<p class="empty">沒有符合「營收與價格表現都偏好」的 100 元以下候選。</p>';
-    els.smallCapAiTitle.textContent = "暫無候選";
-    els.smallCapAiText.textContent = "低價股波動較大，沒有好訊號時寧可等待。";
-    els.smallCapStatus.textContent = "小型股：沒有足夠候選";
+    listEl.innerHTML = `<p class="empty">沒有符合「營收與價格表現都偏好」的 ${cfg.emptyText}候選。</p>`;
+    titleEl.textContent = "暫無候選";
+    textEl.textContent = `${cfg.label}沒有好訊號時寧可等待。`;
+    statusEl.textContent = `${cfg.label}：沒有足夠候選`;
     return;
   }
 
-  els.smallCapList.innerHTML = items.map((item, index) => `
+  listEl.innerHTML = items.map((item, index) => `
     <article class="small-cap-card" data-code="${escapeHtml(item.stock.code)}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(item.stock.code)} ${escapeHtml(item.stock.name)} 觀察建議">
       <div class="small-cap-head">
         <div>
@@ -1711,11 +1884,12 @@ function renderSmallCapResults(items) {
     </article>
   `).join("");
 
-  els.smallCapList.querySelectorAll(".small-cap-card").forEach((card) => {
+  listEl.querySelectorAll(".small-cap-card").forEach((card) => {
     const select = () => {
-      selectedSmallCapCode = card.dataset.code;
-      const selected = items.find((item) => item.stock.code === selectedSmallCapCode);
-      if (selected) renderSmallCapSelection(selected, items.indexOf(selected) + 1);
+      state.selected = card.dataset.code;
+      if (tier === "small") selectedSmallCapCode = state.selected;
+      const selected = items.find((item) => item.stock.code === state.selected);
+      if (selected) renderTierSelection(tier, selected, items.indexOf(selected) + 1);
     };
     card.addEventListener("click", select);
     card.addEventListener("keydown", (event) => {
@@ -1726,14 +1900,20 @@ function renderSmallCapResults(items) {
     });
   });
 
-  const selected = items.find((item) => item.stock.code === selectedSmallCapCode) || items[0];
-  selectedSmallCapCode = selected.stock.code;
-  renderSmallCapSelection(selected, items.indexOf(selected) + 1);
-  els.smallCapStatus.textContent = `小型股：已篩選 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
+  const selected = items.find((item) => item.stock.code === state.selected) || items[0];
+  state.selected = selected.stock.code;
+  if (tier === "small") selectedSmallCapCode = state.selected;
+  renderTierSelection(tier, selected, items.indexOf(selected) + 1);
+  statusEl.textContent = `${cfg.label}：已篩選 ${items.length} 檔，最後更新 ${new Date().toLocaleString("zh-TW")}`;
 }
 
-function renderSmallCapSelection(item, rank) {
-  els.smallCapList.querySelectorAll(".small-cap-card").forEach((card) => {
+function renderTierSelection(tier, item, rank) {
+  const cfg = TIER_CONFIG[tier];
+  const listEl = els[cfg.listEl];
+  const titleEl = els[cfg.titleEl];
+  const textEl = els[cfg.textEl];
+
+  listEl.querySelectorAll(".small-cap-card").forEach((card) => {
     card.classList.toggle("active", card.dataset.code === item.stock.code);
   });
 
@@ -1749,7 +1929,6 @@ function renderSmallCapSelection(item, rank) {
   const strengths = [];
   const cautions = [];
 
-  if (item.stock.close < 100) strengths.push(`股價 ${money(item.stock.close)} 元，符合百元以下候選`);
   if (item.monthReturn > 0) strengths.push(`近月 ${percent(item.monthReturn)}，價格有轉強跡象`);
   if (item.recentReturn > 0) strengths.push(`近 3 日 ${percent(item.recentReturn)}，短線仍有買盤`);
   if (item.rev?.yoy > 0) strengths.push(`月營收年增 ${percent(item.rev.yoy)}，基本面沒有明顯轉弱`);
@@ -1775,22 +1954,28 @@ function renderSmallCapSelection(item, rank) {
     "若買進理由只是「便宜」或「排名很前面」，風險不夠清楚。"
   ];
 
-  els.smallCapAiTitle.textContent = `${rank}. ${item.stock.code} ${item.stock.name}：${decision.label}，風險 ${risk.label}`;
-  els.smallCapAiText.innerHTML = `
+  if (item.stock.close >= cfg.min && (cfg.max === Infinity || item.stock.close < cfg.max)) {
+    const range = cfg.max === Infinity ? `${cfg.min} 元以上` : `${cfg.min}–${cfg.max} 元`;
+    if (cfg.min === 0) strengths.push(`股價 ${money(item.stock.close)} 元，符合${cfg.emptyText}候選`);
+    else strengths.push(`股價 ${money(item.stock.close)} 元，符合 ${range} ${cfg.label}範圍`);
+  }
+
+  titleEl.textContent = `${rank}. ${item.stock.code} ${item.stock.name}：${decision.label}，風險 ${risk.label}`;
+  textEl.innerHTML = `
     <section>
       <strong>為什麼會上榜</strong>
       <ul>${(strengths.length ? strengths : ["目前主要靠價格與成交熱度入榜，基本面訊號還需要更多資料確認。"]).map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
     </section>
     <section>
       <strong>需要小心</strong>
-      <ul>${(cautions.length ? cautions : ["暫無明顯警訊，但小型股仍要注意流動性與波動。"]).map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
+      <ul>${(cautions.length ? cautions : [`暫無明顯警訊，但${cfg.label}仍要注意流動性與波動。`]).map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
     </section>
     <section>
       <strong>觀察建議</strong>
       <p>${escapeHtml(decision.text)} ${escapeHtml(risk.text)}。${escapeHtml(smallCapAdvice(item))}</p>
     </section>
     <section>
-      <strong>小型股保護指標</strong>
+      <strong>${cfg.label}保護指標</strong>
       <ul>
         <li>流動性：${escapeHtml(liquidity)}。${escapeHtml(volumeProtection)}</li>
         <li>急漲檢查：${escapeHtml(surgeProtection)}</li>
@@ -2134,8 +2319,10 @@ function renderHoldingNews(tracked) {
     .flatMap((entry) => [entry.item.code, entry.stock?.name])
     .filter(Boolean);
   const news = market.news?.length ? market.news : sampleNews;
-  const matched = news.filter((item) => keywords.some((keyword) => item.title.includes(keyword))).slice(0, 6);
-  const fallback = tracked.slice(0, 4).map((entry) => {
+  const isSimple = document.body?.dataset?.viewMode === "simple";
+  const limit = isSimple ? 3 : 6;
+  const matched = news.filter((item) => keywords.some((keyword) => item.title.includes(keyword))).slice(0, limit);
+  const fallback = tracked.slice(0, isSimple ? 2 : 4).map((entry) => {
     const stock = entry.stock;
     const inst = getInstitutional(entry.item.code);
     return {
@@ -2636,6 +2823,200 @@ function renderFinance(tracked) {
   }).join("");
 }
 
+// ===== 快速加入股票搜尋功能 =====
+const stockNameMap = {
+  "0050": "元大台灣50", "0056": "元大高股息", "2330": "台積電", "2317": "鴻海",
+  "2412": "中華電", "1216": "統一", "1301": "國建", "1303": "南亞", "1326": "麗寶",
+  "1402": "中華紙", "1435": "中磊", "1476": "儒鴻", "1477": "聚陽", "1590": "亞德客",
+  "1603": "華電", "1722": "技嘉", "1723": "中碩", "1795": "美食KY", "1909": "榮剛",
+  "2002": "中鋼", "2014": "中華電", "2015": "豐興", "2016": "南亞科", "2018": "第一銅",
+  "2022": "聯鈺", "2023": "燿華", "2024": "志聯", "2025": "千晶", "2026": "銘異",
+  "2027": "三大", "2028": "威健", "2029": "盛智", "2030": "光寶科", "2031": "晶碩",
+  "2032": "新麥", "2033": "佳大", "2034": "允德", "2035": "光磊", "2036": "智易",
+  "2037": "微星", "2038": "海光", "2039": "欣天然", "2040": "愛德利", "2308": "台達電",
+  "2454": "聯發科", "2881": "富邦金"
+};
+
+let allStocksCache = null;
+
+async function getAvailableStocks() {
+  if (allStocksCache) return allStocksCache;
+  try {
+    const response = await fetch(endpoints.bundle);
+    const data = await response.json();
+    if (data && data.daily && data.daily.length > 0) {
+      allStocksCache = data.daily.map(q => ({
+        code: q.code,
+        name: q.name || stockNameMap[q.code] || "",
+        price: q.close || q.price || "--"
+      }));
+      return allStocksCache;
+    }
+  } catch (err) {
+    console.error("無法載入股票清單:", err);
+  }
+  return Object.entries(stockNameMap).map(([code, name]) => ({
+    code, name, price: "--"
+  }));
+}
+
+async function searchStocks(query) {
+  if (!query || query.length < 1) return [];
+  const stocks = await getAvailableStocks();
+  const lowerQuery = query.toLowerCase();
+  return stocks.filter(stock =>
+    stock.code.includes(query) || stock.name.toLowerCase().includes(lowerQuery)
+  ).slice(0, 8);
+}
+
+function renderSearchResults(results) {
+  const list = els.searchResultsList;
+  list.innerHTML = "";
+  if (results.length === 0) {
+    const noResult = document.createElement("div");
+    noResult.className = "search-result-item";
+    noResult.textContent = "沒有找到相符的股票";
+    noResult.style.pointerEvents = "none";
+    noResult.style.color = "var(--muted)";
+    list.appendChild(noResult);
+    return;
+  }
+  results.forEach(stock => {
+    const item = document.createElement("div");
+    item.className = "search-result-item";
+    const info = document.createElement("div");
+    info.className = "search-result-info";
+    const code = document.createElement("div");
+    code.className = "search-result-code";
+    code.textContent = `${stock.code} ${stock.name}`;
+    info.appendChild(code);
+    const price = document.createElement("div");
+    price.className = "search-result-price";
+    price.textContent = stock.price !== "--" ? `$${stock.price}` : "查詢中...";
+    item.appendChild(info);
+    item.appendChild(price);
+    item.addEventListener("click", () => {
+      els.quickSymbolInput.value = stock.code;
+      els.searchResults.hidden = true;
+      els.quickCostInput.focus();
+    });
+    list.appendChild(item);
+  });
+}
+
+els.quickSymbolInput.addEventListener("input", async (e) => {
+  const query = e.target.value.trim();
+  if (query.length === 0) {
+    els.searchResults.hidden = true;
+    return;
+  }
+  const results = await searchStocks(query);
+  if (results.length > 0) {
+    renderSearchResults(results);
+    els.searchResults.hidden = false;
+  } else {
+    els.searchResults.hidden = true;
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".search-wrapper")) {
+    els.searchResults.hidden = true;
+  }
+});
+
+function renderQuickAddedStocks() {
+  const container = els.quickAddedStocks;
+  const recentStocks = watchList.slice(-5);
+  if (recentStocks.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = '<p style="color: var(--muted); font-size: 14px; font-weight: 700; margin: 10px 0 8px 0;">已加入的股票：</p>';
+  recentStocks.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "quick-stock-item";
+    const info = document.createElement("div");
+    info.className = "quick-stock-info";
+    const codeEl = document.createElement("div");
+    codeEl.className = "quick-stock-code";
+    codeEl.textContent = item.code;
+    info.appendChild(codeEl);
+    let details = "";
+    if (item.cost) details += `買進：$${item.cost}`;
+    if (item.shares) details += (details ? " | " : "") + `股數：${item.shares}`;
+    if (!details) details = item.type === "holding" ? "我的存股" : "觀察名單";
+    const detailEl = document.createElement("div");
+    detailEl.className = "quick-stock-details";
+    detailEl.textContent = details;
+    info.appendChild(detailEl);
+    const actions = document.createElement("div");
+    actions.className = "quick-stock-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "quick-stock-edit";
+    editBtn.textContent = "編輯";
+    editBtn.addEventListener("click", () => {
+      els.quickSymbolInput.value = item.code;
+      els.quickCostInput.value = item.cost;
+      els.quickSharesInput.value = item.shares;
+      els.quickTypeInput.value = item.type;
+      els.quickSymbolInput.focus();
+      els.quickSymbolInput.scrollIntoView({ behavior: "smooth" });
+    });
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "quick-stock-delete";
+    deleteBtn.textContent = "刪除";
+    deleteBtn.addEventListener("click", () => {
+      if (confirm(`確定要刪除 ${item.code} 嗎？`)) {
+        watchList = watchList.filter((entry) => entry.code !== item.code);
+        saveWatchList();
+        renderQuickAddedStocks();
+        render();
+      }
+    });
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+    card.appendChild(info);
+    card.appendChild(actions);
+    container.appendChild(card);
+  });
+}
+
+els.quickAddForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (cloudEnabled && !currentUser) {
+    setAuthStatus("請先登入，持股資料才會同步到你的雲端帳號。", true);
+    return;
+  }
+  const code = els.quickSymbolInput.value.trim();
+  if (!/^\d{4,6}$/.test(code)) {
+    alert("請輸入正確的股票代號（4-6 碼數字）");
+    return;
+  }
+  const existing = watchList.find((item) => item.code === code);
+  if (existing) {
+    existing.cost = els.quickCostInput.value;
+    existing.shares = els.quickSharesInput.value;
+    existing.type = els.quickTypeInput.value;
+  } else {
+    watchList.push({
+      code,
+      cost: els.quickCostInput.value,
+      shares: els.quickSharesInput.value,
+      type: els.quickTypeInput.value,
+    });
+  }
+  saveWatchList();
+  els.quickAddForm.reset();
+  els.searchResults.hidden = true;
+  renderQuickAddedStocks();
+  render();
+});
+
+renderQuickAddedStocks();
+
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
   if (cloudEnabled && !currentUser) {
@@ -2808,7 +3189,117 @@ els.demo.addEventListener("click", () => {
   render();
 });
 
+// ===== 檢視模式切換（簡化 / 完整） =====
+function applyViewMode(mode) {
+  const next = mode === "full" ? "full" : "simple";
+  document.body.dataset.viewMode = next;
+  if (els.viewModeLabel) {
+    els.viewModeLabel.textContent = next === "simple" ? "簡化" : "完整";
+  }
+  if (els.viewModeToggle) {
+    els.viewModeToggle.setAttribute("aria-pressed", next === "simple" ? "true" : "false");
+  }
+  try { localStorage.setItem(VIEW_MODE_KEY, next); } catch {}
+}
+
+function initViewMode() {
+  let saved = "full";
+  try { saved = localStorage.getItem(VIEW_MODE_KEY) || "full"; } catch {}
+  applyViewMode(saved);
+  if (els.viewModeToggle) {
+    els.viewModeToggle.addEventListener("click", () => {
+      const current = document.body.dataset.viewMode || "simple";
+      applyViewMode(current === "simple" ? "full" : "simple");
+    });
+  }
+}
+
+// ===== 主題切換（日間 / 夜間） =====
+function applyTheme(theme) {
+  const next = theme === "dark" ? "dark" : "light";
+  document.body.dataset.theme = next;
+  document.documentElement.dataset.theme = next;
+  if (els.themeLabel) {
+    els.themeLabel.textContent = next === "dark" ? "夜間" : "日間";
+  }
+  if (els.themeToggle) {
+    els.themeToggle.setAttribute("aria-pressed", next === "dark" ? "true" : "false");
+  }
+  try { localStorage.setItem(THEME_KEY, next); } catch {}
+}
+
+function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem(THEME_KEY); } catch {}
+  // 沒儲存過就跟隨系統設定
+  if (!saved && window.matchMedia) {
+    saved = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  applyTheme(saved || "light");
+  if (els.themeToggle) {
+    els.themeToggle.addEventListener("click", () => {
+      const current = document.body.dataset.theme || "light";
+      applyTheme(current === "dark" ? "light" : "dark");
+    });
+  }
+}
+
+// ===== Google 登入 =====
+function initGoogleSignIn() {
+  if (!els.googleSignIn) return;
+  els.googleSignIn.addEventListener("click", async () => {
+    if (!cloudEnabled || !cloudAuth) {
+      setAuthStatus("尚未設定 Firebase，無法使用 Google 登入。", true);
+      return;
+    }
+    try {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const credential = await cloudAuth.signInWithPopup(provider);
+      currentUser = credential.user;
+      setAuthStatus(`已用 Google 登入：${currentUser.email || currentUser.displayName || ""}`);
+      updateAuthUi();
+      await loadCloudWatchList();
+    } catch (error) {
+      // 行動裝置 popup 被擋時改用 redirect
+      if (error?.code === "auth/popup-blocked" || error?.code === "auth/operation-not-supported-in-this-environment") {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account" });
+          await cloudAuth.signInWithRedirect(provider);
+          return;
+        } catch (redirectError) {
+          setAuthStatus(`Google 登入失敗：${redirectError.message}`, true);
+          return;
+        }
+      }
+      setAuthStatus(`Google 登入失敗：${error.message}`, true);
+    }
+  });
+}
+
+function initTierTabs() {
+  if (!els.tierTabs?.length) return;
+  els.tierTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.tier;
+      els.tierTabs.forEach((t) => {
+        const active = t.dataset.tier === target;
+        t.classList.toggle("active", active);
+        t.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      els.tierPanels.forEach((panel) => {
+        panel.hidden = panel.dataset.tier !== target;
+      });
+    });
+  });
+}
+
 async function initApp() {
+  initViewMode();
+  initTheme();
+  initGoogleSignIn();
+  initTierTabs();
   await initCloudAuth();
   if (!cloudEnabled || !currentUser) {
     watchList = loadWatchList();
