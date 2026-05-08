@@ -122,6 +122,76 @@ async function fetchFugleActiveRanking() {
     .slice(0, 80);
 }
 
+async function fetchFugleIndex(symbol = "IR0001") {
+  const apiKey = process.env.FUGLE_API_KEY;
+  if (!apiKey) throw new Error("Fugle API key missing");
+
+  const [quote, candlesPayload, ticker, groups] = await Promise.all([
+    fetchFugleJson(`/intraday/quote/${symbol}`).catch(() => null),
+    fetchFugleJson(`/intraday/candles/${symbol}?timeframe=1&sort=asc`).catch(() => null),
+    fetchFugleJson(`/intraday/ticker/${symbol}`).catch(() => null),
+    fetchTwseIndexGroups(1800).catch(() => ({}))
+  ]);
+  const candles = rowsFromFuglePayload(candlesPayload).map((row) => ({
+    date: row.date,
+    open: toNumber(row.open),
+    high: toNumber(row.high),
+    low: toNumber(row.low),
+    close: toNumber(row.close),
+    volume: toNumber(row.volume)
+  })).filter((row) => Number.isFinite(row.close));
+  const latestCandle = candles.at(-1);
+  const currentIndex = toNumber(quote?.index ?? quote?.closePrice ?? quote?.lastPrice ?? quote?.close) || latestCandle?.close;
+  const previousClose = toNumber(quote?.previousClose ?? quote?.referencePrice ?? ticker?.previousClose ?? ticker?.referencePrice);
+  const change = toNumber(quote?.change) ?? (Number.isFinite(currentIndex) && Number.isFinite(previousClose) ? currentIndex - previousClose : null);
+  const changePercent = toNumber(quote?.changePercent) ?? (Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null);
+
+  if (!Number.isFinite(currentIndex)) {
+    throw new Error("Fugle index empty");
+  }
+
+  const { listed, ...sideGroups } = groups;
+
+  return {
+    name: quote?.name || ticker?.name || "發行量加權股價指數",
+    symbol,
+    index: currentIndex,
+    previousClose,
+    open: toNumber(quote?.openPrice ?? quote?.open) || candles[0]?.open || candles[0]?.close,
+    high: toNumber(quote?.highPrice ?? quote?.high) || maxBy(candles, "high") || maxBy(candles, "close"),
+    low: toNumber(quote?.lowPrice ?? quote?.low) || minBy(candles, "low") || minBy(candles, "close"),
+    turnover: normalizeFugleIndexTurnover(quote, candles),
+    change,
+    changePercent,
+    source: "Fugle",
+    lastUpdated: quote?.closeTime || quote?.lastUpdated || latestCandle?.date || quote?.date || new Date().toISOString(),
+    candles,
+    groups: sideGroups
+  };
+}
+
+async function fetchFugleJson(path) {
+  const apiKey = process.env.FUGLE_API_KEY;
+  if (!apiKey) throw new Error("Fugle API key missing");
+  const response = await fetchWithTimeout(`${FUGLE_BASE}${path}`, {
+    headers: {
+      accept: "application/json",
+      "X-API-KEY": apiKey
+    }
+  }, 4500);
+  if (!response.ok) {
+    throw new Error(`Fugle request failed: ${path}`);
+  }
+  return response.json();
+}
+
+function normalizeFugleIndexTurnover(quote, candles) {
+  const direct = toNumber(quote?.total?.tradeValue ?? quote?.tradeValue ?? quote?.turnover);
+  if (Number.isFinite(direct)) return direct > 1000000 ? direct / 100000000 : direct;
+  const sum = candles.reduce((total, row) => total + (row.volume || 0), 0);
+  return sum > 1000000 ? sum / 100000000 : null;
+}
+
 function rowsFromFuglePayload(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -203,7 +273,7 @@ async function fetchTwseIndex() {
   };
 }
 
-async function fetchTwseIndexGroups() {
+async function fetchTwseIndexGroups(timeoutMs = 5000) {
   const symbols = [
     ["listed", "tse_t00.tw", "發行量加權股價指數"],
     ["otc", "otc_o00.tw", "上櫃指數"],
@@ -212,13 +282,13 @@ async function fetchTwseIndexGroups() {
   ];
   const exCh = symbols.map((item) => item[1]).join("|");
   const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0&_=${Date.now()}`;
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       accept: "application/json",
       referer: "https://mis.twse.com.tw/stock/index.jsp",
       "cache-control": "no-cache"
     }
-  });
+  }, timeoutMs);
   if (!response.ok) return {};
   const payload = await response.json();
   const rows = payload.msgArray || [];
@@ -652,6 +722,19 @@ async function fetchJson(path) {
   return response.json();
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function safeFetchJson(path) {
   try {
     return await fetchJson(path);
@@ -677,6 +760,14 @@ async function safeFetchFugleActiveRanking() {
 }
 
 async function safeFetchTwseIndex() {
+  try {
+    const index = await fetchFugleIndex();
+    if (Number.isFinite(toNumber(index?.index))) return index;
+    throw new Error("Fugle index empty");
+  } catch {
+    // Keep the public dashboard alive when Fugle REST is unavailable.
+  }
+
   try {
     const index = await fetchTwseIndex();
     if (Number.isFinite(toNumber(index?.index))) return index;

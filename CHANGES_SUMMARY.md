@@ -1,5 +1,45 @@
 # 代碼改動摘要
 
+## 2026-05-08 網站資料連線與大盤圖表修復
+
+### 問題
+- Firebase Hosting 網站 `https://easyinvesttw.web.app` 的台股大盤區塊顯示「資料未連線」。
+- API 曾回傳 `{"ok":false,"error":"safeFetchFugleActiveRanking is not defined"}`，導致整包儀表板資料失敗。
+- 台股大盤資料先前在 TWSE 抓不到時沒有備援來源，容易造成前端空資料。
+- 大盤圖表右側的最新價、昨收與刻度標籤重疊，影響閱讀。
+
+### 已修正
+- `functions/index.js`
+  - 補上 `safeFetchFugleActiveRanking()`，Fugle 成交排行失敗時回傳空陣列，不再讓 API 整包失敗。
+  - 新增 `fetchFugleIndex()`，優先嘗試 Fugle REST `IR0001` 指數 quote/candles 作為上市加權指數主來源。
+  - Fugle REST 指數失敗時，仍會依序 fallback 到 TWSE 與 Yahoo `^TWII`，避免網站再次顯示整包未連線。
+  - Fugle 主指數旁的 TWSE 群組資料加上短 timeout，避免上櫃/電子/金融卡片拖慢上市主指數顯示。
+  - `safeFetchTwseIndex()` 加入 Yahoo `^TWII` 備援，TWSE 指數資料為空或失敗時仍可取得台股大盤。
+
+- `investment-dashboard/app.js`
+  - 台股大盤不再用範例資料假裝即時資料；沒有有效資料時明確顯示未連線。
+  - 修正台股大盤狀態文字，Yahoo 備援顯示為「Yahoo 公開行情」。
+  - 大盤圖表右側留白加寬，最新價與昨收標籤太接近時自動上下錯開，避免與刻度文字重疊。
+
+- `investment-dashboard/index.html`
+  - 更新 `app.js` 版本參數，部署後瀏覽器會抓新版前端檔案。
+
+### 驗證
+- `node --check functions/index.js` 通過。
+- `node --check investment-dashboard/app.js` 通過。
+- 使用者完成 Firebase Functions 部署後，API 資料已恢復，網站可顯示台股大盤資料。
+
+### 部署提醒
+前端排版修正需要重新部署 Hosting：
+
+```bash
+cd /Users/KenAoi_1/Documents/Money/easyinvesttw-github
+git add investment-dashboard/app.js investment-dashboard/index.html
+git commit -m "Adjust market chart label layout"
+git push origin main
+firebase deploy --only hosting --project easyinvesttw
+```
+
 ## 文件清單
 
 ### 修改的文件
