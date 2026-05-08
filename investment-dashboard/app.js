@@ -2109,19 +2109,21 @@ function isTodayMarketData(value) {
 function renderMarketIndex() {
   const marketData = selectedMarket === "us" ? (market.usIndex || sampleUsMarket) : { groups: (market.index?.groups || sampleIndex.groups), source: market.index?.source };
   const groups = selectedMarket === "us" ? marketData.groups : {
-    listed: market.index || sampleIndex,
+    listed: market.index,
     ...(market.index?.groups || {})
   };
   const fallbackGroups = selectedMarket === "us" ? sampleUsMarket.groups : {
-    listed: sampleIndex,
-    ...sampleIndex.groups
+    listed: null,
+    otc: null,
+    electronic: null,
+    finance: null
   };
-  const index = groups[selectedGroup] || fallbackGroups[selectedGroup] || sampleIndex;
+  const index = groups[selectedGroup] || fallbackGroups[selectedGroup] || {};
   const change = number(index.change);
   const changePercent = number(index.changePercent);
   const isUp = change >= 0;
   const hasMarketIndex = (index.source === "TWSE" || index.source === "Yahoo") && Number.isFinite(index.index);
-  const hasFugleQuotes = market.source.includes("Fugle");
+  const hasFugleQuotes = String(market.source || "").includes("Fugle");
   if (!hasMarketIndex) {
     renderMarketIndexUnavailable("資料未連線");
     return;
@@ -2145,7 +2147,7 @@ function renderMarketIndex() {
   els.marketPreviousClose.textContent = Number.isFinite(index.previousClose) ? money(index.previousClose) : "--";
   renderMarketNumberDetails(index, change, changePercent);
   els.marketRealtimeStatus.textContent = hasMarketIndex
-    ? `大盤：${index.source === "Yahoo" ? "美股公開行情" : "TWSE 即時指數資料"}`
+    ? `大盤：${index.source === "Yahoo" ? "Yahoo 公開行情" : "TWSE 即時指數資料"}`
     : "大盤：非即時或範例資料";
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
@@ -2277,7 +2279,7 @@ function renderMarketGroupCards(groups, fallbackGroups) {
   };
 
   Object.keys(labels).forEach((key) => {
-    const group = groups[key] || fallbackGroups[key];
+    const group = groups[key] || fallbackGroups[key] || {};
     const groupChange = number(group?.change);
     const groupChangePercent = number(group?.changePercent);
     labelEls[key].textContent = labels[key];

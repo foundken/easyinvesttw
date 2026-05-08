@@ -670,9 +670,15 @@ async function safeFetchFugleQuotes(symbols) {
 
 async function safeFetchTwseIndex() {
   try {
-    return await fetchTwseIndex();
+    const index = await fetchTwseIndex();
+    if (Number.isFinite(toNumber(index?.index))) return index;
+    throw new Error("TWSE index empty");
   } catch {
-    return null;
+    try {
+      return await fetchYahooIndex("^TWII", "台灣加權指數");
+    } catch {
+      return null;
+    }
   }
 }
 
