@@ -2191,7 +2191,7 @@ function drawMarketBoardChart(points, index, isUp) {
 
   const width = canvas.width;
   const height = canvas.height;
-  const padding = { top: 18, right: 96, bottom: 42, left: 12 };
+  const padding = { top: 24 * ratio, right: 124 * ratio, bottom: 50 * ratio, left: 14 * ratio };
   const values = points.map((item) => item.close).filter(Number.isFinite);
   if (Number.isFinite(index.previousClose)) values.push(index.previousClose);
   const min = Math.min(...values);
@@ -2258,22 +2258,26 @@ function drawMarketBoardChart(points, index, isUp) {
     context.beginPath();
     context.arc(x, y, 4, 0, Math.PI * 2);
     context.fill();
-    context.fillStyle = color;
-    roundedRect(context, width - padding.right + 8, y - 18, 82, 32, 5);
-    context.fill();
-    context.fillStyle = "#fff";
-    context.font = `${15 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-    context.fillText(money(latest.close), width - padding.right + 16, y + 4);
+    drawCanvasPill(context, money(latest.close), width - 10 * ratio, y, {
+      ratio,
+      background: color,
+      fontSize: 13,
+      height: 27,
+      maxX: width - 8 * ratio,
+      maxY: height - padding.bottom - 6 * ratio
+    });
   }
 
   if (Number.isFinite(index.previousClose)) {
     const y = pointY(index.previousClose);
-    context.fillStyle = "#5d6470";
-    roundedRect(context, width - padding.right + 8, y - 18, 82, 32, 5);
-    context.fill();
-    context.fillStyle = "#fff";
-    context.font = `${15 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-    context.fillText(money(index.previousClose), width - padding.right + 16, y + 4);
+    drawCanvasPill(context, money(index.previousClose), width - 10 * ratio, y, {
+      ratio,
+      background: "#5d6470",
+      fontSize: 13,
+      height: 27,
+      maxX: width - 8 * ratio,
+      maxY: height - padding.bottom - 6 * ratio
+    });
   }
 
   context.fillStyle = "#4d5661";
@@ -2281,12 +2285,15 @@ function drawMarketBoardChart(points, index, isUp) {
   for (let i = 0; i <= 3; i += 1) {
     const value = max - (range / 3) * i;
     const y = pointY(value);
-    context.fillText(money(value), width - padding.right + 12, y + 4);
+    context.textAlign = "left";
+    context.fillText(money(value), width - padding.right + 12 * ratio, y + 4 * ratio);
   }
   ["09", "10", "11", "12", "13"].forEach((label, index) => {
     const x = padding.left + (chartWidth / 4) * index;
-    context.fillText(label, x, height - 12);
+    context.textAlign = index === 4 ? "right" : "left";
+    context.fillText(label, index === 4 ? width - padding.right : x, height - 14 * ratio);
   });
+  context.textAlign = "left";
 }
 
 function holdingMessage(stock, val, rev, inst, pnlRate) {
@@ -2595,6 +2602,32 @@ function roundedRect(context, x, y, width, height, radius) {
   context.lineTo(x, y + radius);
   context.quadraticCurveTo(x, y, x + radius, y);
   context.closePath();
+}
+
+function drawCanvasPill(context, text, anchorX, anchorY, options = {}) {
+  const ratio = options.ratio || 1;
+  const paddingX = (options.paddingX ?? 8) * ratio;
+  const height = (options.height ?? 28) * ratio;
+  const radius = (options.radius ?? 5) * ratio;
+  const margin = (options.margin ?? 8) * ratio;
+  const fontSize = (options.fontSize ?? 13) * ratio;
+  const minX = options.minX ?? margin;
+  const maxX = options.maxX ?? context.canvas.width - margin;
+  const minY = options.minY ?? margin;
+  const maxY = options.maxY ?? context.canvas.height - margin;
+
+  context.font = `${fontSize}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  const width = Math.ceil(context.measureText(text).width + paddingX * 2);
+  const preferredX = options.align === "left" ? anchorX : anchorX - width;
+  const x = Math.min(Math.max(preferredX, minX), maxX - width);
+  const y = Math.min(Math.max(anchorY - height / 2, minY), maxY - height);
+
+  context.fillStyle = options.background || "#5d6470";
+  roundedRect(context, x, y, width, height, radius);
+  context.fill();
+  context.fillStyle = options.color || "#fff";
+  context.fillText(text, x + paddingX, y + height / 2 + fontSize * 0.36);
+  return { x, y, width, height };
 }
 
 function drawPriceChart(history, hoverIndex = null) {
