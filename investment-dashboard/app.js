@@ -8,9 +8,9 @@ const endpoints = {
 
 function getMarketEndpoint() {
   const host = window.location.hostname;
-  if (!host) return "https://easyinvesttw.web.app/api/market";
-  if (host === "localhost" || host === "127.0.0.1") return "https://easyinvesttw.web.app/api/market";
-  if (host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return "/api/market";
+  if (!host) return "https://easyinvesttw.web.app/api/dashboard-data";
+  if (host === "localhost" || host === "127.0.0.1") return "https://easyinvesttw.web.app/api/dashboard-data";
+  if (host.endsWith("web.app") || host.endsWith("firebaseapp.com")) return "/api/dashboard-data";
   return "/.netlify/functions/market";
 }
 
@@ -2091,6 +2091,13 @@ function marketDateKey(value) {
   const text = String(value);
   const compact = text.match(/(\d{4})(\d{2})(\d{2})/);
   if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const roc = text.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+  if (roc) {
+    const year = String(Number(roc[1]) + 1911);
+    const month = String(Number(roc[2])).padStart(2, "0");
+    const day = String(Number(roc[3])).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
   const date = new Date(text);
   return Number.isNaN(date.getTime()) ? "" : taipeiDateKey(date);
 }

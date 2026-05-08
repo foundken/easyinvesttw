@@ -57,6 +57,13 @@
     ],
     "rewrites": [
       {
+        "source": "/api/dashboard-data",
+        "function": {
+          "functionId": "market",
+          "region": "asia-east1"
+        }
+      },
+      {
         "source": "/api/market",
         "function": {
           "functionId": "market",
