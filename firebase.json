@@ -12,6 +12,7 @@
     }
   ],
   "hosting": {
+    "site": "easyinvesttw",
     "public": "investment-dashboard",
     "ignore": [
       "firebase.json",
