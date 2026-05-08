@@ -2073,6 +2073,32 @@ function formatUpdateTime(value) {
   return date.toLocaleString("zh-TW");
 }
 
+function taipeiDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
+}
+
+function marketDateKey(value) {
+  if (!value) return "";
+  if (typeof value === "number") {
+    const date = new Date(value / (value > 10000000000000 ? 1000 : 1));
+    return Number.isNaN(date.getTime()) ? "" : taipeiDateKey(date);
+  }
+  const text = String(value);
+  const compact = text.match(/(\d{4})(\d{2})(\d{2})/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? "" : taipeiDateKey(date);
+}
+
+function isTodayMarketData(value) {
+  return marketDateKey(value) === taipeiDateKey();
+}
+
 function renderMarketIndex() {
   const marketData = selectedMarket === "us" ? (market.usIndex || sampleUsMarket) : { groups: (market.index?.groups || sampleIndex.groups), source: market.index?.source };
   const groups = selectedMarket === "us" ? marketData.groups : {
@@ -2089,6 +2115,14 @@ function renderMarketIndex() {
   const isUp = change >= 0;
   const hasMarketIndex = (index.source === "TWSE" || index.source === "Yahoo") && Number.isFinite(index.index);
   const hasFugleQuotes = market.source.includes("Fugle");
+  if (!hasMarketIndex) {
+    renderMarketIndexUnavailable("資料未連線");
+    return;
+  }
+  if (selectedMarket === "tw" && !isTodayMarketData(index.lastUpdated)) {
+    renderMarketIndexUnavailable("尚未取得今日台股行情");
+    return;
+  }
 
   els.marketIndexName.textContent = index.name || "加權指數";
   els.marketIndexPrice.textContent = Number.isFinite(index.index) ? money(index.index) : "--";
@@ -2109,6 +2143,83 @@ function renderMarketIndex() {
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
   drawMarketBoardChart(index.candles?.length ? index.candles : sampleIndex.candles, index, isUp);
+}
+
+function renderMarketIndexUnavailable(message = "資料未連線") {
+  const labels = selectedMarket === "us"
+    ? { listed: "S&P 500", otc: "Nasdaq", electronic: "Dow", finance: "Russell 2000" }
+    : { listed: "上市", otc: "上櫃", electronic: "電子", finance: "金融" };
+  const labelEls = {
+    listed: els.listedIndexLabel,
+    otc: els.otcIndexLabel,
+    electronic: els.electronicIndexLabel,
+    finance: els.financeIndexLabel
+  };
+  const priceEls = {
+    listed: els.listedIndexPrice,
+    otc: els.otcIndexPrice,
+    electronic: els.electronicIndexPrice,
+    finance: els.financeIndexPrice
+  };
+  const metaEls = {
+    listed: els.listedIndexMeta,
+    otc: els.otcIndexMeta,
+    electronic: els.electronicIndexMeta,
+    finance: els.financeIndexMeta
+  };
+
+  Object.keys(labels).forEach((key) => {
+    labelEls[key].textContent = labels[key];
+    priceEls[key].textContent = "--";
+    metaEls[key].textContent = "資料未連線";
+  });
+  els.groupCards.forEach((card) => {
+    card.classList.toggle("active", card.dataset.group === selectedGroup);
+  });
+  els.marketTabs.forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.market === selectedMarket);
+  });
+  els.marketIndexName.textContent = selectedMarket === "us" ? "美股指數資料未連線" : "台股大盤資料未連線";
+  els.marketIndexPrice.textContent = "--";
+  els.marketIndexChange.textContent = message;
+  els.marketIndexChange.className = "";
+  els.marketTurnover.textContent = "--";
+  els.marketOpen.textContent = "--";
+  els.marketHigh.textContent = "--";
+  els.marketLow.textContent = "--";
+  els.marketPreviousClose.textContent = "--";
+  els.marketChangePoints.textContent = "--";
+  els.marketChangePoints.className = "";
+  els.marketChangePercent.textContent = "--";
+  els.marketChangePercent.className = "";
+  els.marketRange.textContent = "--";
+  els.marketAmplitude.textContent = "振幅 --";
+  els.marketGap.textContent = "--";
+  els.marketGap.className = "";
+  els.marketIntradayPosition.textContent = "--";
+  els.marketRealtimeStatus.textContent = `大盤：${message}，不顯示範例漲跌`;
+  els.quoteRealtimeStatus.textContent = "個股：等待公開資料或即時報價";
+  els.marketLastUpdated.textContent = "最後更新：尚未取得有效市場資料";
+  drawEmptyMarketBoardChart(message);
+}
+
+function drawEmptyMarketBoardChart(message) {
+  const canvas = els.marketIndexChart;
+  const context = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  const targetWidth = Math.max(640, Math.round(rect.width * ratio));
+  const targetHeight = Math.max(210, Math.round(rect.height * ratio));
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+  }
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#6f6a61";
+  context.font = `${16 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  context.fillText(message, 24 * ratio, 48 * ratio);
 }
 
 function renderMarketNumberDetails(index, change, changePercent) {
