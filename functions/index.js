@@ -9,6 +9,10 @@ const endpoints = {
 };
 
 const FUGLE_BASE = "https://api.fugle.tw/marketdata/v1.0/stock";
+const DASHBOARD_CACHE_TTL_MS = 25000;
+const DASHBOARD_STALE_TTL_MS = 120000;
+let dashboardCache = null;
+let quoteCache = null;
 
 exports.market = onRequest({
   region: "asia-east1",
@@ -28,11 +32,44 @@ exports.market = onRequest({
       });
     }
 
-    const [twseDaily, valuation, revenue, realtime, fugleActiveRanking, index, usIndex, institutional, news] = await Promise.all([
+    if (req.query && req.query.fast === "quotes") {
+      const cacheKey = symbols.slice().sort().join(",");
+      const now = Date.now();
+      if (quoteCache && quoteCache.key === cacheKey && now - quoteCache.createdAt < 3000) {
+        return sendJson(res, 200, {
+          ...quoteCache.payload,
+          cache: "fresh"
+        });
+      }
+      const [fugleRealtime, twseRealtime] = await Promise.all([
+        safeFetchFugleQuotes(symbols),
+        safeFetchTwseRealtimeQuotes(symbols, 1800)
+      ]);
+      const payload = {
+        ok: true,
+        updatedAt: new Date().toISOString(),
+        realtime: compactRealtimeRows(mergeRealtimePayloads(twseRealtime, fugleRealtime)),
+        realtimeSource: fugleRealtime.length ? "Fugle" : twseRealtime.length ? "TWSE" : null
+      };
+      quoteCache = { key: cacheKey, createdAt: now, payload };
+      return sendJson(res, 200, payload);
+    }
+
+    const cacheKey = symbols.slice().sort().join(",");
+    const now = Date.now();
+    if (dashboardCache && dashboardCache.key === cacheKey && now - dashboardCache.createdAt < DASHBOARD_CACHE_TTL_MS) {
+      return sendJson(res, 200, {
+        ...dashboardCache.payload,
+        cache: "fresh"
+      });
+    }
+
+    const [twseDaily, twseValuation, tpexValuation, listedRevenue, publicRevenue, fugleActiveRanking, index, usIndex, institutional, news] = await Promise.all([
       safeFetchJson(endpoints.daily),
       safeFetchJson(endpoints.valuation),
+      safeFetchTpexValuation(),
       safeFetchJson(endpoints.revenue),
-      safeFetchFugleQuotes(symbols),
+      safeFetchJson("/opendata/t187ap05_P"),
       safeFetchFugleActiveRanking(),
       safeFetchTwseIndex(),
       safeFetchUsMarket(),
@@ -40,22 +77,44 @@ exports.market = onRequest({
       safeFetchMarketNews()
     ]);
     const daily = mergeMarketRows(twseDaily, fugleActiveRanking);
+    const realtimeSymbols = uniqueSymbols([
+      ...symbols,
+      ...topMarketSymbols(daily, 40)
+    ]);
+    const [fugleRealtime, twseRealtime] = await Promise.all([
+      safeFetchFugleQuotes(realtimeSymbols),
+      safeFetchTwseRealtimeQuotes(realtimeSymbols)
+    ]);
+    const realtime = mergeRealtimePayloads(twseRealtime, fugleRealtime);
+    const relevantCodes = new Set(uniqueSymbols([
+      ...symbols,
+      ...topMarketSymbols(daily, 120)
+    ]));
 
-    return sendJson(res, 200, {
+    const payload = {
       ok: true,
       updatedAt: new Date().toISOString(),
-      daily,
-      valuation,
-      revenue,
-      realtime,
+      daily: compactDailyRows(filterRowsByCodes(daily, relevantCodes)),
+      valuation: compactValuationRows(filterRowsByCodes(mergeByCode(twseValuation, tpexValuation), relevantCodes)),
+      revenue: compactRevenueRows(filterRowsByCodes(mergeByCode(listedRevenue, publicRevenue), relevantCodes)),
+      realtime: compactRealtimeRows(realtime),
       index,
       usIndex,
-      institutional,
+      institutional: compactInstitutional(institutional, relevantCodes),
       news,
       dailySource: fugleActiveRanking.length ? "Fugle" : twseDaily.length ? "TWSE" : null,
-      realtimeSource: realtime.length ? "Fugle" : null
-    });
+      realtimeSource: fugleRealtime.length ? "Fugle" : twseRealtime.length ? "TWSE" : null
+    };
+    dashboardCache = { key: cacheKey, createdAt: now, payload };
+    return sendJson(res, 200, payload);
   } catch (error) {
+    if (dashboardCache && Date.now() - dashboardCache.createdAt < DASHBOARD_STALE_TTL_MS) {
+      return sendJson(res, 200, {
+        ...dashboardCache.payload,
+        cache: "stale",
+        warning: error.message
+      });
+    }
     return sendJson(res, 502, {
       ok: false,
       error: error.message
@@ -72,18 +131,33 @@ function parseSymbols(value) {
     .slice(0, 30);
 }
 
+function uniqueSymbols(symbols) {
+  return [...new Set((symbols || [])
+    .map((symbol) => String(symbol || "").trim())
+    .filter((symbol) => /^\d{4,6}$/.test(symbol)))];
+}
+
+function topMarketSymbols(rows, limit) {
+  return (rows || [])
+    .slice()
+    .sort((a, b) => toNumber(b.TradeValue ?? b.value ?? b.tradeValue) - toNumber(a.TradeValue ?? a.value ?? a.tradeValue))
+    .map((row) => row.Code || row["證券代號"] || row.code || row.symbol)
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 async function fetchFugleQuotes(symbols) {
   const apiKey = process.env.FUGLE_API_KEY;
   if (!apiKey || !symbols.length) return [];
 
   const quotes = await Promise.all(symbols.map(async (symbol) => {
     try {
-      const response = await fetch(`${FUGLE_BASE}/intraday/quote/${encodeURIComponent(symbol)}`, {
+      const response = await fetchWithTimeout(`${FUGLE_BASE}/intraday/quote/${encodeURIComponent(symbol)}`, {
         headers: {
           accept: "application/json",
           "X-API-KEY": apiKey
         }
-      });
+      }, 2200);
       if (!response.ok) return null;
       return response.json();
     } catch {
@@ -92,6 +166,207 @@ async function fetchFugleQuotes(symbols) {
   }));
 
   return quotes.filter(Boolean);
+}
+
+async function fetchTwseRealtimeQuotes(symbols, timeoutMs = 4500) {
+  if (!symbols.length) return [];
+  const chunks = [];
+  for (let index = 0; index < symbols.length; index += 12) {
+    chunks.push(symbols.slice(index, index + 12));
+  }
+
+  const batches = await Promise.all(chunks.map(async (chunk) => {
+    const channels = chunk.flatMap((symbol) => [`tse_${symbol}.tw`, `otc_${symbol}.tw`]);
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${channels.join("|")}&json=1&delay=0&_=${Date.now()}`;
+    const response = await fetchWithTimeout(url, {
+      headers: {
+        ...twseHeaders(),
+        referer: "https://mis.twse.com.tw/stock/index.jsp"
+      }
+    }, timeoutMs).catch(() => null);
+    if (!response?.ok) return [];
+    const payload = await response.json().catch(() => ({}));
+    return (payload.msgArray || []).map(normalizeTwseRealtimeRow).filter(Boolean);
+  }));
+
+  return batches.flat();
+}
+
+function normalizeTwseRealtimeRow(row) {
+  const symbol = String(row.c || "").trim();
+  if (!/^\d{4,6}$/.test(symbol)) return null;
+  const previousClose = toNumber(row.y);
+  const sourcePrice = twseQuotePrice(row);
+  const close = sourcePrice ?? previousClose;
+  if (!Number.isFinite(close) || close <= 0) return null;
+  const change = Number.isFinite(previousClose) ? close - previousClose : null;
+  const changePercent = Number.isFinite(change) && Number.isFinite(previousClose) && previousClose
+    ? (change / previousClose) * 100
+    : null;
+  return {
+    symbol,
+    name: row.n || symbol,
+    openPrice: toNumber(row.o),
+    highPrice: toNumber(row.h),
+    lowPrice: toNumber(row.l),
+    lastPrice: close,
+    closePrice: close,
+    previousClose,
+    change,
+    changePercent,
+    tradeVolume: toNumber(row.v),
+    transaction: toNumber(row.t),
+    lastUpdated: row.tlong ? Number(row.tlong) : `${row.d || ""} ${row.t || ""}`,
+    source: sourcePrice === null ? "TWSE_PREVIOUS" : "TWSE"
+  };
+}
+
+function twseQuotePrice(row) {
+  const last = toNumber(row.z);
+  if (Number.isFinite(last) && last > 0) return last;
+  const lastMatched = toNumber(row.pz);
+  if (Number.isFinite(lastMatched) && lastMatched > 0) return lastMatched;
+  const bestAsk = firstTwseLevel(row.a);
+  const bestBid = firstTwseLevel(row.b);
+  if (Number.isFinite(bestAsk) && Number.isFinite(bestBid)) return (bestAsk + bestBid) / 2;
+  if (Number.isFinite(bestBid)) return bestBid;
+  if (Number.isFinite(bestAsk)) return bestAsk;
+  return null;
+}
+
+function firstTwseLevel(value) {
+  const first = String(value || "").split("_").find((item) => item && item !== "-");
+  return toNumber(first);
+}
+
+function mergeRealtimePayloads(primary, preferred) {
+  const map = new Map();
+  [...(primary || []), ...(preferred || [])].forEach((quote) => {
+    const symbol = String(quote.symbol || quote.code || "").trim();
+    if (symbol) map.set(symbol, quote);
+  });
+  return [...map.values()];
+}
+
+function mergeByCode(primary = [], secondary = []) {
+  const map = new Map();
+  [...primary, ...secondary].forEach((row) => {
+    const code = String(row.Code || row["證券代號"] || row["公司代號"] || row.code || row.symbol || "").trim();
+    if (code) map.set(code, row);
+  });
+  return [...map.values()];
+}
+
+function filterRowsByCodes(rows = [], codes = new Set()) {
+  if (!codes?.size) return [];
+  return rows.filter((row) => codes.has(String(row.Code || row["證券代號"] || row["公司代號"] || row.code || row.symbol || "").trim()));
+}
+
+function compactDailyRows(rows = []) {
+  return rows.map((row) => {
+    const close = toNumber(row.ClosingPrice ?? row["收盤價"] ?? row.close ?? row.closePrice ?? row.lastPrice);
+    const previousClose = toNumber(row.PreviousClose ?? row.previousClose ?? row.referencePrice ?? row.previousPrice);
+    const change = toNumber(row.Change ?? row["漲跌價差"] ?? row.change);
+    return {
+      code: cleanTwseCell(row.Code || row["證券代號"] || row.code || row.symbol),
+      name: cleanTwseCell(row.Name || row["證券名稱"] || row.name),
+      volume: toNumber(row.TradeVolume ?? row["成交股數"] ?? row.volume ?? row.tradeVolume),
+      value: toNumber(row.TradeValue ?? row["成交金額"] ?? row.value ?? row.tradeValue),
+      open: toNumber(row.OpeningPrice ?? row["開盤價"] ?? row.open ?? row.openPrice),
+      high: toNumber(row.HighestPrice ?? row["最高價"] ?? row.high ?? row.highPrice),
+      low: toNumber(row.LowestPrice ?? row["最低價"] ?? row.low ?? row.lowPrice),
+      close,
+      previousClose,
+      change,
+      changePercent: toNumber(row.ChangePercent ?? row.changePercent),
+      trades: toNumber(row.Transaction ?? row["成交筆數"] ?? row.trades ?? row.transaction),
+      source: row.Source || row.source
+    };
+  }).filter((row) => row.code && row.name && Number.isFinite(row.close));
+}
+
+function compactValuationRows(rows = []) {
+  return rows.map((row) => ({
+    code: cleanTwseCell(row.Code || row["證券代號"] || row.code),
+    name: cleanTwseCell(row.Name || row["證券名稱"] || row.name),
+    pe: toNumber(row.PEratio ?? row["本益比"] ?? row.pe),
+    yieldRate: toNumber(row.DividendYield ?? row["殖利率(%)"] ?? row.yieldRate),
+    pb: toNumber(row.PBratio ?? row["股價淨值比"] ?? row.pb)
+  })).filter((row) => row.code);
+}
+
+function compactRevenueRows(rows = []) {
+  return rows.map((row) => ({
+    code: cleanTwseCell(row["公司代號"] || row.company_code || row.code),
+    name: cleanTwseCell(row["公司名稱"] || row.company_name || row.name),
+    month: cleanTwseCell(row["出表日期"] || row["資料年月"] || row.month),
+    amount: toNumber(row["營業收入-當月營收"] ?? row.revenue_current_month ?? row.amount),
+    yoy: toNumber(row["去年同月增減(%)"] ?? row.yoy),
+    mom: toNumber(row["上月比較增減(%)"] ?? row.mom)
+  })).filter((row) => row.code);
+}
+
+function compactRealtimeRows(rows = []) {
+  return rows.map((row) => ({
+    symbol: cleanTwseCell(row.symbol || row.code),
+    name: cleanTwseCell(row.name),
+    openPrice: toNumber(row.openPrice ?? row.open),
+    highPrice: toNumber(row.highPrice ?? row.high),
+    lowPrice: toNumber(row.lowPrice ?? row.low),
+    lastPrice: toNumber(row.lastPrice ?? row.closePrice ?? row.close),
+    closePrice: toNumber(row.closePrice ?? row.lastPrice ?? row.close),
+    previousClose: toNumber(row.previousClose),
+    change: toNumber(row.change),
+    changePercent: toNumber(row.changePercent),
+    tradeVolume: toNumber(row.tradeVolume ?? row.total?.tradeVolume ?? row.volume),
+    tradeValue: toNumber(row.tradeValue ?? row.total?.tradeValue ?? row.value),
+    transaction: toNumber(row.transaction ?? row.total?.transaction ?? row.trades),
+    lastUpdated: row.lastUpdated || row.closeTime || row.date,
+    source: row.source || "Realtime"
+  })).filter((row) => row.symbol && Number.isFinite(row.lastPrice));
+}
+
+function compactInstitutional(payload, codes = new Set()) {
+  if (!payload) return null;
+  const stocks = Object.fromEntries(Object.entries(payload.stocks || {})
+    .filter(([code]) => codes.has(String(code)))
+    .map(([code, item]) => [code, {
+      code: item.code || code,
+      name: item.name || "",
+      foreign: toNumber(item.foreign),
+      trust: toNumber(item.trust),
+      dealer: toNumber(item.dealer),
+      total: toNumber(item.total)
+    }]));
+  return {
+    date: payload.date,
+    foreign: toNumber(payload.foreign),
+    trust: toNumber(payload.trust),
+    dealer: toNumber(payload.dealer),
+    total: toNumber(payload.total),
+    stocks,
+    source: payload.source
+  };
+}
+
+async function fetchTpexValuation() {
+  const response = await fetchWithTimeout("https://www.tpex.org.tw/web/stock/aftertrading/peratio_analysis/pera_result.php?l=zh-tw&o=json&s=0", {
+    headers: tpexHeaders()
+  }, 2500);
+  if (!response.ok) throw new Error("TPEx valuation request failed");
+  const payload = await response.json();
+  const rows = payload.tables?.[0]?.data || [];
+  return rows.map((row) => ({
+    Code: cleanTwseCell(row[0]),
+    Name: cleanTwseCell(row[1]),
+    PEratio: toNumber(row[2]),
+    CashDividend: toNumber(row[3]),
+    DividendYear: cleanTwseCell(row[4]),
+    DividendYield: toNumber(row[5]),
+    PBratio: toNumber(row[6]),
+    FinancialQuarter: cleanTwseCell(row[7]),
+    Source: "TPEx"
+  })).filter((row) => row.Code);
 }
 
 async function fetchFugleActiveRanking() {
@@ -104,12 +379,12 @@ async function fetchFugleActiveRanking() {
       trade: "value",
       type: "ALLBUT0999"
     });
-    const response = await fetch(`${FUGLE_BASE}/snapshot/actives/${market}?${params}`, {
+    const response = await fetchWithTimeout(`${FUGLE_BASE}/snapshot/actives/${market}?${params}`, {
       headers: {
         accept: "application/json",
         "X-API-KEY": apiKey
       }
-    });
+    }, 2500);
     if (!response.ok) return [];
     const payload = await response.json();
     return rowsFromFuglePayload(payload).map((row) => normalizeFugleSnapshot(row)).filter(Boolean);
@@ -322,9 +597,9 @@ function twseSummaryFromRow(row, fallbackName) {
 }
 
 async function fetchTwseIndexCandles(date) {
-  const response = await fetch(`https://www.twse.com.tw/exchangeReport/MI_5MINS_INDEX?response=json&date=${date}`, {
+  const response = await fetchWithTimeout(`https://www.twse.com.tw/exchangeReport/MI_5MINS_INDEX?response=json&date=${date}`, {
     headers: { accept: "application/json" }
-  });
+  }, 2500);
   if (!response.ok) return [];
   const payload = await response.json();
   const rows = payload.data || [];
@@ -336,16 +611,47 @@ async function fetchTwseIndexCandles(date) {
 }
 
 async function fetchInstitutional() {
-  const date = taipeiDate();
-  const response = await fetch(`https://www.twse.com.tw/rwd/zh/fund/T86?date=${date}&selectType=ALLBUT0999&response=json`, {
-    headers: { accept: "application/json" }
-  });
-  if (!response.ok) throw new Error("TWSE institutional request failed");
+  const [twse, tpex] = await Promise.all([
+    fetchTwseInstitutional().catch(() => null),
+    fetchTpexInstitutional().catch(() => null)
+  ]);
+  if (!twse && !tpex) throw new Error("Institutional empty result");
+  if (!twse) return tpex;
+  if (!tpex) return twse;
 
-  const payload = await response.json();
+  return {
+    date: twse.date || tpex.date,
+    foreign: (twse.foreign || 0) + (tpex.foreign || 0),
+    trust: (twse.trust || 0) + (tpex.trust || 0),
+    dealer: (twse.dealer || 0) + (tpex.dealer || 0),
+    total: (twse.total || 0) + (tpex.total || 0),
+    stocks: {
+      ...(twse.stocks || {}),
+      ...(tpex.stocks || {})
+    },
+    source: "TWSE+TPEx"
+  };
+}
+
+async function fetchTwseInstitutional() {
+  const candidates = recentTaipeiDates(5);
+  const results = await Promise.all(candidates.map(async (candidate) => {
+    const url = `https://www.twse.com.tw/rwd/zh/fund/T86?date=${candidate}&selectType=ALLBUT0999&response=json&_=${Date.now()}`;
+    const response = await fetchWithTimeout(url, {
+      headers: twseHeaders()
+    }, 2200).catch(() => null);
+    if (!response?.ok) return null;
+    const candidatePayload = await response.json().catch(() => null);
+    const candidateRows = Array.isArray(candidatePayload?.data) ? candidatePayload.data : [];
+    return candidateRows.length ? { payload: candidatePayload, date: candidate } : null;
+  }));
+  const latest = results.find(Boolean);
+  const payload = latest?.payload;
+  const date = latest?.date || "";
+
+  if (!payload) throw new Error("TWSE institutional empty result");
   const fields = payload.fields || [];
   const rows = Array.isArray(payload.data) ? payload.data : [];
-  if (!rows.length) throw new Error("TWSE institutional empty result");
   const stocks = {};
   const totals = rows.reduce((sum, row) => {
     const value = parseInstitutionalRow(row, fields);
@@ -366,13 +672,57 @@ async function fetchInstitutional() {
   }, { foreign: 0, trust: 0, dealer: 0 });
 
   return {
-    date: payload.date || date,
+    date: twseDateToIso(payload.date || date),
     foreign: totals.foreign,
     trust: totals.trust,
     dealer: totals.dealer,
     total: totals.foreign + totals.trust + totals.dealer,
     stocks,
     source: "TWSE"
+  };
+}
+
+async function fetchTpexInstitutional() {
+  const response = await fetchWithTimeout("https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json", {
+    headers: tpexHeaders()
+  }, 2500);
+  if (!response.ok) throw new Error("TPEx institutional request failed");
+  const payload = await response.json();
+  const table = (payload.tables || []).find((item) => Array.isArray(item.data) && item.data.length);
+  if (!table) throw new Error("TPEx institutional empty result");
+
+  const stocks = {};
+  const totals = table.data.reduce((sum, row) => {
+    const value = parseTpexInstitutionalRow(row);
+    sum.foreign += value.foreign || 0;
+    sum.trust += value.trust || 0;
+    sum.dealer += value.dealer || 0;
+    if (value.code) stocks[value.code] = value;
+    return sum;
+  }, { foreign: 0, trust: 0, dealer: 0 });
+
+  return {
+    date: twseDateToIso(payload.date || table.date),
+    foreign: totals.foreign,
+    trust: totals.trust,
+    dealer: totals.dealer,
+    total: totals.foreign + totals.trust + totals.dealer,
+    stocks,
+    source: "TPEx"
+  };
+}
+
+function parseTpexInstitutionalRow(row) {
+  const foreign = toNumber(row[10]) || toNumber(row[4]) || 0;
+  const trust = toNumber(row[13]) || 0;
+  const dealer = toNumber(row[22]) || toNumber(row[16]) || 0;
+  return {
+    code: cleanTwseCell(row[0]),
+    name: cleanTwseCell(row[1]),
+    foreign,
+    trust,
+    dealer,
+    total: toNumber(row[23]) ?? (foreign + trust + dealer)
   };
 }
 
@@ -438,12 +788,12 @@ async function fetchCnyesNewsApi() {
   const batches = await Promise.all(categories.map(async ([category, label]) => {
     try {
       const url = `https://api.cnyes.com/media/api/v1/newslist/category/${category}?startAt=${startAt}&endAt=${now}&limit=5`;
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         headers: {
           accept: "application/json",
           "user-agent": "Mozilla/5.0 EasyInvestTW market news reader"
         }
-      });
+      }, 1800);
       if (!response.ok) return [];
       const payload = await response.json();
       const rows = payload.items?.data || [];
@@ -468,12 +818,12 @@ async function fetchCnyesNewsApi() {
 }
 
 async function fetchCnyesHomeNews() {
-  const response = await fetch("https://www.cnyes.com/", {
+  const response = await fetchWithTimeout("https://www.cnyes.com/", {
     headers: {
       accept: "text/html",
       "user-agent": "Mozilla/5.0 EasyInvestTW market news reader"
     }
-  });
+  }, 1800);
   if (!response.ok) throw new Error("Cnyes request failed");
   const html = await response.text();
   const anchors = [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
@@ -530,15 +880,34 @@ function decodeHtml(value) {
     .replace(/&#39;/g, "'");
 }
 
-function taipeiDate() {
+function taipeiDate(daysAgo = 0) {
+  const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const get = (type) => parts.find((part) => part.type === type).value;
   return `${get("year")}${get("month")}${get("day")}`;
+}
+
+function recentTaipeiDates(days) {
+  return Array.from({ length: days }, (_, index) => taipeiDate(index));
+}
+
+function twseDateToIso(value) {
+  const text = String(value || "").trim();
+  const compact = text.match(/(\d{4})(\d{2})(\d{2})/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const roc = text.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+  if (roc) {
+    const year = String(Number(roc[1]) + 1911);
+    const month = String(Number(roc[2])).padStart(2, "0");
+    const day = String(Number(roc[3])).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  return text;
 }
 
 function taipeiIsoDate(daysAgo = 0) {
@@ -591,9 +960,9 @@ async function fetchUsMarket() {
 }
 
 async function fetchYahooIndex(symbol, fallbackName) {
-  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=5m`, {
+  const response = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=5m`, {
     headers: { accept: "application/json" }
-  });
+  }, 1800);
   if (!response.ok) throw new Error(`Yahoo request failed: ${symbol}`);
   const payload = await response.json();
   const result = payload.chart?.result?.[0];
@@ -629,16 +998,22 @@ async function fetchYahooIndex(symbol, fallbackName) {
 }
 
 async function fetchHistory(code) {
-  const fugleHistory = await fetchFugleHistory(code);
-  if (fugleHistory.length) return fugleHistory;
+  const twseHistory = await fetchTwseHistory(code);
+  if (twseHistory.length) return twseHistory;
 
+  const fugleHistory = await fetchFugleHistory(code);
+  return repairHistoryWithRealtimeQuote(code, fugleHistory);
+}
+
+async function fetchTwseHistory(code) {
   const months = recentMonths(6);
   const results = await Promise.all(months.map(async (date) => {
-    const url = `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${date}&stockNo=${encodeURIComponent(code)}&response=json`;
+    const url = `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${date}&stockNo=${encodeURIComponent(code)}`;
     const response = await fetch(url, {
       headers: {
         accept: "application/json",
         "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+        referer: "https://www.twse.com.tw/",
         "user-agent": "Mozilla/5.0 EasyInvestTW historical price reader"
       }
     });
@@ -646,19 +1021,24 @@ async function fetchHistory(code) {
     const payload = await response.json();
     if (payload.stat && payload.stat !== "OK") return [];
     return (payload.data || []).map((row) => ({
-      date: row[0],
-      volume: row[1],
-      value: row[2],
-      open: row[3],
-      high: row[4],
-      low: row[5],
-      close: row[6],
-      change: row[7],
-      trades: row[8]
-    }));
+      date: twseDateToIso(row[0]),
+      volume: toNumber(row[1]),
+      value: toNumber(row[2]),
+      open: toNumber(row[3]),
+      high: toNumber(row[4]),
+      low: toNumber(row[5]),
+      close: toNumber(row[6]),
+      change: toNumber(row[7]),
+      trades: toNumber(row[8]),
+      source: "TWSE"
+    })).filter((row) => Number.isFinite(row.close));
   }));
 
-  return results.flat();
+  const byDate = new Map();
+  results.flat().forEach((row) => {
+    if (row.date) byDate.set(row.date, row);
+  });
+  return [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
 async function fetchFugleHistory(code) {
@@ -695,6 +1075,71 @@ async function fetchFugleHistory(code) {
   })).filter((row) => Number.isFinite(toNumber(row.close)));
 }
 
+async function repairHistoryWithRealtimeQuote(code, history) {
+  if (!history.length) return history;
+  const [twseRealtime, fugleRealtime] = await Promise.all([
+    fetchTwseRealtimeQuotes([code]).catch(() => []),
+    fetchFugleQuotes([code]).catch(() => [])
+  ]);
+  const quote = mergeRealtimePayloads(twseRealtime, fugleRealtime)
+    .find((item) => String(item.symbol || item.code || "").trim() === String(code));
+  const close = realtimeQuoteValue(quote, "close");
+  if (!Number.isFinite(close) || close <= 0) return history;
+
+  const last = history.at(-1);
+  const previous = history.at(-2);
+  const lastClose = toNumber(last.close);
+  const previousClose = toNumber(previous?.close);
+  const quoteDate = quote.date || dateFromTimestamp(quote.lastUpdated || quote.closeTime) || last.date;
+  const deviatesFromQuote = Number.isFinite(lastClose) && Math.abs(lastClose - close) / close > 0.12;
+  const impossibleDailyMove = Number.isFinite(lastClose) && Number.isFinite(previousClose) && previousClose > 0
+    && Math.abs(lastClose - previousClose) / previousClose > 0.15;
+
+  if (!deviatesFromQuote && !impossibleDailyMove) return history;
+
+  const repaired = {
+    ...last,
+    date: quoteDate,
+    open: realtimeQuoteValue(quote, "open") ?? last.open,
+    high: realtimeQuoteValue(quote, "high") ?? last.high,
+    low: realtimeQuoteValue(quote, "low") ?? last.low,
+    close,
+    change: Number.isFinite(previousClose) ? close - previousClose : realtimeQuoteValue(quote, "change"),
+    volume: realtimeQuoteValue(quote, "volume") ?? last.volume,
+    value: realtimeQuoteValue(quote, "value") ?? last.value,
+    trades: realtimeQuoteValue(quote, "trades") ?? last.trades,
+    source: `${last.source || "History"}+Realtime`
+  };
+  return [...history.slice(0, -1), repaired];
+}
+
+function realtimeQuoteValue(quote, field) {
+  if (!quote) return null;
+  const fields = {
+    close: [quote.lastPrice, quote.closePrice, quote.close, quote.price],
+    open: [quote.openPrice, quote.open],
+    high: [quote.highPrice, quote.high],
+    low: [quote.lowPrice, quote.low],
+    change: [quote.change],
+    volume: [quote.tradeVolume, quote.total?.tradeVolume, quote.volume],
+    value: [quote.tradeValue, quote.total?.tradeValue, quote.turnover, quote.value],
+    trades: [quote.transaction, quote.total?.transaction, quote.trades]
+  }[field] || [];
+  for (const value of fields) {
+    const parsed = toNumber(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function dateFromTimestamp(value) {
+  const timestamp = toNumber(value);
+  if (!Number.isFinite(timestamp)) return null;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+}
+
 function recentMonths(count) {
   const now = new Date();
   return Array.from({ length: count }, (_, index) => {
@@ -706,20 +1151,37 @@ function recentMonths(count) {
 }
 
 async function fetchJson(path) {
-  const response = await fetch(`${BASE}${path}`, {
-    headers: {
-      accept: "application/json",
-      "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
-      "cache-control": "no-cache",
-      "user-agent": "Mozilla/5.0 EasyInvestTW market data reader"
-    }
-  });
+  const response = await fetchWithTimeout(`${BASE}${path}`, {
+    headers: twseHeaders()
+  }, 2500);
 
   if (!response.ok) {
     throw new Error(`TWSE request failed: ${path}`);
   }
 
   return response.json();
+}
+
+function twseHeaders() {
+  return {
+    accept: "application/json,text/plain,*/*",
+    "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    referer: "https://www.twse.com.tw/zh/page/trading/fund/T86.html",
+    "user-agent": "Mozilla/5.0 EasyInvestTW market data reader"
+  };
+}
+
+function tpexHeaders() {
+  return {
+    accept: "application/json,text/plain,*/*",
+    "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    referer: "https://www.tpex.org.tw/zh-tw/",
+    "user-agent": "Mozilla/5.0 EasyInvestTW market data reader"
+  };
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
@@ -751,6 +1213,22 @@ async function safeFetchFugleQuotes(symbols) {
   }
 }
 
+async function safeFetchTpexValuation() {
+  try {
+    return await fetchTpexValuation();
+  } catch {
+    return [];
+  }
+}
+
+async function safeFetchTwseRealtimeQuotes(symbols) {
+  try {
+    return await fetchTwseRealtimeQuotes(symbols);
+  } catch {
+    return [];
+  }
+}
+
 async function safeFetchFugleActiveRanking() {
   try {
     return await fetchFugleActiveRanking();
@@ -760,14 +1238,6 @@ async function safeFetchFugleActiveRanking() {
 }
 
 async function safeFetchTwseIndex() {
-  try {
-    const index = await fetchFugleIndex();
-    if (Number.isFinite(toNumber(index?.index))) return index;
-    throw new Error("Fugle index empty");
-  } catch {
-    // Keep the public dashboard alive when Fugle REST is unavailable.
-  }
-
   try {
     const index = await fetchTwseIndex();
     if (Number.isFinite(toNumber(index?.index))) return index;
@@ -783,7 +1253,7 @@ async function safeFetchTwseIndex() {
 
 async function safeFetchUsMarket() {
   try {
-    return await fetchUsMarket();
+    return await withSoftTimeout(fetchUsMarket(), 2500, null);
   } catch {
     return null;
   }
@@ -791,7 +1261,7 @@ async function safeFetchUsMarket() {
 
 async function safeFetchInstitutional() {
   try {
-    return await fetchInstitutional();
+    return await withSoftTimeout(fetchInstitutional(), 3200, null);
   } catch {
     return null;
   }
@@ -799,15 +1269,25 @@ async function safeFetchInstitutional() {
 
 async function safeFetchMarketNews() {
   try {
-    return await fetchMarketNews();
+    return await withSoftTimeout(fetchMarketNews(), 2200, []);
   } catch {
     return [];
   }
 }
 
+function withSoftTimeout(promise, timeoutMs, fallback) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), timeoutMs);
+    Promise.resolve(promise)
+      .then((value) => resolve(value))
+      .catch(() => resolve(fallback))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 function sendJson(res, statusCode, body) {
   res.set("content-type", "application/json; charset=utf-8");
-  res.set("cache-control", "public, max-age=45");
+  res.set("cache-control", "no-store, max-age=0");
   res.set("access-control-allow-origin", "*");
   return res.status(statusCode).send(JSON.stringify(body));
 }

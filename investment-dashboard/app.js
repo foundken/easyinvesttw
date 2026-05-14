@@ -1,6 +1,7 @@
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
-const MARKET_REFRESH_FAST_MS = 10000;
+const MARKET_REFRESH_FAST_MS = 60000;
 const MARKET_REFRESH_SLOW_MS = 10 * 60000;
+const QUOTE_REFRESH_MS = 5000;
 
 const endpoints = {
   bundle: getMarketEndpoint()
@@ -174,6 +175,11 @@ const els = {
 
 const VIEW_MODE_KEY = "easyinvest-view-mode";
 const THEME_KEY = "easyinvest-theme";
+const RANKING_LIMIT = 20;
+const TREND_STOCK_LIMIT = 32;
+const TREND_HISTORY_DAYS = 6;
+const TREND_PERIOD_LABEL = "近一週";
+const TREND_DATA_VERSION = "twse-history-v2";
 
 let watchList = [];
 let cloudAuth = null;
@@ -214,7 +220,9 @@ const tierState = {
   large: { requestKey: "", items: [], selected: "" }
 };
 let refreshTimer = null;
+let quoteRefreshTimer = null;
 let marketFetchInFlight = false;
+let quoteFetchInFlight = false;
 
 const sampleDaily = [
   row("2330", "台積電", 108500000, 104800000000, 968, 984, 960, 981, 12, 64000),
@@ -499,6 +507,48 @@ function signedMoney(value) {
   return `${value > 0 ? "+" : ""}${money(value)}`;
 }
 
+function stockPriceLabel(stock) {
+  return stock?.realtime ? "即時價" : "收盤";
+}
+
+function stockTodayChange(stock) {
+  if (!stock) return null;
+  const close = number(stock.close);
+  const previousClose = number(stock.previousClose);
+  const change = number(stock.change);
+  if (stock.realtime && Number.isFinite(change)) return change;
+  if (Number.isFinite(close) && Number.isFinite(previousClose)) return close - previousClose;
+  return Number.isFinite(change) ? change : null;
+}
+
+function stockTodayChangePercent(stock) {
+  if (!stock) return null;
+  const close = number(stock.close);
+  const previousClose = number(stock.previousClose);
+  const changePercent = number(stock.changePercent);
+  if (stock.realtime && Number.isFinite(changePercent)) return changePercent;
+  if (Number.isFinite(close) && Number.isFinite(previousClose) && previousClose !== 0) {
+    return ((close - previousClose) / previousClose) * 100;
+  }
+  return Number.isFinite(changePercent) ? changePercent : null;
+}
+
+function priceTone(value) {
+  return value > 0 ? "price-up" : value < 0 ? "price-down" : "";
+}
+
+function pnlText(value, positiveLabel, negativeLabel, flatLabel, formatter = money) {
+  if (!Number.isFinite(value)) return "--";
+  const label = value > 0 ? positiveLabel : value < 0 ? negativeLabel : flatLabel;
+  const sign = value > 0 ? "+" : "";
+  return `${label} ${sign}${formatter(value)}`;
+}
+
+function stockDisplayName(item) {
+  const stock = getStock(item.code);
+  return stock?.name ? `${stock.name} ${item.code}` : item.code;
+}
+
 function rocDateToText(value) {
   const parts = String(value).split("/");
   if (parts.length !== 3) return String(value);
@@ -508,8 +558,10 @@ function rocDateToText(value) {
 function normalizeDaily(raw) {
   return raw.map((item) => {
     const close = number(item.ClosingPrice ?? item["收盤價"] ?? item.close ?? item.closePrice ?? item.lastPrice);
-    const previousClose = number(item.PreviousClose ?? item.previousClose ?? item.referencePrice ?? item.previousPrice);
-    const change = number(item.Change ?? item["漲跌價差"] ?? item.change) ?? (Number.isFinite(close) && Number.isFinite(previousClose) ? close - previousClose : null);
+    const rawChange = number(item.Change ?? item["漲跌價差"] ?? item.change);
+    const previousClose = number(item.PreviousClose ?? item.previousClose ?? item.referencePrice ?? item.previousPrice)
+      ?? (Number.isFinite(close) && Number.isFinite(rawChange) ? close - rawChange : null);
+    const change = rawChange ?? (Number.isFinite(close) && Number.isFinite(previousClose) ? close - previousClose : null);
     const changePercent = number(item.ChangePercent ?? item.changePercent) ?? (Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null);
     return {
       code: item.Code || item["證券代號"] || item.code || item.symbol,
@@ -524,7 +576,8 @@ function normalizeDaily(raw) {
       change,
       changePercent,
       trades: number(item.Transaction ?? item["成交筆數"] ?? item.trades ?? item.transaction),
-      source: item.Source || item.source
+      source: item.Source || item.source,
+      realtime: item.realtime || item.Source === "Fugle" || item.Source === "TWSE_REALTIME" || item.source === "Fugle" || item.source === "TWSE_REALTIME"
     };
   }).filter((item) => item.code && item.name && Number.isFinite(item.close));
 }
@@ -552,7 +605,7 @@ function normalizeRevenue(raw) {
 
 function normalizeRealtimeQuotes(raw) {
   return raw.map((item) => {
-    const close = number(item.closePrice || item.lastPrice);
+    const close = number(item.lastPrice ?? item.closePrice);
     const previousClose = number(item.previousClose);
     return {
       code: item.symbol || item.code,
@@ -561,11 +614,14 @@ function normalizeRealtimeQuotes(raw) {
       high: number(item.highPrice),
       low: number(item.lowPrice),
       close,
+      previousClose,
       change: number(item.change) ?? (Number.isFinite(close) && Number.isFinite(previousClose) ? close - previousClose : null),
+      changePercent: number(item.changePercent) ?? (Number.isFinite(close) && Number.isFinite(previousClose) && previousClose ? ((close - previousClose) / previousClose) * 100 : null),
       volume: number(item.total?.tradeVolume || item.tradeVolume),
       value: number(item.total?.tradeValue || item.tradeValue),
       trades: number(item.total?.transaction || item.transaction),
       realtime: true,
+      source: item.source || "Fugle",
       quoteTime: item.lastUpdated || item.closeTime
     };
   }).filter((item) => item.code && Number.isFinite(item.close));
@@ -603,6 +659,17 @@ function normalizeIndex(payload) {
 
 function normalizeIndexGroups(groups = {}) {
   return Object.fromEntries(Object.entries(groups).map(([key, group]) => [key, normalizeIndex(group)]));
+}
+
+function isValidMarketIndex(index) {
+  return ["Fugle", "TWSE", "Yahoo"].includes(index?.source) && Number.isFinite(index.index);
+}
+
+function marketIndexSourceText(source) {
+  if (source === "Fugle") return "Fugle 即時指數資料";
+  if (source === "Yahoo") return "Yahoo 公開行情";
+  if (source === "TWSE") return "TWSE 即時指數資料";
+  return "非即時或範例資料";
 }
 
 function mergeRealtimeQuotes(daily, realtime) {
@@ -650,6 +717,38 @@ function scheduleMarketRefresh() {
   refreshTimer = window.setTimeout(fetchMarket, currentRefreshInterval());
 }
 
+function scheduleQuoteRefresh() {
+  window.clearTimeout(quoteRefreshTimer);
+  if (!isTwMarketOpen() || !watchList.length) return;
+  quoteRefreshTimer = window.setTimeout(fetchRealtimeQuotes, QUOTE_REFRESH_MS);
+}
+
+async function fetchRealtimeQuotes() {
+  if (document.hidden || quoteFetchInFlight || !watchList.length) return;
+  quoteFetchInFlight = true;
+  try {
+    const symbols = watchList.map((item) => item.code).join(",");
+    const response = await fetch(`${endpoints.bundle}?fast=quotes&symbols=${encodeURIComponent(symbols)}&_=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Realtime quotes unavailable");
+    const payload = await response.json();
+    const realtime = normalizeRealtimeQuotes(payload.realtime || []);
+    if (realtime.length) {
+      market.daily = mergeRealtimeQuotes(market.daily || [], realtime);
+      if (payload.realtimeSource) {
+        const sourceParts = [market.source, payload.realtimeSource].filter(Boolean).join(" + ");
+        market.source = [...new Set(sourceParts.split(" + ").filter(Boolean))].join(" + ");
+      }
+      render();
+      setStatus("已更新", new Date().toLocaleString("zh-TW"));
+    }
+  } catch {
+    // Keep the last known market data on screen; the full refresh will retry later.
+  } finally {
+    quoteFetchInFlight = false;
+    scheduleQuoteRefresh();
+  }
+}
+
 async function fetchMarket() {
   if (document.hidden) {
     setStatus("暫停更新", "分頁在背景，回到畫面後會自動更新");
@@ -658,6 +757,7 @@ async function fetchMarket() {
   if (marketFetchInFlight) return;
   marketFetchInFlight = true;
   setStatus("更新中", "正在讀取證交所公開資料");
+  fetchRealtimeQuotes();
 
   try {
     const symbols = watchList.map((item) => item.code).join(",");
@@ -697,6 +797,7 @@ async function fetchMarket() {
   render();
   marketFetchInFlight = false;
   scheduleMarketRefresh();
+  scheduleQuoteRefresh();
 }
 
 function normalizeInstitutional(payload) {
@@ -753,7 +854,14 @@ function setStatus(status, time) {
 function openBriefTarget(card) {
   const target = document.querySelector(card.dataset.target);
   if (!target) return;
+  if (target.classList.contains("advanced-section") && document.body.dataset.viewMode === "simple") {
+    applyViewMode("full");
+  }
+  target.classList.remove("target-highlight");
+  void target.offsetWidth;
+  target.classList.add("target-highlight");
   target.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.setTimeout(() => target.classList.remove("target-highlight"), 1800);
   if (card.dataset.target === "#watchForm") {
     window.setTimeout(() => els.symbol?.focus(), 450);
   }
@@ -864,7 +972,9 @@ function scoreStock(stock, val, rev) {
 }
 
 function render() {
-  const ranking = market.daily.slice().sort((a, b) => b.value - a.value).slice(0, 20);
+  const valueRanking = market.daily.slice().sort((a, b) => b.value - a.value);
+  const ranking = valueRanking.slice(0, RANKING_LIMIT);
+  const trendRanking = valueRanking.slice(0, TREND_STOCK_LIMIT);
   latestRanking = ranking;
   const tracked = watchList.map((item) => {
     const stock = getStock(item.code);
@@ -905,7 +1015,7 @@ function render() {
   renderMarketIndex();
   renderInstitutional();
   renderMarketThemes(ranking);
-  renderTrendPanel(ranking);
+  renderTrendPanel(trendRanking);
   renderSmallCapGuide();
 }
 
@@ -985,11 +1095,11 @@ function formatStockLabel(stock) {
 function pickBeginnerCandidate(ranking) {
   const trendCandidates = latestTrendItems
     .filter((item) => Number.isFinite(item.recentReturn))
-    .filter((item) => item.recentReturn > -1 && item.monthReturn > -8)
+    .filter((item) => item.recentReturn > -1 && item.monthReturn > -5)
     .map((item) => {
       const score = (number(item.trendScore) || 0)
         + Math.min(Math.max(number(item.value) || 0, 0) / 1_000_000_000, 8) * 0.08
-        - (item.monthReturn > 80 ? 8 : 0)
+        - (item.monthReturn > 18 ? 8 : 0)
         - (item.recentReturn > 9 ? 4 : 0);
       return { item, score };
     })
@@ -1004,7 +1114,7 @@ function pickBeginnerCandidate(ranking) {
     const trendCandidate = trendCandidates[seed % trendCandidates.length];
     return {
       stock: trendCandidate,
-      reason: `每分鐘從前 ${trendCandidates.length} 檔候選中輪替顯示一檔。依近月趨勢、今天強弱與成交熱度排序，先觀察是否延續，這不是買進建議。`
+      reason: `每分鐘從前 ${trendCandidates.length} 檔候選中輪替顯示一檔。依近一週趨勢、今天強弱與成交熱度排序，先觀察是否延續，這不是買進建議。`
     };
   }
 
@@ -1018,7 +1128,7 @@ function pickBeginnerCandidate(ranking) {
     const rankingCandidate = fallbackPool[seed % fallbackPool.length];
     return {
       stock: rankingCandidate,
-      reason: "目前先用成交熱度挑觀察股；趨勢資料算完後，這裡會自動換成近月走勢挑選。"
+      reason: "目前先用成交熱度挑觀察股；趨勢資料算完後，這裡會自動換成近一週走勢挑選。"
     };
   }
 
@@ -1073,11 +1183,12 @@ function renderMarketScore(ranking, tracked) {
 function renderDataQuality() {
   const hasFugle = market.source.includes("Fugle");
   const hasRealMarket = market.source !== "sample" && market.source !== "資料不足" && (market.daily.length || Number.isFinite(number(market.index?.index)));
-  const hasInstitutional = market.institutional?.source === "TWSE";
+  const institutionalSource = String(market.institutional?.source || "");
+  const hasInstitutional = institutionalSource.includes("TWSE") || institutionalSource.includes("TPEx");
   els.dataQualityList.innerHTML = [
     dataBadge(hasRealMarket ? "即時/公開" : market.source === "sample" ? "範例" : "資料不足", hasRealMarket ? "good" : "bad", hasRealMarket ? "大盤與成交資料已連接公開資料來源。" : "主要市場資料目前沒有成功回傳，先不要用這個畫面做判斷。"),
     dataBadge(hasFugle ? "即時" : "延遲", hasFugle ? "good" : "warn", hasFugle ? "個股報價使用 Fugle 即時行情。" : "個股多為 TWSE 公開資料或盤後資料，非逐筆即時。"),
-    dataBadge(hasInstitutional ? "盤後" : "估算", hasInstitutional ? "warn" : "bad", hasInstitutional ? "法人資料為 TWSE 盤後統計，適合看方向，不是即時籌碼。" : "法人資料尚未完整連接，先當參考。"),
+    dataBadge(hasInstitutional ? "盤後" : "估算", hasInstitutional ? "warn" : "bad", hasInstitutional ? "法人資料為 TWSE / TPEx 盤後統計，適合看方向，不是即時籌碼。" : "法人資料尚未完整連接，先當參考。"),
     dataBadge("非建議", "warn", "AI 只整理訊號與風險，不保證獲利；下單前仍要檢查部位與停損。")
   ].join("");
 }
@@ -1241,8 +1352,11 @@ function holdingMetrics(entry) {
   const costValue = cost && shares ? cost * shares : null;
   const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
   const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
+  const todayChange = stockTodayChange(stock);
+  const todayChangePercent = stockTodayChangePercent(stock);
+  const todayPnl = Number.isFinite(todayChange) && Number.isFinite(shares) && shares > 0 ? todayChange * shares : null;
   const yearlyDividend = val?.yieldRate && marketValue ? marketValue * (val.yieldRate / 100) : null;
-  return { cost, shares, marketValue, costValue, pnl, pnlRate, yearlyDividend };
+  return { cost, shares, marketValue, costValue, pnl, pnlRate, todayChange, todayChangePercent, todayPnl, yearlyDividend };
 }
 
 function renderTodayPnl(holdings) {
@@ -1252,7 +1366,7 @@ function renderTodayPnl(holdings) {
     .map((entry) => ({ entry, m: holdingMetrics(entry) }))
     .filter(({ entry, m }) => entry.stock && Number.isFinite(m.shares) && m.shares > 0);
 
-  // 今日損益 = sum(stock.change × shares)
+  // 今日損益 = sum((即時價 - 昨收) × shares)，和持股卡片共用同一組欄位。
   let todayPnl = null;
   let priorMarketValue = 0;
   let totalMarketValue = 0;
@@ -1262,10 +1376,10 @@ function renderTodayPnl(holdings) {
   valid.forEach(({ entry, m }) => {
     const shares = m.shares;
     const close = entry.stock.close;
-    const change = Number.isFinite(entry.stock.change) ? entry.stock.change : null;
+    const change = m.todayChange;
     if (Number.isFinite(close)) totalMarketValue += close * shares;
     if (Number.isFinite(change)) {
-      todayPnl = (todayPnl || 0) + change * shares;
+      todayPnl = (todayPnl || 0) + m.todayPnl;
       const prior = (close - change) * shares;
       if (Number.isFinite(prior)) {
         priorMarketValue += prior;
@@ -1287,9 +1401,7 @@ function renderTodayPnl(holdings) {
     els.todayPnlPercent.className = "today-pnl-percent";
     if (els.todayPnlCard) els.todayPnlCard.removeAttribute("data-pnl");
   } else {
-    const sign = todayPnl > 0 ? "+" : "";
-    const arrow = todayPnl > 0 ? "▲ " : todayPnl < 0 ? "▼ " : "";
-    els.todayPnlAmount.textContent = `${arrow}${sign}${money(todayPnl)} 元`;
+    els.todayPnlAmount.textContent = `${pnlText(todayPnl, "今日財產增加", "今日財產減少", "今日財產持平")} 元`;
     els.todayPnlAmount.className = `today-pnl-amount ${todayPnl > 0 ? "price-up" : todayPnl < 0 ? "price-down" : ""}`;
     if (todayPct !== null) {
       els.todayPnlPercent.textContent = `(${todayPct > 0 ? "+" : ""}${money(todayPct)}%)`;
@@ -1307,12 +1419,10 @@ function renderTodayPnl(holdings) {
   els.todayPnlMarketValue.textContent = totalMarketValue ? compactMoney(totalMarketValue) : "--";
 
   if (cumulativePnl !== 0) {
-    const sign = cumulativePnl > 0 ? "+" : "";
-    const arrow = cumulativePnl > 0 ? "▲ " : cumulativePnl < 0 ? "▼ " : "";
-    els.todayPnlAccumulated.textContent = `${arrow}${sign}${compactMoney(cumulativePnl)}`;
+    els.todayPnlAccumulated.textContent = pnlText(cumulativePnl, "持股增加", "持股減少", "持股持平", compactMoney);
     els.todayPnlAccumulated.className = cumulativePnl > 0 ? "price-up" : "price-down";
   } else {
-    els.todayPnlAccumulated.textContent = valid.length ? "--" : "--";
+    els.todayPnlAccumulated.textContent = valid.length ? "持股持平 0" : "--";
     els.todayPnlAccumulated.className = "";
   }
 
@@ -1350,6 +1460,12 @@ function renderHoldingOverview(holdings) {
   const losing = rows.filter((row) => row.metrics.pnl < 0);
   const best = rows.filter((row) => row.metrics.pnl !== null).sort((a, b) => b.metrics.pnl - a.metrics.pnl)[0];
   const worst = rows.filter((row) => row.metrics.pnl !== null).sort((a, b) => a.metrics.pnl - b.metrics.pnl)[0];
+  const holdingSummaryLabel = (row) => {
+    if (!row) return "--";
+    const name = row.stock?.name || getStock(row.item.code)?.name || "";
+    const label = name ? `${name} ${row.item.code}` : row.item.code;
+    return `${escapeHtml(label)} ${compactMoney(row.metrics.pnl)}`;
+  };
   const aiTone = totalPnlRate === null
     ? "請先補齊買進價與股數，才能判讀總損益。"
     : totalPnlRate >= 10
@@ -1366,8 +1482,8 @@ function renderHoldingOverview(holdings) {
     ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
     ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
     ["獲利 / 虧損", `${profitable.length} / ${losing.length} 檔`, ""],
-    ["最大獲利股", best ? `${escapeHtml(best.item.code)} ${compactMoney(best.metrics.pnl)}` : "--", "price-up"],
-    ["最大虧損股", worst ? `${escapeHtml(worst.item.code)} ${compactMoney(worst.metrics.pnl)}` : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
+    ["最大獲利股", best ? holdingSummaryLabel(best) : "--", "price-up"],
+    ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
   ];
 
   els.holdingOverview.innerHTML = `
@@ -1421,7 +1537,7 @@ function renderInstitutional() {
     setFlowClass(element, value);
   });
 
-  els.institutionDate.textContent = `資料日期：${formatUpdateTime(data.date)}`;
+  els.institutionDate.textContent = `資料日期：${formatDateOnly(data.date)}`;
   els.institutionStatus.textContent = data.source === "TWSE"
     ? "法人：TWSE 盤後統計，非逐筆即時"
     : "法人：範例資料，等待 TWSE 更新";
@@ -1529,16 +1645,16 @@ function inferSector(stock) {
 }
 
 async function renderTrendPanel(ranking) {
-  const candidates = ranking.slice(0, 20);
-  const key = candidates.map((stock) => stock.code).join(",");
+  const candidates = ranking.slice(0, TREND_STOCK_LIMIT);
+  const key = `${TREND_DATA_VERSION}:${candidates.map((stock) => stock.code).join(",")}`;
   if (!key) {
     latestTrendItems = [];
-    els.trendList.innerHTML = '<p class="empty">等待成交排行更新後，這裡會計算近月漲勢。</p>';
+    els.trendList.innerHTML = '<p class="empty">等待成交排行更新後，這裡會計算近一週漲勢。</p>';
     updateTrendGuide([]);
     renderTrendSummary([]);
     els.trendAiTitle.textContent = "等待資料";
     els.trendAiText.textContent = "目前沒有足夠股票可分析。";
-    els.trendStatus.textContent = "趨勢：等待近月資料";
+    els.trendStatus.textContent = "趨勢：等待近一週資料";
     drawTrendChart([]);
     return;
   }
@@ -1546,7 +1662,7 @@ async function renderTrendPanel(ranking) {
   if (market.source === "sample") {
     els.trendGuide.innerHTML = `
       <strong>目前是範例資料</strong>
-      <p>這欄需要市場資料 API 才能計算真實的近月漲勢。若看到多檔股票數字一樣，代表網站目前沒有抓到即時資料，不能拿來判斷投資方向。</p>
+      <p>這欄需要市場資料 API 才能計算真實的近一週漲勢。若看到多檔股票數字一樣，代表網站目前沒有抓到即時資料，不能拿來判斷投資方向。</p>
     `;
     els.trendStatus.textContent = "趨勢：目前使用範例資料，等待市場 API 連線";
   }
@@ -1557,7 +1673,7 @@ async function renderTrendPanel(ranking) {
   }
 
   trendRequestKey = key;
-  els.trendStatus.textContent = "趨勢：正在抓取近一個月資料";
+  els.trendStatus.textContent = "趨勢：正在抓取近一週資料";
   els.trendList.innerHTML = '<p class="empty">正在依每日漲幅計算近期漲勢...</p>';
 
   const items = await Promise.all(candidates.map(async (stock) => {
@@ -1566,12 +1682,12 @@ async function renderTrendPanel(ranking) {
   }));
   if (trendRequestKey !== key) return;
 
-  latestTrendItems = items.filter(Boolean).sort((a, b) => b.recentReturn - a.recentReturn).slice(0, 20);
+  latestTrendItems = items.filter(Boolean).sort((a, b) => b.recentReturn - a.recentReturn).slice(0, TREND_STOCK_LIMIT);
   renderTrendResults(latestTrendItems);
 }
 
 function buildTrendItem(stock, history) {
-  const recent = history.filter((item) => Number.isFinite(item.close)).slice(-22);
+  const recent = history.filter((item) => Number.isFinite(item.close)).slice(-TREND_HISTORY_DAYS);
   if (recent.length < 4) return null;
   const latest = recent.at(-1).close;
   const previousDay = recent[Math.max(0, recent.length - 2)].close;
@@ -1598,7 +1714,7 @@ function buildTrendItem(stock, history) {
 
 function renderTrendResults(items) {
   if (!items.length) {
-    els.trendList.innerHTML = '<p class="empty">近月資料不足，稍後再更新。</p>';
+    els.trendList.innerHTML = '<p class="empty">近一週資料不足，稍後再更新。</p>';
     updateTrendGuide([]);
     renderTrendSummary([]);
     els.trendAiTitle.textContent = "資料不足";
@@ -1608,17 +1724,30 @@ function renderTrendResults(items) {
     return;
   }
 
-  const displayed = items.slice(0, 20);
-  els.trendList.innerHTML = displayed.map((item, index) => `
-    <article class="trend-row">
-      <div>
-        <strong>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
-        <small>${escapeHtml(item.sector)} ｜ 近月 ${percent(item.monthReturn)} ｜ 1 日 ${percent(item.recentReturn)} ｜ 3 日區段上漲 ${item.positiveSegments}/${item.segmentCount}</small>
-        <small>成交金額 ${compactMoney(item.value)} ｜ 成交量 ${money(item.volume)} 股 ｜ 收盤 ${money(item.close)} ｜ 今日漲跌 ${signedMoney(item.change)} / ${percent(item.changePercent)}</small>
-      </div>
-      <span class="${item.recentReturn >= 0 ? "price-up" : "price-down"}">${percent(item.recentReturn)}</span>
-    </article>
-  `).join("");
+  const displayed = items.slice(0, TREND_STOCK_LIMIT);
+  els.trendList.innerHTML = displayed.map((item, index) => {
+    const todayChange = stockTodayChange(item);
+    const todayChangePercent = stockTodayChangePercent(item);
+    const weekTone = priceTone(item.monthReturn);
+    const dayTone = priceTone(item.recentReturn);
+    return `
+      <article class="trend-row">
+        <div>
+          <strong>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
+          <small>${escapeHtml(item.sector)} ｜ ${TREND_PERIOD_LABEL} <span class="${weekTone}">${percent(item.monthReturn)}</span> ｜ 1 日 <span class="${dayTone}">${percent(item.recentReturn)}</span> ｜ 3 日區段上漲 ${item.positiveSegments}/${item.segmentCount}</small>
+          <small>成交金額 ${compactMoney(item.value)} ｜ 成交量 ${money(item.volume)} 股</small>
+        </div>
+        <div class="trend-quote">
+          <span>${stockPriceLabel(item)}</span>
+          <strong>${money(item.close)}</strong>
+          <small class="trend-change ${priceTone(todayChange)}">
+            <span>今日 ${signedMoney(todayChange)} /</span>
+            <span>${percent(todayChangePercent)}</span>
+          </small>
+        </div>
+      </article>
+    `;
+  }).join("");
 
   const sectors = summarizeTrendSectors(items);
   updateTrendGuide(items, sectors);
@@ -1642,9 +1771,9 @@ function renderTrendSummary(items, sectors = summarizeTrendSectors(items)) {
   if (!els.trendSummary) return;
   if (!items.length) {
     els.trendSummary.innerHTML = `
-      <span>20 檔榜單</span>
+      <span>${TREND_STOCK_LIMIT} 檔榜單</span>
       <strong>等待資料</strong>
-      <p>會列出成交排行前 20 檔的近月、1 日、3 日與成交金額。</p>
+      <p>會列出成交排行前 ${TREND_STOCK_LIMIT} 檔的近一週、1 日、3 日與成交金額。</p>
     `;
     return;
   }
@@ -1653,9 +1782,9 @@ function renderTrendSummary(items, sectors = summarizeTrendSectors(items)) {
   const avgRecent = items.reduce((sum, item) => sum + (item.recentReturn || 0), 0) / items.length;
   const avgMonth = items.reduce((sum, item) => sum + (item.monthReturn || 0), 0) / items.length;
   els.trendSummary.innerHTML = `
-    <span>20 檔榜單</span>
+    <span>${TREND_STOCK_LIMIT} 檔榜單</span>
     <strong>目前顯示 ${items.length} 檔，${upCount} 檔 1 日上漲</strong>
-    <p>平均 1 日 ${percent(avgRecent)}，平均近月 ${percent(avgMonth)}。${topSector ? `最集中族群是 ${escapeHtml(topSector.name)}，共 ${topSector.count} 檔。` : ""}</p>
+    <p>平均 1 日 ${percent(avgRecent)}，平均近一週 ${percent(avgMonth)}。${topSector ? `最集中族群是 ${escapeHtml(topSector.name)}，共 ${topSector.count} 檔。` : ""}</p>
   `;
 }
 
@@ -1671,7 +1800,7 @@ function updateTrendGuide(items, sectors = summarizeTrendSectors(items)) {
 
   const strongStocks = items.filter((item) => item.recentReturn > 0).slice(0, 5);
   const riskStocks = items
-    .filter((item) => item.monthReturn >= 10 && item.recentReturn < 0)
+    .filter((item) => item.monthReturn >= 8 && item.recentReturn < 0)
     .slice(0, 3);
   const sectorNames = sectors
     .filter((sector) => sector.count >= 2)
@@ -1681,10 +1810,10 @@ function updateTrendGuide(items, sectors = summarizeTrendSectors(items)) {
     <strong>這張圖怎麼看</strong>
     <ul>
       <li><b>紅色代表今天強：</b>紅色條越長，表示最近 1 日漲幅越大。先看前 5 名${strongStocks.length ? `：${strongStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}。` : "。"}</li>
-      <li><b>綠色不是一定壞：</b>綠色代表今天回檔。若近月仍大漲，通常是「漲多整理」，不急著追，等回穩再觀察。</li>
-      <li><b>避開風險：</b>${riskStocks.length ? `近月大漲但今天轉綠的 ${riskStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}，先等量縮或止跌。` : "目前沒有明顯「近月大漲、今日轉弱」的高風險名單。"}</li>
+      <li><b>綠色不是一定壞：</b>綠色代表今天回檔。若近一週仍大漲，通常是「漲多整理」，不急著追，等回穩再觀察。</li>
+      <li><b>避開風險：</b>${riskStocks.length ? `近一週大漲但今天轉綠的 ${riskStocks.map((item) => `${escapeHtml(item.code)} ${escapeHtml(item.name)}`).join("、")}，先等量縮或止跌。` : "目前沒有明顯「近一週大漲、今日轉弱」的高風險名單。"}</li>
       <li><b>找方向：</b>${sectorNames.length ? `同族群多檔上榜，代表資金可能集中在 ${sectorNames.map((sector) => `<button class="inline-link" type="button" data-trend-sector="${escapeHtml(sector.name)}">${escapeHtml(sector.name)} ${sector.count} 檔</button>`).join("、")}。` : "若同一族群有多檔一起上榜，代表資金可能正在集中。"}</li>
-      <li><b>不要只看名次：</b>還要看近月漲幅、3 日區段上漲次數與成交金額。連續很強但漲幅過大，通常要等拉回。</li>
+      <li><b>不要只看名次：</b>還要看近一週漲幅、3 日區段上漲次數與成交金額。連續很強但漲幅過大，通常要等拉回。</li>
     </ul>
     <div id="trendSectorDetail" class="trend-sector-detail"></div>
   `;
@@ -1700,7 +1829,7 @@ function renderTrendChartStats(items, sectors) {
   const downCount = items.filter((item) => item.recentReturn < 0).length;
   const topSector = sectors[0];
   const hottest = items[0];
-  const riskCount = items.filter((item) => item.monthReturn > 20 && item.recentReturn < 0).length;
+  const riskCount = items.filter((item) => item.monthReturn > 12 && item.recentReturn < 0).length;
   els.trendChartStats.innerHTML = [
     ["上漲檔數", `${upCount} 檔`],
     ["下跌檔數", `${downCount} 檔`],
@@ -1728,15 +1857,15 @@ function renderTrendSectorDetail(name, items, sectors) {
     return;
   }
   const strong = stocks.filter((item) => item.recentReturn > 0).length;
-  const risk = stocks.filter((item) => item.monthReturn > 20 && item.recentReturn < 0).length;
+  const risk = stocks.filter((item) => item.monthReturn > 12 && item.recentReturn < 0).length;
   box.innerHTML = `
     <strong>${escapeHtml(name)} 族群明細</strong>
-    <p>${escapeHtml(name)} 有 ${sector.count} 檔上榜，最近 1 日平均 ${percent(sector.avgRecent)}，近月平均 ${percent(sector.avgMonth)}。${strong >= 2 ? "多檔同時轉強，代表資金集中度較高。" : "目前強度偏分散，先觀察是否擴散。"}${risk ? ` 其中 ${risk} 檔有漲多回檔跡象。` : ""}</p>
+    <p>${escapeHtml(name)} 有 ${sector.count} 檔上榜，最近 1 日平均 ${percent(sector.avgRecent)}，近一週平均 ${percent(sector.avgMonth)}。${strong >= 2 ? "多檔同時轉強，代表資金集中度較高。" : "目前強度偏分散，先觀察是否擴散。"}${risk ? ` 其中 ${risk} 檔有漲多回檔跡象。` : ""}</p>
     <div class="sector-chip-list">
       ${stocks.map((item) => `
         <button type="button" data-stock-code="${escapeHtml(item.code)}">
           ${escapeHtml(item.code)} ${escapeHtml(item.name)}
-          <small>1 日 ${percent(item.recentReturn)}｜近月 ${percent(item.monthReturn)}</small>
+          <small>1 日 ${percent(item.recentReturn)}｜近一週 ${percent(item.monthReturn)}</small>
         </button>
       `).join("")}
     </div>
@@ -1783,10 +1912,13 @@ function buildTrendAiText(leader, sectorLeader, items) {
 function drawTrendChart(items) {
   const canvas = els.trendChart;
   const context = canvas.getContext("2d");
+  const top = items.slice(0, TREND_STOCK_LIMIT);
+  const desiredHeight = Math.max(560, top.length * 28);
+  canvas.style.height = `${desiredHeight}px`;
   const rect = canvas.getBoundingClientRect();
   const ratio = window.devicePixelRatio || 1;
   const width = Math.max(640, Math.round(rect.width * ratio));
-  const height = Math.max(560 * ratio, Math.round(rect.height * ratio));
+  const height = Math.max(desiredHeight * ratio, Math.round(rect.height * ratio));
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
@@ -1798,11 +1930,10 @@ function drawTrendChart(items) {
   context.fillStyle = "#6f6a61";
   context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
   if (!items.length) {
-    context.fillText("等待近月漲勢資料", 24 * ratio, 44 * ratio);
+    context.fillText("等待近一週漲勢資料", 24 * ratio, 44 * ratio);
     return;
   }
 
-  const top = items.slice(0, 20);
   const padding = { top: 18 * ratio, right: 78 * ratio, bottom: 18 * ratio, left: 138 * ratio };
   const chartWidth = width - padding.left - padding.right;
   const rowHeight = (height - padding.top - padding.bottom) / top.length;
@@ -2073,6 +2204,11 @@ function formatUpdateTime(value) {
   return date.toLocaleString("zh-TW");
 }
 
+function formatDateOnly(value) {
+  const key = marketDateKey(value);
+  return key ? key.replaceAll("-", "/") : String(value || "尚未同步");
+}
+
 function taipeiDateKey(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -2080,6 +2216,36 @@ function taipeiDateKey(date = new Date()) {
     month: "2-digit",
     day: "2-digit"
   }).format(date);
+}
+
+function taipeiTimeParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return {
+    weekday: get("weekday"),
+    minutes: Number(get("hour")) * 60 + Number(get("minute"))
+  };
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function latestTaiwanTradingDateKey(date = new Date()) {
+  const { weekday, minutes } = taipeiTimeParts(date);
+  let offset = 0;
+
+  if (weekday === "Sat") offset = -1;
+  if (weekday === "Sun") offset = -2;
+  if (weekday === "Mon" && minutes < 9 * 60) offset = -3;
+
+  return taipeiDateKey(addDays(date, offset));
 }
 
 function marketDateKey(value) {
@@ -2102,8 +2268,8 @@ function marketDateKey(value) {
   return Number.isNaN(date.getTime()) ? "" : taipeiDateKey(date);
 }
 
-function isTodayMarketData(value) {
-  return marketDateKey(value) === taipeiDateKey();
+function isCurrentMarketData(value) {
+  return marketDateKey(value) === latestTaiwanTradingDateKey();
 }
 
 function renderMarketIndex() {
@@ -2122,16 +2288,13 @@ function renderMarketIndex() {
   const change = number(index.change);
   const changePercent = number(index.changePercent);
   const isUp = change >= 0;
-  const hasMarketIndex = (index.source === "TWSE" || index.source === "Yahoo") && Number.isFinite(index.index);
+  const hasMarketIndex = isValidMarketIndex(index);
   const hasFugleQuotes = String(market.source || "").includes("Fugle");
   if (!hasMarketIndex) {
     renderMarketIndexUnavailable("資料未連線");
     return;
   }
-  if (selectedMarket === "tw" && !isTodayMarketData(index.lastUpdated)) {
-    renderMarketIndexUnavailable("尚未取得今日台股行情");
-    return;
-  }
+  const isStaleTaiwanIndex = selectedMarket === "tw" && index.lastUpdated && !isCurrentMarketData(index.lastUpdated);
 
   els.marketIndexName.textContent = index.name || "加權指數";
   els.marketIndexPrice.textContent = Number.isFinite(index.index) ? money(index.index) : "--";
@@ -2147,7 +2310,7 @@ function renderMarketIndex() {
   els.marketPreviousClose.textContent = Number.isFinite(index.previousClose) ? money(index.previousClose) : "--";
   renderMarketNumberDetails(index, change, changePercent);
   els.marketRealtimeStatus.textContent = hasMarketIndex
-    ? `大盤：${index.source === "Yahoo" ? "Yahoo 公開行情" : "TWSE 即時指數資料"}`
+    ? `大盤：${marketIndexSourceText(index.source)}${isStaleTaiwanIndex ? "，時間可能不是最近交易日" : ""}`
     : "大盤：非即時或範例資料";
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
@@ -2374,6 +2537,8 @@ function drawMarketBoardChart(points, index, isUp) {
   const latest = points.at(-1);
   const latestY = latest ? pointY(latest.close) : null;
   const previousY = Number.isFinite(index.previousClose) ? pointY(index.previousClose) : null;
+  const floatingLabelYs = [];
+  const rightLabelX = width - padding.right + 14 * ratio;
   if (latest) {
     const x = pointX(points.length - 1);
     context.fillStyle = "#242423";
@@ -2383,8 +2548,10 @@ function drawMarketBoardChart(points, index, isUp) {
     const latestLabelY = previousY !== null && Math.abs(previousY - latestY) < 34 * ratio
       ? latestY + (latestY < chartHeight / 2 ? -14 * ratio : 14 * ratio)
       : latestY;
-    drawCanvasPill(context, money(latest.close), width - 12 * ratio, latestLabelY, {
+    floatingLabelYs.push(latestLabelY);
+    drawCanvasPill(context, money(latest.close), rightLabelX, latestLabelY, {
       ratio,
+      align: "left",
       background: color,
       fontSize: 13,
       height: 27,
@@ -2398,8 +2565,10 @@ function drawMarketBoardChart(points, index, isUp) {
     const previousLabelY = latestY !== null && Math.abs(previousY - latestY) < 34 * ratio
       ? previousY + (previousY < chartHeight / 2 ? 18 * ratio : -18 * ratio)
       : previousY;
-    drawCanvasPill(context, money(index.previousClose), width - 12 * ratio, previousLabelY, {
+    floatingLabelYs.push(previousLabelY);
+    drawCanvasPill(context, money(index.previousClose), rightLabelX, previousLabelY, {
       ratio,
+      align: "left",
       background: "#5d6470",
       fontSize: 13,
       height: 27,
@@ -2414,8 +2583,9 @@ function drawMarketBoardChart(points, index, isUp) {
   for (let i = 0; i <= 3; i += 1) {
     const value = max - (range / 3) * i;
     const y = pointY(value);
+    if (floatingLabelYs.some((labelY) => Math.abs(labelY - y) < 24 * ratio)) continue;
     context.textAlign = "left";
-    context.fillText(money(value), width - padding.right + 14 * ratio, y + 4 * ratio);
+    context.fillText(money(value), rightLabelX, y + 4 * ratio);
   }
   ["09", "10", "11", "12", "13"].forEach((label, index) => {
     const x = padding.left + (chartWidth / 4) * index;
@@ -2477,7 +2647,7 @@ function renderHoldings(holdings) {
 
   holdings.forEach(({ item, stock, val, rev, signal }) => {
     const inst = getInstitutional(item.code);
-    const { cost, shares, marketValue, costValue, pnl, pnlRate, yearlyDividend } = holdingMetrics({ item, stock, val });
+    const { cost, shares, marketValue, costValue, pnl, pnlRate, todayChange, todayChangePercent, todayPnl, yearlyDividend } = holdingMetrics({ item, stock, val });
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
     const warning = dataWarning(val, rev, inst);
@@ -2489,11 +2659,17 @@ function renderHoldings(holdings) {
           <strong>${item.code} ${stock?.name || "查無名稱"}</strong>
           <span>${shares ? `${money(shares)} 股` : "未填股數"} ｜ 成本 ${cost ? money(cost) : "--"}</span>
         </div>
+        <div class="holding-live-quote">
+          <span>${stockPriceLabel(stock)}</span>
+          <strong>${stock ? money(stock.close) : "--"}</strong>
+          <small class="${priceTone(todayChange)}">今日 ${signedMoney(todayChange)} / ${percent(todayChangePercent)}</small>
+        </div>
         <button class="delete" type="button" aria-label="刪除">×</button>
       </div>
       <div class="metric-grid">
         <div class="metric"><span>目前市值</span><strong>${marketValue === null ? "--" : compactMoney(marketValue)}</strong></div>
         <div class="metric"><span>投入成本</span><strong>${costValue === null ? "--" : compactMoney(costValue)}</strong></div>
+        <div class="metric"><span>今日損益</span><strong class="${priceTone(todayPnl)}">${todayPnl === null ? "--" : compactMoney(todayPnl)}</strong></div>
         <div class="metric"><span>帳面損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
         <div class="metric"><span>殖利率</span><strong>${val?.yieldRate ?? "--"}%</strong></div>
@@ -2608,6 +2784,8 @@ function renderWatchList(tracked) {
     const pnl = stock && cost && shares ? (stock.close - cost) * shares : null;
     const pnlRate = stock && cost ? ((stock.close - cost) / cost) * 100 : null;
     const inst = getInstitutional(item.code);
+    const todayChange = stockTodayChange(stock);
+    const todayChangePercent = stockTodayChangePercent(stock);
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
     const warning = dataWarning(val, rev, inst);
@@ -2623,8 +2801,8 @@ function renderWatchList(tracked) {
         <button class="delete" type="button" aria-label="刪除">×</button>
       </div>
       <div class="metric-grid">
-        <div class="metric"><span>收盤價</span><strong>${stock ? money(stock.close) : "--"}</strong></div>
-        <div class="metric"><span>今日漲跌</span><strong class="${stock?.change >= 0 ? "price-up" : "price-down"}">${stock ? money(stock.change) : "--"}</strong></div>
+        <div class="metric"><span>${stockPriceLabel(stock)}</span><strong>${stock ? money(stock.close) : "--"}</strong></div>
+        <div class="metric"><span>今日漲跌</span><strong class="${priceTone(todayChange)}">${stock ? `${signedMoney(todayChange)} / ${percent(todayChangePercent)}` : "--"}</strong></div>
         <div class="metric"><span>持有損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
       </div>
@@ -3125,6 +3303,7 @@ async function searchStocks(query) {
 
 function renderSearchResults(results) {
   const list = els.searchResultsList;
+  if (!list) return;
   list.innerHTML = "";
   if (results.length === 0) {
     const noResult = document.createElement("div");
@@ -3158,43 +3337,46 @@ function renderSearchResults(results) {
   });
 }
 
-els.quickSymbolInput.addEventListener("input", async (e) => {
-  const query = e.target.value.trim();
-  if (query.length === 0) {
-    els.searchResults.hidden = true;
-    return;
-  }
-  const results = await searchStocks(query);
-  if (results.length > 0) {
-    renderSearchResults(results);
-    els.searchResults.hidden = false;
-  } else {
-    els.searchResults.hidden = true;
-  }
-});
+if (els.quickSymbolInput && els.searchResults) {
+  els.quickSymbolInput.addEventListener("input", async (e) => {
+    const query = e.target.value.trim();
+    if (query.length === 0) {
+      els.searchResults.hidden = true;
+      return;
+    }
+    const results = await searchStocks(query);
+    if (results.length > 0) {
+      renderSearchResults(results);
+      els.searchResults.hidden = false;
+    } else {
+      els.searchResults.hidden = true;
+    }
+  });
+}
 
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".search-wrapper")) {
+  if (els.searchResults && !e.target.closest(".search-wrapper")) {
     els.searchResults.hidden = true;
   }
 });
 
 function renderQuickAddedStocks() {
   const container = els.quickAddedStocks;
-  const recentStocks = watchList.slice(-5);
-  if (recentStocks.length === 0) {
+  if (!container) return;
+  const addedStocks = watchList;
+  if (addedStocks.length === 0) {
     container.innerHTML = "";
     return;
   }
-  container.innerHTML = '<p style="color: var(--muted); font-size: 14px; font-weight: 700; margin: 10px 0 8px 0;">已加入的股票：</p>';
-  recentStocks.forEach((item) => {
+  container.innerHTML = `<p class="quick-added-title">已加入的股票：共 ${addedStocks.length} 檔</p>`;
+  addedStocks.forEach((item) => {
     const card = document.createElement("div");
     card.className = "quick-stock-item";
     const info = document.createElement("div");
     info.className = "quick-stock-info";
     const codeEl = document.createElement("div");
     codeEl.className = "quick-stock-code";
-    codeEl.textContent = item.code;
+    codeEl.textContent = stockDisplayName(item);
     info.appendChild(codeEl);
     let details = "";
     if (item.cost) details += `買進：$${item.cost}`;
@@ -3223,7 +3405,7 @@ function renderQuickAddedStocks() {
     deleteBtn.className = "quick-stock-delete";
     deleteBtn.textContent = "刪除";
     deleteBtn.addEventListener("click", () => {
-      if (confirm(`確定要刪除 ${item.code} 嗎？`)) {
+      if (confirm(`確定要刪除 ${stockDisplayName(item)} 嗎？`)) {
         watchList = watchList.filter((entry) => entry.code !== item.code);
         saveWatchList();
         renderQuickAddedStocks();
@@ -3238,36 +3420,38 @@ function renderQuickAddedStocks() {
   });
 }
 
-els.quickAddForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (cloudEnabled && !currentUser) {
-    setAuthStatus("請先登入，持股資料才會同步到你的雲端帳號。", true);
-    return;
-  }
-  const code = els.quickSymbolInput.value.trim();
-  if (!/^\d{4,6}$/.test(code)) {
-    alert("請輸入正確的股票代號（4-6 碼數字）");
-    return;
-  }
-  const existing = watchList.find((item) => item.code === code);
-  if (existing) {
-    existing.cost = els.quickCostInput.value;
-    existing.shares = els.quickSharesInput.value;
-    existing.type = els.quickTypeInput.value;
-  } else {
-    watchList.push({
-      code,
-      cost: els.quickCostInput.value,
-      shares: els.quickSharesInput.value,
-      type: els.quickTypeInput.value,
-    });
-  }
-  saveWatchList();
-  els.quickAddForm.reset();
-  els.searchResults.hidden = true;
-  renderQuickAddedStocks();
-  render();
-});
+if (els.quickAddForm) {
+  els.quickAddForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (cloudEnabled && !currentUser) {
+      setAuthStatus("請先登入，持股資料才會同步到你的雲端帳號。", true);
+      return;
+    }
+    const code = els.quickSymbolInput.value.trim();
+    if (!/^\d{4,6}$/.test(code)) {
+      alert("請輸入正確的股票代號（4-6 碼數字）");
+      return;
+    }
+    const existing = watchList.find((item) => item.code === code);
+    if (existing) {
+      existing.cost = els.quickCostInput.value;
+      existing.shares = els.quickSharesInput.value;
+      existing.type = els.quickTypeInput.value;
+    } else {
+      watchList.push({
+        code,
+        cost: els.quickCostInput.value,
+        shares: els.quickSharesInput.value,
+        type: els.quickTypeInput.value,
+      });
+    }
+    saveWatchList();
+    els.quickAddForm.reset();
+    if (els.searchResults) els.searchResults.hidden = true;
+    renderQuickAddedStocks();
+    render();
+  });
+}
 
 renderQuickAddedStocks();
 
@@ -3414,6 +3598,7 @@ window.addEventListener("resize", redrawChart);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     window.clearTimeout(refreshTimer);
+    window.clearTimeout(quoteRefreshTimer);
     setStatus("暫停更新", "分頁在背景，回到畫面後會自動更新");
     return;
   }

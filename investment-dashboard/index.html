@@ -45,43 +45,6 @@
       <p id="todayPnlNote" class="today-pnl-note">登入並新增持股後，這裡會顯示「今天賺多少 / 賠多少」。</p>
     </section>
 
-    <section class="quick-add-panel" aria-label="快速加入股票">
-      <div class="quick-add-head">
-        <div>
-          <p class="eyebrow">快速加入</p>
-          <h2>輸入股票代號查詢</h2>
-        </div>
-        <span class="quick-add-hint">支援代號或股票名稱</span>
-      </div>
-      <form id="quickAddForm" class="quick-add-form" autocomplete="off">
-        <div class="search-wrapper">
-          <input id="quickSymbolInput" inputmode="numeric" placeholder="例如：2330 或 台積電" autocomplete="off">
-          <div id="searchResults" class="search-results" hidden>
-            <div class="search-results-list"></div>
-          </div>
-        </div>
-        <div class="quick-form-fields">
-          <label>
-            <span>買進價</span>
-            <input id="quickCostInput" type="number" min="0" step="0.01" placeholder="可留空">
-          </label>
-          <label>
-            <span>股數</span>
-            <input id="quickSharesInput" type="number" min="0" step="1" placeholder="可留空">
-          </label>
-          <label>
-            <span>分類</span>
-            <select id="quickTypeInput">
-              <option value="holding">我的存股</option>
-              <option value="watch">觀察名單</option>
-            </select>
-          </label>
-          <button type="submit" class="quick-add-submit">加入</button>
-        </div>
-      </form>
-      <div id="quickAddedStocks" class="quick-added-stocks"></div>
-    </section>
-
     <section class="hero advanced-section" aria-label="投資總覽">
       <div>
         <p class="eyebrow">投資導航儀</p>
@@ -93,6 +56,89 @@
         <strong id="dataStatus">準備更新</strong>
         <small id="updatedAt">尚未同步</small>
       </div>
+    </section>
+
+    <section class="auth-panel" aria-label="使用者註冊與安全登入">
+      <div class="auth-copy">
+        <p class="eyebrow">安全帳號</p>
+        <h2 id="authTitle">建立或登入使用者</h2>
+        <p id="authStatus">登入後，持股資料會存到雲端並依使用者分開查詢。</p>
+      </div>
+      <button id="googleSignInButton" type="button" class="google-signin">
+        <span class="google-icon" aria-hidden="true">G</span>
+        <span>用 Google 帳號一鍵登入</span>
+      </button>
+      <p class="auth-divider"><span>或使用 Email 登入</span></p>
+      <form id="authForm" class="auth-form" autocomplete="off">
+        <label>
+          <span>姓名</span>
+          <input id="authNameInput" placeholder="例如：Ken">
+        </label>
+        <label>
+          <span>Email</span>
+          <input id="authEmailInput" type="email" placeholder="例如：you@example.com" required>
+        </label>
+        <label>
+          <span>密碼</span>
+          <input id="authPasswordInput" type="password" minlength="8" placeholder="至少 8 碼" required>
+        </label>
+        <button id="loginButton" type="submit">登入</button>
+        <button id="registerButton" class="secondary" type="button">註冊</button>
+      </form>
+      <details class="auth-advanced">
+        <summary>更多帳號設定</summary>
+        <div class="auth-actions">
+          <button id="logoutButton" class="secondary" type="button">登出 / 鎖定裝置</button>
+        </div>
+      </details>
+      <div class="security-notes">
+        <span>安全機制</span>
+        <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
+        <small>持股資料存於 Firestore，搭配 Security Rules，使用者只能讀寫自己的資料。</small>
+      </div>
+    </section>
+
+    <div class="section-divider">
+      <span>管理持股</span>
+      <strong>輸入自己的股票，看損益與提醒</strong>
+    </div>
+
+    <section class="control-panel" aria-label="管理持股">
+      <form id="watchForm" autocomplete="off">
+        <label>
+          <span>股票代號</span>
+          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
+        </label>
+        <label>
+          <span>買進價</span>
+          <input id="costInput" type="number" min="0" step="0.01" placeholder="可留空">
+        </label>
+        <label>
+          <span>股數</span>
+          <input id="sharesInput" type="number" min="0" step="1" placeholder="可留空">
+        </label>
+        <label>
+          <span>分類</span>
+          <select id="typeInput">
+            <option value="holding">我的存股</option>
+            <option value="watch">觀察名單</option>
+          </select>
+        </label>
+        <button type="submit">加入追蹤</button>
+      </form>
+      <div class="actions">
+        <button id="refreshButton" type="button">立即更新</button>
+        <button id="demoButton" type="button">載入範例</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="我的存股">
+      <div class="panel-head">
+        <h2>我的存股</h2>
+        <span>長期持有與股息觀察</span>
+      </div>
+      <div id="holdingOverview" class="holding-overview"></div>
+      <div id="holdingList" class="holding-list"></div>
     </section>
 
     <section class="beginner-brief advanced-section" aria-label="今日新手導讀">
@@ -119,7 +165,7 @@
         <article class="brief-card" role="button" tabindex="0" data-target="#marketScorePanel" aria-label="查看風險提醒詳細資料">
           <span>3. 風險提醒</span>
           <strong id="beginnerRiskText">先等資料</strong>
-          <p>近月大漲但今天轉弱的股票，不急著追。</p>
+          <p>近一週大漲但今天轉弱的股票，不急著追。</p>
           <small>查看風險評分</small>
         </article>
         <article class="brief-card" role="button" tabindex="0" data-target="#watchForm" aria-label="前往加入持股或觀察股">
@@ -308,7 +354,7 @@
     <section id="trendPanel" class="panel trend-panel advanced-section" aria-label="近期大盤漲勢集中族群">
       <div class="panel-head">
         <h2>近期大盤漲勢集中族群</h2>
-        <span>近一個月，每天整理一次</span>
+        <span>近一週，每天整理一次</span>
       </div>
       <div class="trend-layout">
         <div>
@@ -318,12 +364,12 @@
         <div class="trend-side">
           <article id="trendGuide" class="trend-guide">
             <strong>這張圖怎麼看</strong>
-            <p>紅色前 5 名是短線強勢股；近月大漲但今天轉綠要先等回穩；同一族群多檔上榜，代表資金可能正在集中。</p>
+            <p>紅色前 5 名是短線強勢股；近一週大漲但今天轉綠要先等回穩；同一族群多檔上榜，代表資金可能正在集中。</p>
           </article>
           <article id="trendSummary" class="trend-summary">
-            <span>20 檔榜單</span>
+            <span>32 檔榜單</span>
             <strong>等待資料</strong>
-            <p>會列出成交排行前 20 檔的近月、1 日、3 日與成交金額。</p>
+            <p>會列出成交排行前 32 檔的近一週、1 日、3 日與成交金額。</p>
           </article>
           <article class="ai-card">
             <span>AI 趨勢分析</span>
@@ -333,90 +379,7 @@
         </div>
       </div>
       <div id="trendList" class="trend-list trend-list-horizontal"></div>
-      <p id="trendStatus" class="last-updated">趨勢：等待近月資料</p>
-    </section>
-
-    <div class="section-divider">
-      <span>管理持股</span>
-      <strong>輸入自己的股票，看損益與提醒</strong>
-    </div>
-
-    <section class="control-panel" aria-label="管理持股">
-      <form id="watchForm" autocomplete="off">
-        <label>
-          <span>股票代號</span>
-          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
-        </label>
-        <label>
-          <span>買進價</span>
-          <input id="costInput" type="number" min="0" step="0.01" placeholder="可留空">
-        </label>
-        <label>
-          <span>股數</span>
-          <input id="sharesInput" type="number" min="0" step="1" placeholder="可留空">
-        </label>
-        <label>
-          <span>分類</span>
-          <select id="typeInput">
-            <option value="holding">我的存股</option>
-            <option value="watch">觀察名單</option>
-          </select>
-        </label>
-        <button type="submit">加入追蹤</button>
-      </form>
-      <div class="actions">
-        <button id="refreshButton" type="button">立即更新</button>
-        <button id="demoButton" type="button">載入範例</button>
-      </div>
-    </section>
-
-    <section class="auth-panel" aria-label="使用者註冊與安全登入">
-      <div class="auth-copy">
-        <p class="eyebrow">安全帳號</p>
-        <h2 id="authTitle">建立或登入使用者</h2>
-        <p id="authStatus">登入後，持股資料會存到雲端並依使用者分開查詢。</p>
-      </div>
-      <button id="googleSignInButton" type="button" class="google-signin">
-        <span class="google-icon" aria-hidden="true">G</span>
-        <span>用 Google 帳號一鍵登入</span>
-      </button>
-      <p class="auth-divider"><span>或使用 Email 登入</span></p>
-      <form id="authForm" class="auth-form" autocomplete="off">
-        <label>
-          <span>姓名</span>
-          <input id="authNameInput" placeholder="例如：Ken">
-        </label>
-        <label>
-          <span>Email</span>
-          <input id="authEmailInput" type="email" placeholder="例如：you@example.com" required>
-        </label>
-        <label>
-          <span>密碼</span>
-          <input id="authPasswordInput" type="password" minlength="8" placeholder="至少 8 碼" required>
-        </label>
-        <button id="loginButton" type="submit">登入</button>
-        <button id="registerButton" class="secondary" type="button">註冊</button>
-      </form>
-      <details class="auth-advanced">
-        <summary>更多帳號設定</summary>
-        <div class="auth-actions">
-          <button id="logoutButton" class="secondary" type="button">登出 / 鎖定裝置</button>
-        </div>
-      </details>
-      <div class="security-notes">
-        <span>安全機制</span>
-        <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
-        <small>持股資料存於 Firestore，搭配 Security Rules，使用者只能讀寫自己的資料。</small>
-      </div>
-    </section>
-
-    <section class="panel" aria-label="我的存股">
-      <div class="panel-head">
-        <h2>我的存股</h2>
-        <span>長期持有與股息觀察</span>
-      </div>
-      <div id="holdingOverview" class="holding-overview"></div>
-      <div id="holdingList" class="holding-list"></div>
+      <p id="trendStatus" class="last-updated">趨勢：等待近一週資料</p>
     </section>
 
     <section class="layout">
@@ -646,6 +609,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260508-2228"></script>
+  <script src="app.js?v=20260514-0920"></script>
 </body>
 </html>

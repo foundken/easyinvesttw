@@ -178,16 +178,28 @@ async function fetchTwseIndexCandles(date) {
 }
 
 async function fetchInstitutional() {
-  const date = taipeiDate();
-  const response = await fetch(`https://www.twse.com.tw/rwd/zh/fund/T86?date=${date}&selectType=ALLBUT0999&response=json`, {
-    headers: { accept: "application/json" }
-  });
-  if (!response.ok) throw new Error("TWSE institutional request failed");
+  const candidates = recentTaipeiDates(8);
+  let payload = null;
+  let date = "";
 
-  const payload = await response.json();
+  for (const candidate of candidates) {
+    const response = await fetch(`https://www.twse.com.tw/rwd/zh/fund/T86?date=${candidate}&selectType=ALLBUT0999&response=json`, {
+      headers: twseHeaders()
+    });
+    if (!response.ok) continue;
+
+    const candidatePayload = await response.json();
+    const candidateRows = Array.isArray(candidatePayload.data) ? candidatePayload.data : [];
+    if (candidateRows.length) {
+      payload = candidatePayload;
+      date = candidate;
+      break;
+    }
+  }
+
+  if (!payload) throw new Error("TWSE institutional empty result");
   const fields = payload.fields || [];
   const rows = Array.isArray(payload.data) ? payload.data : [];
-  if (!rows.length) throw new Error("TWSE institutional empty result");
   const stocks = {};
   const totals = rows.reduce((sum, row) => {
     const value = parseInstitutionalRow(row, fields);
@@ -208,7 +220,7 @@ async function fetchInstitutional() {
   }, { foreign: 0, trust: 0, dealer: 0 });
 
   return {
-    date: payload.date || date,
+    date: twseDateToIso(payload.date || date),
     foreign: totals.foreign,
     trust: totals.trust,
     dealer: totals.dealer,
@@ -372,15 +384,34 @@ function decodeHtml(value) {
     .replace(/&#39;/g, "'");
 }
 
-function taipeiDate() {
+function taipeiDate(daysAgo = 0) {
+  const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const get = (type) => parts.find((part) => part.type === type).value;
   return `${get("year")}${get("month")}${get("day")}`;
+}
+
+function recentTaipeiDates(days) {
+  return Array.from({ length: days }, (_, index) => taipeiDate(index));
+}
+
+function twseDateToIso(value) {
+  const text = String(value || "").trim();
+  const compact = text.match(/(\d{4})(\d{2})(\d{2})/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const roc = text.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})/);
+  if (roc) {
+    const year = String(Number(roc[1]) + 1911);
+    const month = String(Number(roc[2])).padStart(2, "0");
+    const day = String(Number(roc[3])).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  return text;
 }
 
 function cleanTwseCell(value) {
@@ -493,9 +524,7 @@ function recentMonths(count) {
 
 async function fetchJson(path) {
   const response = await fetch(`${BASE}${path}`, {
-    headers: {
-      accept: "application/json"
-    }
+    headers: twseHeaders()
   });
 
   if (!response.ok) {
@@ -503,6 +532,17 @@ async function fetchJson(path) {
   }
 
   return response.json();
+}
+
+function twseHeaders() {
+  return {
+    accept: "application/json,text/plain,*/*",
+    "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    referer: "https://www.twse.com.tw/zh/page/trading/fund/T86.html",
+    "user-agent": "Mozilla/5.0 EasyInvestTW market data reader"
+  };
 }
 
 async function safeFetchJson(path) {
