@@ -1,4 +1,5 @@
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
+const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
 const MARKET_REFRESH_FAST_MS = 60000;
 const MARKET_REFRESH_SLOW_MS = 10 * 60000;
 const QUOTE_REFRESH_MS = 5000;
@@ -101,6 +102,8 @@ const els = {
   watchList: document.querySelector("#watchList"),
   holdingOverview: document.querySelector("#holdingOverview"),
   holdingList: document.querySelector("#holdingList"),
+  realizedOverview: document.querySelector("#realizedOverview"),
+  sellHistoryList: document.querySelector("#sellHistoryList"),
   newsList: document.querySelector("#newsList"),
   holdingNewsList: document.querySelector("#holdingNewsList"),
   rankingList: document.querySelector("#rankingList"),
@@ -182,6 +185,7 @@ const TREND_PERIOD_LABEL = "近一週";
 const TREND_DATA_VERSION = "twse-history-v2";
 
 let watchList = [];
+let sellHistory = [];
 let cloudAuth = null;
 let cloudDb = null;
 let currentUser = null;
@@ -373,6 +377,14 @@ function loadWatchList() {
   }
 }
 
+function loadSellHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(SELL_HISTORY_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
 async function saveWatchList() {
   if (cloudEnabled && currentUser) {
     try {
@@ -382,6 +394,7 @@ async function saveWatchList() {
         .set({
           email: currentUser.email,
           items: watchList,
+          sellHistory,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
       setAuthStatus(`已登入：${currentUser.email}，持股資料已同步 Firebase。`);
@@ -391,6 +404,7 @@ async function saveWatchList() {
     return;
   }
   localStorage.setItem(WATCH_KEY, JSON.stringify(watchList));
+  localStorage.setItem(SELL_HISTORY_KEY, JSON.stringify(sellHistory));
 }
 
 function getCloudConfig() {
@@ -425,6 +439,7 @@ function updateAuthUi() {
 async function loadCloudWatchList() {
   if (!cloudEnabled || !currentUser) {
     watchList = loadWatchList();
+    sellHistory = loadSellHistory();
     render();
     return;
   }
@@ -434,14 +449,17 @@ async function loadCloudWatchList() {
     const data = snapshot.data();
     if (snapshot.exists) {
       watchList = Array.isArray(data?.items) ? data.items : [];
+      sellHistory = Array.isArray(data?.sellHistory) ? data.sellHistory : [];
     } else {
       watchList = loadWatchList();
+      sellHistory = loadSellHistory();
       await saveWatchList();
     }
     setAuthStatus(`已登入：${currentUser.email}，已讀取 Firebase 雲端持股資料。`);
   } catch (error) {
     setAuthStatus(`讀取雲端資料失敗：${error.message}`, true);
     watchList = [];
+    sellHistory = [];
   }
   loadingCloudData = false;
   render();
@@ -453,6 +471,7 @@ async function initCloudAuth() {
   if (!config.ready || !window.firebase) {
     cloudEnabled = false;
     watchList = loadWatchList();
+    sellHistory = loadSellHistory();
     updateAuthUi();
     return;
   }
@@ -507,6 +526,11 @@ function signedMoney(value) {
   return `${value > 0 ? "+" : ""}${money(value)}`;
 }
 
+function formatCurrency(value) {
+  if (!Number.isFinite(value)) return "--";
+  return `${signedMoney(value)} 元`;
+}
+
 function stockPriceLabel(stock) {
   return stock?.realtime ? "即時價" : "收盤";
 }
@@ -546,7 +570,7 @@ function pnlText(value, positiveLabel, negativeLabel, flatLabel, formatter = mon
 
 function stockDisplayName(item) {
   const stock = getStock(item.code);
-  return stock?.name ? `${stock.name} ${item.code}` : item.code;
+  return stock?.name ? `${stock.name} ${item.code}` : item.name ? `${item.name} ${item.code}` : item.code;
 }
 
 function rocDateToText(value) {
@@ -1006,6 +1030,7 @@ function render() {
   renderDisciplineList(holdings, tracked, holdingValue);
   renderHoldingOverview(holdings);
   renderHoldings(holdings);
+  renderSellHistory();
   renderNews();
   renderHoldingNews(tracked);
   renderWatchList(watchOnly);
@@ -1444,8 +1469,12 @@ function renderTodayPnl(holdings) {
 
 function renderHoldingOverview(holdings) {
   if (!els.holdingOverview) return;
+  const realizedPnl = realizedProfitTotal();
   if (!holdings.length) {
-    els.holdingOverview.innerHTML = '<p class="empty">新增「我的存股」後，這裡會自動計算總市值、總成本、總損益與預估股息。</p>';
+    els.holdingOverview.innerHTML = `
+      <p class="empty">新增「我的存股」後，這裡會自動計算總市值、總成本、總損益與預估股息。</p>
+      ${sellHistory.length ? `<p class="holding-overview-note">歷史累積已實現獲利：<strong class="${priceTone(realizedPnl)}">${formatCurrency(realizedPnl)}</strong></p>` : ""}
+    `;
     return;
   }
 
@@ -1454,6 +1483,7 @@ function renderHoldingOverview(holdings) {
   const totalCost = rows.reduce((sum, row) => sum + (row.metrics.costValue || 0), 0);
   const totalPnl = totalMarketValue && totalCost ? totalMarketValue - totalCost : null;
   const totalPnlRate = totalPnl !== null && totalCost ? (totalPnl / totalCost) * 100 : null;
+  const cumulativePnl = (totalPnl || 0) + realizedPnl;
   const totalDividend = rows.reduce((sum, row) => sum + (row.metrics.yearlyDividend || 0), 0);
   const averageYield = totalMarketValue ? (totalDividend / totalMarketValue) * 100 : null;
   const profitable = rows.filter((row) => row.metrics.pnl > 0);
@@ -1483,7 +1513,9 @@ function renderHoldingOverview(holdings) {
     ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
     ["獲利 / 虧損", `${profitable.length} / ${losing.length} 檔`, ""],
     ["最大獲利股", best ? holdingSummaryLabel(best) : "--", "price-up"],
-    ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
+    ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""],
+    ["已實現獲利", sellHistory.length ? formatCurrency(realizedPnl) : "--", priceTone(realizedPnl)],
+    ["累積總獲利", totalPnl === null && !sellHistory.length ? "--" : formatCurrency(cumulativePnl), priceTone(cumulativePnl)]
   ];
 
   els.holdingOverview.innerHTML = `
@@ -2638,6 +2670,139 @@ function institutionalText(inst) {
   return `${leader[0]}影響最大：${formatShareFlow(leader[1])}；合計 ${formatShareFlow(inst.total)}。`;
 }
 
+function realizedProfitTotal() {
+  return sellHistory.reduce((sum, item) => sum + (number(item.profit) || 0), 0);
+}
+
+function sellHolding(item, stock) {
+  const shares = number(item.shares);
+  const cost = number(item.cost);
+  if (!Number.isFinite(shares) || shares <= 0) {
+    alert("這檔持股沒有股數，先補上股數後才能記錄賣出。");
+    return;
+  }
+  if (!Number.isFinite(cost) || cost <= 0) {
+    alert("這檔持股沒有買進成本，先補上成本後才能計算已實現獲利。");
+    return;
+  }
+
+  const defaultPrice = stock?.close ? money(stock.close) : "";
+  const priceInput = prompt(`賣出 ${stockDisplayName(item)} 的成交價？`, defaultPrice);
+  if (priceInput === null) return;
+  const sellPrice = number(priceInput);
+  if (!Number.isFinite(sellPrice) || sellPrice <= 0) {
+    alert("請輸入正確的賣出成交價。");
+    return;
+  }
+
+  const sharesInput = prompt(`賣出股數？目前持有 ${money(shares)} 股`, String(shares));
+  if (sharesInput === null) return;
+  const sellShares = number(sharesInput);
+  if (!Number.isFinite(sellShares) || sellShares <= 0 || sellShares > shares) {
+    alert("賣出股數必須大於 0，且不能超過目前持有股數。");
+    return;
+  }
+
+  const profit = (sellPrice - cost) * sellShares;
+  const remainingShares = shares - sellShares;
+  sellHistory.unshift({
+    id: `${Date.now()}-${item.code}`,
+    code: item.code,
+    name: stock?.name || item.name || "",
+    buyCost: cost,
+    sellPrice,
+    shares: sellShares,
+    profit,
+    profitRate: cost ? ((sellPrice - cost) / cost) * 100 : null,
+    soldAt: new Date().toISOString()
+  });
+
+  if (remainingShares > 0) {
+    item.shares = String(remainingShares);
+  } else {
+    watchList = watchList.filter((entry) => entry.code !== item.code);
+  }
+
+  saveWatchList();
+  render();
+}
+
+function deleteSellRecord(recordId) {
+  if (!confirm("確定要刪除這筆賣出歷史紀錄嗎？這不會自動還原目前持股。")) return;
+  sellHistory = sellHistory.filter((item) => item.id !== recordId);
+  saveWatchList();
+  render();
+}
+
+function historyStockLabel(item) {
+  return item.name ? `${item.name} ${item.code}` : item.code;
+}
+
+function renderSellHistory() {
+  if (!els.realizedOverview || !els.sellHistoryList) return;
+  const totalProfit = realizedProfitTotal();
+  const totalSoldValue = sellHistory.reduce((sum, item) => {
+    const sellPrice = number(item.sellPrice);
+    const shares = number(item.shares);
+    return sum + (Number.isFinite(sellPrice) && Number.isFinite(shares) ? sellPrice * shares : 0);
+  }, 0);
+  const winnerCount = sellHistory.filter((item) => (number(item.profit) || 0) > 0).length;
+  const loserCount = sellHistory.filter((item) => (number(item.profit) || 0) < 0).length;
+  const latest = sellHistory[0];
+
+  els.realizedOverview.innerHTML = `
+    <div class="realized-overview-grid">
+      <article>
+        <span>累積已實現獲利</span>
+        <strong class="${priceTone(totalProfit)}">${sellHistory.length ? formatCurrency(totalProfit) : "--"}</strong>
+      </article>
+      <article>
+        <span>歷史賣出筆數</span>
+        <strong>${sellHistory.length ? `${sellHistory.length} 筆` : "--"}</strong>
+      </article>
+      <article>
+        <span>賣出總金額</span>
+        <strong>${sellHistory.length ? compactMoney(totalSoldValue) : "--"}</strong>
+      </article>
+      <article>
+        <span>獲利 / 虧損</span>
+        <strong>${sellHistory.length ? `${winnerCount} / ${loserCount} 筆` : "--"}</strong>
+      </article>
+      <article>
+        <span>最近賣出</span>
+        <strong>${latest ? escapeHtml(historyStockLabel(latest)) : "--"}</strong>
+      </article>
+    </div>
+  `;
+
+  if (!sellHistory.length) {
+    els.sellHistoryList.innerHTML = '<p class="empty">在我的存股卡片按「賣出」後，這裡會保留歷史存股與已實現獲利。</p>';
+    return;
+  }
+
+  els.sellHistoryList.innerHTML = "";
+  sellHistory.forEach((item) => {
+    const profit = number(item.profit);
+    const row = document.createElement("article");
+    row.className = "sell-history-row";
+    const profitRate = number(item.profitRate);
+    row.innerHTML = `
+      <div class="sell-history-main">
+        <strong>${escapeHtml(historyStockLabel(item))}</strong>
+        <span>${escapeHtml(formatDateOnly(item.soldAt))} ｜ 賣出 ${money(item.shares)} 股 ｜ 買進 ${money(item.buyCost)} ｜ 賣出 ${money(item.sellPrice)}</span>
+      </div>
+      <div class="sell-history-profit">
+        <span>已實現</span>
+        <strong class="${priceTone(profit)}">${formatCurrency(profit)}</strong>
+        <small>${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+      </div>
+      <button class="history-delete" type="button" aria-label="刪除歷史紀錄">刪除</button>
+    `;
+    row.querySelector(".history-delete").addEventListener("click", () => deleteSellRecord(item.id));
+    els.sellHistoryList.append(row);
+  });
+}
+
 function renderHoldings(holdings) {
   els.holdingList.innerHTML = "";
   if (!holdings.length) {
@@ -2664,7 +2829,10 @@ function renderHoldings(holdings) {
           <strong>${stock ? money(stock.close) : "--"}</strong>
           <small class="${priceTone(todayChange)}">今日 ${signedMoney(todayChange)} / ${percent(todayChangePercent)}</small>
         </div>
-        <button class="delete" type="button" aria-label="刪除">×</button>
+        <div class="holding-actions">
+          <button class="sell" type="button">賣出</button>
+          <button class="delete" type="button" aria-label="刪除">×</button>
+        </div>
       </div>
       <div class="metric-grid">
         <div class="metric"><span>目前市值</span><strong>${marketValue === null ? "--" : compactMoney(marketValue)}</strong></div>
@@ -2686,8 +2854,11 @@ function renderHoldings(holdings) {
       saveWatchList();
       render();
     });
+    card.querySelector(".sell").addEventListener("click", () => {
+      sellHolding(item, stock);
+    });
     card.addEventListener("click", (event) => {
-      if (event.target.closest(".delete")) return;
+      if (event.target.closest(".delete") || event.target.closest(".sell")) return;
       openStockDetail({ item, stock, val, rev, signal });
     });
     els.holdingList.append(card);
@@ -3742,6 +3913,7 @@ async function initApp() {
   await initCloudAuth();
   if (!cloudEnabled || !currentUser) {
     watchList = loadWatchList();
+    sellHistory = loadSellHistory();
     render();
   }
   fetchMarket();

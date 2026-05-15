@@ -1383,12 +1383,19 @@ label span {
 }
 
 .holding-list,
+.sell-history-list,
 .news-list {
   max-height: clamp(320px, 44vh, 560px);
 }
 
 .holding-list {
   max-height: clamp(560px, 72vh, 920px);
+}
+
+.sell-history-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
 }
 
 .watch-list::-webkit-scrollbar,
@@ -1428,6 +1435,7 @@ label span {
 
 .stock-card,
 .holding-card,
+.sell-history-row,
 .rank-row,
 .finance-card,
 .insight-card,
@@ -1552,6 +1560,26 @@ label span {
   font-weight: 900;
 }
 
+.holding-actions {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+}
+
+.sell,
+.history-delete {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: var(--blue);
+  font-size: 14px;
+}
+
+.history-delete {
+  background: #f2dfdf;
+  color: var(--red);
+}
+
 .holding-note {
   margin: 0;
   color: var(--muted);
@@ -1590,6 +1618,71 @@ label span {
   background: #f2dfdf;
   color: var(--red);
   font-size: 20px;
+}
+
+.realized-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.realized-overview-grid article {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.realized-overview-grid span,
+.sell-history-profit span {
+  display: block;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.realized-overview-grid strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.sell-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.sell-history-main {
+  display: grid;
+  gap: 4px;
+}
+
+.sell-history-main strong {
+  font-size: 19px;
+}
+
+.sell-history-main span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.sell-history-profit {
+  min-width: 132px;
+  text-align: right;
+}
+
+.sell-history-profit strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 20px;
+}
+
+.sell-history-profit small {
+  color: var(--muted);
+  font-weight: 900;
 }
 
 .rank-row strong {
@@ -2396,6 +2489,7 @@ body.chart-expanded .chart-wrap canvas {
   .preflight-list,
   .discipline-list,
   .holding-overview-grid,
+  .realized-overview-grid,
   .trend-chart-stats,
   .summary-grid,
   .layout,
@@ -2446,14 +2540,20 @@ body.chart-expanded .chart-wrap canvas {
   }
 
   .small-cap-head,
-  .trend-row {
+  .trend-row,
+  .sell-history-row {
     grid-template-columns: 1fr;
   }
 
   .trend-quote,
-  .holding-live-quote {
+  .holding-live-quote,
+  .sell-history-profit {
     min-width: 0;
     text-align: left;
+  }
+
+  .holding-actions {
+    justify-content: flex-start;
   }
 
   .holding-top {
@@ -2462,6 +2562,7 @@ body.chart-expanded .chart-wrap canvas {
 
   .watch-list,
   .holding-list,
+  .sell-history-list,
   .ranking-list,
   .finance-list,
   .insight-list,
