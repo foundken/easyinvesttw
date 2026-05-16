@@ -30,6 +30,10 @@ const els = {
   authPassword: document.querySelector("#authPasswordInput"),
   authTitle: document.querySelector("#authTitle"),
   authStatus: document.querySelector("#authStatus"),
+  authSession: document.querySelector("#authSession"),
+  currentAccountName: document.querySelector("#currentAccountName"),
+  currentAccountEmail: document.querySelector("#currentAccountEmail"),
+  switchUser: document.querySelector("#switchUserButton"),
   register: document.querySelector("#registerButton"),
   logout: document.querySelector("#logoutButton"),
   dataStatus: document.querySelector("#dataStatus"),
@@ -166,6 +170,7 @@ const els = {
   themeToggle: document.querySelector("#themeToggle"),
   themeLabel: document.querySelector("#themeLabel"),
   googleSignIn: document.querySelector("#googleSignInButton"),
+  authDivider: document.querySelector(".auth-divider"),
   quickAddForm: document.querySelector("#quickAddForm"),
   quickSymbolInput: document.querySelector("#quickSymbolInput"),
   quickCostInput: document.querySelector("#quickCostInput"),
@@ -425,14 +430,30 @@ function updateAuthUi() {
   if (!cloudEnabled) {
     els.authTitle.textContent = "尚未啟用跨裝置同步";
     setAuthStatus("請先設定 Firebase config，完成後即可跨手機/電腦登入同步。", true);
+    if (els.authSession) els.authSession.hidden = true;
+    if (els.googleSignIn) els.googleSignIn.hidden = false;
+    if (els.authDivider) els.authDivider.hidden = false;
+    if (els.authForm) els.authForm.hidden = false;
     return;
   }
   if (currentUser) {
     els.authTitle.textContent = `已登入：${currentUser.displayName || currentUser.email}`;
     setAuthStatus("雲端同步已啟用。新增、刪除或修改持股後會同步到你的帳號。");
+    if (els.authSession) els.authSession.hidden = false;
+    if (els.currentAccountName) els.currentAccountName.textContent = currentUser.displayName || "未命名使用者";
+    if (els.currentAccountEmail) els.currentAccountEmail.textContent = currentUser.email || "沒有 Email";
+    if (els.googleSignIn) els.googleSignIn.hidden = true;
+    if (els.authDivider) els.authDivider.hidden = true;
+    if (els.authForm) els.authForm.hidden = true;
   } else {
     els.authTitle.textContent = "雲端帳號登入";
     setAuthStatus("請註冊或登入，同一帳號可在手機與電腦查詢同一份資料。");
+    if (els.authSession) els.authSession.hidden = true;
+    if (els.currentAccountName) els.currentAccountName.textContent = "--";
+    if (els.currentAccountEmail) els.currentAccountEmail.textContent = "--";
+    if (els.googleSignIn) els.googleSignIn.hidden = false;
+    if (els.authDivider) els.authDivider.hidden = false;
+    if (els.authForm) els.authForm.hidden = false;
   }
 }
 
@@ -3699,6 +3720,7 @@ els.logout.addEventListener("click", async () => {
   if (cloudEnabled && cloudAuth) await cloudAuth.signOut();
   currentUser = null;
   watchList = [];
+  sellHistory = [];
   updateAuthUi();
   render();
 });
@@ -3854,38 +3876,58 @@ function initTheme() {
   }
 }
 
+async function signInWithGoogle() {
+  if (!cloudEnabled || !cloudAuth) {
+    setAuthStatus("尚未設定 Firebase，無法使用 Google 登入。", true);
+    return;
+  }
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    const credential = await cloudAuth.signInWithPopup(provider);
+    currentUser = credential.user;
+    setAuthStatus(`已用 Google 登入：${currentUser.email || currentUser.displayName || ""}`);
+    updateAuthUi();
+    await loadCloudWatchList();
+  } catch (error) {
+    // 行動裝置 popup 被擋時改用 redirect
+    if (error?.code === "auth/popup-blocked" || error?.code === "auth/operation-not-supported-in-this-environment") {
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+        await cloudAuth.signInWithRedirect(provider);
+        return;
+      } catch (redirectError) {
+        setAuthStatus(`Google 登入失敗：${redirectError.message}`, true);
+        return;
+      }
+    }
+    setAuthStatus(`Google 登入失敗：${error.message}`, true);
+  }
+}
+
+async function switchUser() {
+  if (!cloudEnabled || !cloudAuth) {
+    setAuthStatus("尚未設定 Firebase，無法切換使用者。", true);
+    return;
+  }
+  await cloudAuth.signOut();
+  currentUser = null;
+  watchList = [];
+  sellHistory = [];
+  updateAuthUi();
+  render();
+  await signInWithGoogle();
+}
+
 // ===== Google 登入 =====
 function initGoogleSignIn() {
-  if (!els.googleSignIn) return;
-  els.googleSignIn.addEventListener("click", async () => {
-    if (!cloudEnabled || !cloudAuth) {
-      setAuthStatus("尚未設定 Firebase，無法使用 Google 登入。", true);
-      return;
-    }
-    try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      const credential = await cloudAuth.signInWithPopup(provider);
-      currentUser = credential.user;
-      setAuthStatus(`已用 Google 登入：${currentUser.email || currentUser.displayName || ""}`);
-      updateAuthUi();
-      await loadCloudWatchList();
-    } catch (error) {
-      // 行動裝置 popup 被擋時改用 redirect
-      if (error?.code === "auth/popup-blocked" || error?.code === "auth/operation-not-supported-in-this-environment") {
-        try {
-          const provider = new firebase.auth.GoogleAuthProvider();
-          provider.setCustomParameters({ prompt: "select_account" });
-          await cloudAuth.signInWithRedirect(provider);
-          return;
-        } catch (redirectError) {
-          setAuthStatus(`Google 登入失敗：${redirectError.message}`, true);
-          return;
-        }
-      }
-      setAuthStatus(`Google 登入失敗：${error.message}`, true);
-    }
-  });
+  if (els.googleSignIn) {
+    els.googleSignIn.addEventListener("click", signInWithGoogle);
+  }
+  if (els.switchUser) {
+    els.switchUser.addEventListener("click", switchUser);
+  }
 }
 
 function initTierTabs() {

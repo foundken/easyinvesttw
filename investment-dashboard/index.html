@@ -64,6 +64,15 @@
         <h2 id="authTitle">建立或登入使用者</h2>
         <p id="authStatus">登入後，持股資料會存到雲端並依使用者分開查詢。</p>
       </div>
+      <div id="authSession" class="auth-session" hidden>
+        <span>目前使用者</span>
+        <strong id="currentAccountName">--</strong>
+        <small id="currentAccountEmail">--</small>
+        <div class="auth-session-actions">
+          <button id="switchUserButton" type="button">切換使用者</button>
+          <button id="logoutButton" class="secondary" type="button">登出</button>
+        </div>
+      </div>
       <button id="googleSignInButton" type="button" class="google-signin">
         <span class="google-icon" aria-hidden="true">G</span>
         <span>用 Google 帳號一鍵登入</span>
@@ -85,12 +94,6 @@
         <button id="loginButton" type="submit">登入</button>
         <button id="registerButton" class="secondary" type="button">註冊</button>
       </form>
-      <details class="auth-advanced">
-        <summary>更多帳號設定</summary>
-        <div class="auth-actions">
-          <button id="logoutButton" class="secondary" type="button">登出 / 鎖定裝置</button>
-        </div>
-      </details>
       <div class="security-notes">
         <span>安全機制</span>
         <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
@@ -618,6 +621,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260516-portfolio-history"></script>
+  <script src="app.js?v=20260516-account-switch"></script>
 </body>
 </html>

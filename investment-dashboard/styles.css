@@ -1175,9 +1175,9 @@ label span {
 
 .auth-panel {
   display: grid;
-  grid-template-columns: 1fr 1.4fr auto;
+  grid-template-columns: 1fr 1.2fr;
   gap: 14px;
-  align-items: end;
+  align-items: stretch;
   margin-top: 14px;
   padding: 18px;
   background: var(--panel);
@@ -1194,11 +1194,57 @@ label span {
 }
 
 .auth-form {
+  grid-column: 1 / -1;
   grid-template-columns: 0.8fr 1.1fr 1fr auto auto;
 }
 
-.auth-actions {
+.auth-form[hidden],
+.google-signin[hidden],
+.auth-divider[hidden] {
+  display: none;
+}
+
+.auth-session {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f2ea;
+}
+
+.auth-session[hidden] {
+  display: none;
+}
+
+.auth-session span,
+.auth-session small {
+  display: block;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.auth-session strong {
+  display: block;
+  font-size: 20px;
+}
+
+.auth-session-actions {
   display: flex;
+  grid-row: 1 / span 3;
+  grid-column: 2;
+  gap: 8px;
+  align-items: center;
+}
+
+.auth-session-actions button {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 15px;
 }
 
 .security-notes {
@@ -2151,18 +2197,6 @@ body.chart-expanded .chart-wrap canvas {
   background: var(--line);
 }
 
-.auth-advanced {
-  margin-top: 8px;
-}
-
-.auth-advanced summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 700;
-  padding: 6px 0;
-}
-
 /* ===== 漲跌箭頭 ===== */
 .price-up::before,
 .price-down::before {
@@ -2507,8 +2541,15 @@ body.chart-expanded .chart-wrap canvas {
     grid-template-columns: 1fr;
   }
 
-  .auth-actions {
+  .auth-session {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-session-actions {
+    grid-column: auto;
+    grid-row: auto;
     display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .detail-summary,
