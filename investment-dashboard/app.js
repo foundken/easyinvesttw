@@ -119,6 +119,9 @@ const els = {
   detailPrice: document.querySelector("#detailPrice"),
   detailMonthReturn: document.querySelector("#detailMonthReturn"),
   detailPe: document.querySelector("#detailPe"),
+  detailRevenueMonth: document.querySelector("#detailRevenueMonth"),
+  detailRevenueAmount: document.querySelector("#detailRevenueAmount"),
+  detailRevenueMom: document.querySelector("#detailRevenueMom"),
   detailRevenue: document.querySelector("#detailRevenue"),
   detailInstitutional: document.querySelector("#detailInstitutional"),
   detailChartStatus: document.querySelector("#detailChartStatus"),
@@ -594,6 +597,30 @@ function stockDisplayName(item) {
   return stock?.name ? `${stock.name} ${item.code}` : item.name ? `${item.name} ${item.code}` : item.code;
 }
 
+function revenueAmountText(rev) {
+  return Number.isFinite(rev?.amount) ? compactMoney(rev.amount * 1000) : "--";
+}
+
+function revenueMonthText(rev) {
+  const value = rev?.month;
+  if (!value) return "--";
+  const text = String(value).trim();
+  const compactRoc = text.match(/^(\d{3})(\d{2})$/);
+  if (compactRoc) return `${Number(compactRoc[1]) + 1911}/${compactRoc[2]}`;
+  const compact = text.match(/^(\d{4})(\d{2})$/);
+  if (compact) return `${compact[1]}/${compact[2]}`;
+  const roc = text.match(/^(\d{2,3})[/-](\d{1,2})/);
+  if (roc) return `${Number(roc[1]) + 1911}/${String(Number(roc[2])).padStart(2, "0")}`;
+  const western = text.match(/^(\d{4})[/-](\d{1,2})/);
+  if (western) return `${western[1]}/${String(Number(western[2])).padStart(2, "0")}`;
+  return text;
+}
+
+function revenueSummaryText(rev) {
+  if (!rev) return "月營收資料尚未取得。";
+  return `${revenueMonthText(rev)} 月營收 ${revenueAmountText(rev)}，月增 ${percent(rev.mom)}，年增 ${percent(rev.yoy)}。`;
+}
+
 function rocDateToText(value) {
   const parts = String(value).split("/");
   if (parts.length !== 3) return String(value);
@@ -641,10 +668,10 @@ function normalizeRevenue(raw) {
   return raw.map((item) => ({
     code: item["公司代號"] || item.company_code || item.code,
     name: item["公司名稱"] || item.company_name || item.name,
-    month: item["出表日期"] || item["資料年月"] || item.month,
+    month: item["資料年月"] || item.revenue_month || item.month || item["出表日期"],
     amount: number(item["營業收入-當月營收"] || item.revenue_current_month || item.amount),
-    yoy: number(item["去年同月增減(%)"] || item.yoy),
-    mom: number(item["上月比較增減(%)"] || item.mom)
+    yoy: number(item["營業收入-去年同月增減(%)"] || item["去年同月增減(%)"] || item.yoy),
+    mom: number(item["營業收入-上月比較增減(%)"] || item["上月比較增減(%)"] || item.mom)
   })).filter((item) => item.code);
 }
 
@@ -2863,12 +2890,15 @@ function renderHoldings(holdings) {
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
         <div class="metric"><span>殖利率</span><strong>${val?.yieldRate ?? "--"}%</strong></div>
         <div class="metric"><span>估年股息</span><strong>${yearlyDividend === null ? "--" : compactMoney(yearlyDividend)}</strong></div>
-        <div class="metric"><span>月營收年增</span><strong>${rev ? percent(rev.yoy) : "--"}</strong></div>
+        <div class="metric"><span>營收月份</span><strong>${revenueMonthText(rev)}</strong></div>
+        <div class="metric"><span>月營收</span><strong>${revenueAmountText(rev)}</strong></div>
+        <div class="metric"><span>月營收月增</span><strong class="${priceTone(rev?.mom)}">${rev ? percent(rev.mom) : "--"}</strong></div>
+        <div class="metric"><span>月營收年增</span><strong class="${priceTone(rev?.yoy)}">${rev ? percent(rev.yoy) : "--"}</strong></div>
         <div class="metric"><span>法人合計</span><strong class="${inst ? inst.total >= 0 ? "price-up" : "price-down" : ""}">${inst ? formatShareFlow(inst.total) : "--"}</strong></div>
         <div class="metric"><span>狀態</span><strong><span class="pill ${decision.tone}">${decision.label}</span></strong></div>
         <div class="metric"><span>風險等級</span><strong><span class="pill ${risk.tone}">${risk.label}</span></strong></div>
       </div>
-      <p class="holding-note">${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
+      <p class="holding-note">${revenueSummaryText(rev)} ${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
       watchList = watchList.filter((entry) => entry.code !== item.code);
@@ -3030,7 +3060,12 @@ async function openStockDetail(entry) {
   els.detailTitle.textContent = `${item.code} ${stock?.name || val?.name || rev?.name || ""}`;
   els.detailPrice.textContent = stock ? money(stock.close) : "--";
   els.detailPe.textContent = val?.pe ?? "--";
+  els.detailRevenueMonth.textContent = revenueMonthText(rev);
+  els.detailRevenueAmount.textContent = revenueAmountText(rev);
+  els.detailRevenueMom.textContent = rev ? percent(rev.mom) : "--";
+  els.detailRevenueMom.className = priceTone(rev?.mom);
   els.detailRevenue.textContent = rev ? percent(rev.yoy) : "--";
+  els.detailRevenue.className = priceTone(rev?.yoy);
   els.detailInstitutional.textContent = inst ? formatShareFlow(inst.total) : "--";
   els.detailInstitutional.className = inst ? inst.total >= 0 ? "price-up" : "price-down" : "";
   els.detailPlainText.textContent = `${decision.label}，風險 ${risk.label}：${decision.text} ${risk.text}。`;
@@ -3038,7 +3073,7 @@ async function openStockDetail(entry) {
     ? `持有 ${money(shares)} 股，投入 ${compactMoney(costValue)}，目前損益 ${pnl === null ? "--" : compactMoney(pnl)}，損益率 ${pnlRate === null ? "--" : percent(pnlRate)}。`
     : "尚未填入買進價與股數，可以先當作觀察標的。";
   els.detailInstitutionalText.textContent = institutionalText(inst);
-  els.detailAiAdviceText.textContent = `${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
+  els.detailAiAdviceText.textContent = `${revenueSummaryText(rev)} ${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
   renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning });
   els.detailChartStatus.textContent = "線圖讀取中";
   els.detailModal.hidden = false;
@@ -3439,7 +3474,7 @@ function renderFinance(tracked) {
     <article class="finance-card">
       <strong>${item.code} ${stock?.name || val?.name || rev?.name || ""}</strong>
       <p class="signal">${decision.label}，風險 ${risk.label}：${decision.text}</p>
-      <p class="signal">月營收 ${rev ? compactMoney(rev.amount * 1000) : "--"}，年增 ${rev ? percent(rev.yoy) : "--"}，月增 ${rev ? percent(rev.mom) : "--"}。</p>
+      <p class="signal">${revenueSummaryText(rev)}</p>
       ${warning ? `<p class="signal">${warning}</p>` : ""}
       <small>本益比 ${val?.pe ?? "--"} ｜ 殖利率 ${val?.yieldRate ?? "--"}% ｜ 股價淨值比 ${val?.pb ?? "--"}</small>
     </article>

@@ -299,10 +299,10 @@ function compactRevenueRows(rows = []) {
   return rows.map((row) => ({
     code: cleanTwseCell(row["公司代號"] || row.company_code || row.code),
     name: cleanTwseCell(row["公司名稱"] || row.company_name || row.name),
-    month: cleanTwseCell(row["出表日期"] || row["資料年月"] || row.month),
+    month: cleanTwseCell(row["資料年月"] || row.revenue_month || row.month || row["出表日期"]),
     amount: toNumber(row["營業收入-當月營收"] ?? row.revenue_current_month ?? row.amount),
-    yoy: toNumber(row["去年同月增減(%)"] ?? row.yoy),
-    mom: toNumber(row["上月比較增減(%)"] ?? row.mom)
+    yoy: toNumber(row["營業收入-去年同月增減(%)"] ?? row["去年同月增減(%)"] ?? row.yoy),
+    mom: toNumber(row["營業收入-上月比較增減(%)"] ?? row["上月比較增減(%)"] ?? row.mom)
   })).filter((row) => row.code);
 }
 
