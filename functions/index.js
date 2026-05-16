@@ -9,10 +9,13 @@ const endpoints = {
 };
 
 const FUGLE_BASE = "https://api.fugle.tw/marketdata/v1.0/stock";
+const MOPS_API_BASE = "https://mops.twse.com.tw/mops/api";
 const DASHBOARD_CACHE_TTL_MS = 25000;
 const DASHBOARD_STALE_TTL_MS = 120000;
+const MONTHLY_REVENUE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 let dashboardCache = null;
 let quoteCache = null;
+let monthlyRevenueCache = null;
 
 exports.market = onRequest({
   region: "asia-east1",
@@ -64,12 +67,13 @@ exports.market = onRequest({
       });
     }
 
-    const [twseDaily, twseValuation, tpexValuation, listedRevenue, publicRevenue, fugleActiveRanking, index, usIndex, institutional, news] = await Promise.all([
+    const [twseDaily, twseValuation, tpexValuation, listedRevenue, publicRevenue, mopsRevenue, fugleActiveRanking, index, usIndex, institutional, news] = await Promise.all([
       safeFetchJson(endpoints.daily),
       safeFetchJson(endpoints.valuation),
       safeFetchTpexValuation(),
       safeFetchJson(endpoints.revenue),
       safeFetchJson("/opendata/t187ap05_P"),
+      safeFetchMopsRevenue(),
       safeFetchFugleActiveRanking(),
       safeFetchTwseIndex(),
       safeFetchUsMarket(),
@@ -96,7 +100,7 @@ exports.market = onRequest({
       updatedAt: new Date().toISOString(),
       daily: compactDailyRows(filterRowsByCodes(daily, relevantCodes)),
       valuation: compactValuationRows(filterRowsByCodes(mergeByCode(twseValuation, tpexValuation), relevantCodes)),
-      revenue: compactRevenueRows(filterRowsByCodes(mergeByCode(listedRevenue, publicRevenue), relevantCodes)),
+      revenue: compactRevenueRows(filterRowsByCodes(mergeByCode(mergeByCode(listedRevenue, publicRevenue), mopsRevenue), relevantCodes)),
       realtime: compactRealtimeRows(realtime),
       index,
       usIndex,
@@ -367,6 +371,116 @@ async function fetchTpexValuation() {
     FinancialQuarter: cleanTwseCell(row[7]),
     Source: "TPEx"
   })).filter((row) => row.Code);
+}
+
+async function fetchMopsRevenue() {
+  const now = Date.now();
+  if (monthlyRevenueCache && now - monthlyRevenueCache.createdAt < MONTHLY_REVENUE_CACHE_TTL_MS) {
+    return monthlyRevenueCache.rows;
+  }
+
+  const marketTypes = ["otc0", "otc1", "rotc0", "rotc1"];
+  const candidateMonths = recentTaipeiRevenueMonths(3);
+  for (const monthInfo of candidateMonths) {
+    const batches = await Promise.all(marketTypes.map((marketType) => fetchMopsRevenueMarket(monthInfo, marketType)));
+    const rows = batches.flat();
+    if (rows.length) {
+      monthlyRevenueCache = {
+        createdAt: now,
+        rows
+      };
+      return rows;
+    }
+  }
+  return [];
+}
+
+async function fetchMopsRevenueMarket(monthInfo, marketType) {
+  try {
+    const url = await fetchMopsRevenueResultUrl(monthInfo, marketType);
+    if (!url) return [];
+    const popupUrl = await fetchMopsRevenuePopupUrl(url);
+    if (!popupUrl) return [];
+    const response = await fetchWithTimeout(popupUrl, {
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        "user-agent": "Mozilla/5.0 EasyInvestTW monthly revenue reader"
+      }
+    }, 5000);
+    if (!response.ok) return [];
+    const text = await decodeBig5Response(response);
+    return parseMopsRevenueHtml(text, monthInfo);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchMopsRevenueResultUrl(monthInfo, marketType) {
+  const response = await fetchWithTimeout(`${MOPS_API_BASE}/redirectToOld`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": "Mozilla/5.0 EasyInvestTW monthly revenue reader",
+      referer: "https://mops.twse.com.tw/mops/web/t21sc04_ifrs"
+    },
+    body: JSON.stringify({
+      apiName: "ajax_t21sc04_ifrs",
+      parameters: {
+        TYPEK: marketType,
+        year: monthInfo.rocYear,
+        month: monthInfo.month,
+        encodeURIComponent: 1,
+        firstin: 1,
+        step: 1,
+        off: 1
+      }
+    })
+  }, 3500);
+  if (!response.ok) return "";
+  const payload = await response.json().catch(() => ({}));
+  return typeof payload?.result?.url === "string" ? payload.result.url : "";
+}
+
+async function fetchMopsRevenuePopupUrl(resultUrl) {
+  const response = await fetchWithTimeout(resultUrl, {
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "user-agent": "Mozilla/5.0 EasyInvestTW monthly revenue reader"
+    }
+  }, 3500);
+  if (!response.ok) return "";
+  const html = await response.text();
+  const match = html.match(/window\.open\('([^']+)'/);
+  if (!match) return "";
+  return new URL(match[1], resultUrl).toString();
+}
+
+async function decodeBig5Response(response) {
+  const buffer = await response.arrayBuffer();
+  return new TextDecoder("big5").decode(buffer);
+}
+
+function parseMopsRevenueHtml(html, monthInfo) {
+  const rows = [];
+  const matches = String(html || "").matchAll(/<tr\b[^>]*>\s*<td[^>]*>\s*(\d{4,6})\s*<\/td>([\s\S]*?)<\/tr>/gi);
+  for (const match of matches) {
+    const cells = [...match[0].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((cell) => cleanTwseCell(decodeHtml(stripTags(cell[1])).replace(/\s+/g, " ")));
+    if (cells.length < 7 || !/^\d{4,6}$/.test(cells[0])) continue;
+    rows.push({
+      code: cells[0],
+      name: cells[1],
+      month: `${monthInfo.rocYear}${monthInfo.month}`,
+      amount: toNumber(cells[2]),
+      mom: toNumber(cells[5]),
+      yoy: toNumber(cells[6]),
+      cumulativeAmount: toNumber(cells[7]),
+      cumulativeYoy: toNumber(cells[9]),
+      source: "MOPS"
+    });
+  }
+  return rows;
 }
 
 async function fetchFugleActiveRanking() {
@@ -896,6 +1010,25 @@ function recentTaipeiDates(days) {
   return Array.from({ length: days }, (_, index) => taipeiDate(index));
 }
 
+function recentTaipeiRevenueMonths(count) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit"
+  }).formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === "year").value);
+  const month = Number(parts.find((part) => part.type === "month").value);
+  return Array.from({ length: count }, (_, index) => {
+    const value = (year * 12) + month - 1 - index;
+    const targetYear = Math.floor((value - 1) / 12);
+    const targetMonth = ((value - 1) % 12) + 1;
+    return {
+      rocYear: String(targetYear - 1911),
+      month: String(targetMonth).padStart(2, "0")
+    };
+  });
+}
+
 function twseDateToIso(value) {
   const text = String(value || "").trim();
   const compact = text.match(/(\d{4})(\d{2})(\d{2})/);
@@ -1216,6 +1349,14 @@ async function safeFetchFugleQuotes(symbols) {
 async function safeFetchTpexValuation() {
   try {
     return await fetchTpexValuation();
+  } catch {
+    return [];
+  }
+}
+
+async function safeFetchMopsRevenue() {
+  try {
+    return await withSoftTimeout(fetchMopsRevenue(), 3200, []);
   } catch {
     return [];
   }
