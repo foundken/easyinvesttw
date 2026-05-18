@@ -278,13 +278,6 @@ select:focus {
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin: 12px 0;
-  text-align: center;
-}
-
-.index-metrics strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 23px;
 }
 
 .market-number-grid {
@@ -294,6 +287,7 @@ select:focus {
   margin: 10px 0 12px;
 }
 
+.index-metrics article,
 .market-number-grid article {
   min-height: 86px;
   padding: 12px;
@@ -302,6 +296,7 @@ select:focus {
   background: #fafafa;
 }
 
+.index-metrics span,
 .market-number-grid span,
 .market-number-grid small {
   display: block;
@@ -309,10 +304,12 @@ select:focus {
   font-weight: 800;
 }
 
+.index-metrics span,
 .market-number-grid span {
   font-size: 13px;
 }
 
+.index-metrics strong,
 .market-number-grid strong {
   display: block;
   margin-top: 4px;
