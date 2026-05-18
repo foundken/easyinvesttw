@@ -597,6 +597,103 @@ function stockDisplayName(item) {
   return stock?.name ? `${stock.name} ${item.code}` : item.name ? `${item.name} ${item.code}` : item.code;
 }
 
+function roundPrice(value) {
+  return Number.isFinite(value) ? Math.round(value * 10000) / 10000 : "";
+}
+
+function normalizeLot(lot, fallback = {}) {
+  const cost = number(lot?.cost ?? fallback.cost);
+  const shares = number(lot?.shares ?? fallback.shares);
+  if (!Number.isFinite(cost) || cost <= 0 || !Number.isFinite(shares) || shares <= 0) return null;
+  return {
+    id: lot?.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    cost,
+    shares,
+    boughtAt: lot?.boughtAt || fallback.boughtAt || new Date().toISOString()
+  };
+}
+
+function holdingLots(item) {
+  const storedLots = Array.isArray(item?.lots)
+    ? item.lots.map((lot) => normalizeLot(lot)).filter(Boolean)
+    : [];
+  if (storedLots.length) return storedLots;
+  const legacyLot = normalizeLot(item, { boughtAt: item?.boughtAt || item?.updatedAt || item?.createdAt });
+  return legacyLot ? [legacyLot] : [];
+}
+
+function holdingShares(item) {
+  const lots = holdingLots(item);
+  if (lots.length) return lots.reduce((sum, lot) => sum + lot.shares, 0);
+  return number(item?.shares);
+}
+
+function holdingCostValue(item) {
+  const lots = holdingLots(item);
+  if (lots.length) return lots.reduce((sum, lot) => sum + lot.cost * lot.shares, 0);
+  const cost = number(item?.cost);
+  const shares = number(item?.shares);
+  return Number.isFinite(cost) && Number.isFinite(shares) ? cost * shares : null;
+}
+
+function averageHoldingCost(item) {
+  const shares = holdingShares(item);
+  const costValue = holdingCostValue(item);
+  return Number.isFinite(shares) && shares > 0 && Number.isFinite(costValue) ? costValue / shares : number(item?.cost);
+}
+
+function syncHoldingTotals(item) {
+  const lots = holdingLots(item);
+  if (!lots.length) return item;
+  const shares = lots.reduce((sum, lot) => sum + lot.shares, 0);
+  const costValue = lots.reduce((sum, lot) => sum + lot.cost * lot.shares, 0);
+  item.lots = lots;
+  item.shares = shares ? String(roundPrice(shares)) : "";
+  item.cost = shares ? String(roundPrice(costValue / shares)) : "";
+  return item;
+}
+
+function createBuyLot(cost, shares) {
+  return normalizeLot({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    cost,
+    shares,
+    boughtAt: new Date().toISOString()
+  });
+}
+
+function upsertWatchItem({ code, cost, shares, type }) {
+  const cleanType = type || "holding";
+  const buyCost = number(cost);
+  const buyShares = number(shares);
+  const existing = watchList.find((item) => item.code === code);
+  const canCreateLot = cleanType === "holding"
+    && Number.isFinite(buyCost) && buyCost > 0
+    && Number.isFinite(buyShares) && buyShares > 0;
+
+  if (existing) {
+    existing.type = cleanType;
+    if (canCreateLot) {
+      existing.lots = holdingLots(existing);
+      existing.lots.push(createBuyLot(buyCost, buyShares));
+      syncHoldingTotals(existing);
+    } else {
+      existing.cost = cost;
+      existing.shares = shares;
+      if (cleanType !== "holding") delete existing.lots;
+    }
+    return existing;
+  }
+
+  const item = { code, cost, shares, type: cleanType };
+  if (canCreateLot) {
+    item.lots = [createBuyLot(buyCost, buyShares)];
+    syncHoldingTotals(item);
+  }
+  watchList.push(item);
+  return item;
+}
+
 function revenueAmountText(rev) {
   return Number.isFinite(rev?.amount) ? compactMoney(rev.amount * 1000) : "--";
 }
@@ -1057,7 +1154,7 @@ function render() {
   const holdings = tracked.filter((entry) => (entry.item.type || "holding") === "holding");
   const watchOnly = tracked.filter((entry) => entry.item.type === "watch");
   const holdingValue = holdings.reduce((total, entry) => {
-    const shares = number(entry.item.shares);
+    const shares = holdingShares(entry.item);
     if (!entry.stock || !shares) return total;
     return total + entry.stock.close * shares;
   }, 0);
@@ -1342,14 +1439,14 @@ function renderPortfolioHealth(holdings, tracked, holdingValue) {
   const sectorMap = new Map();
   holdings.forEach(({ stock, item }) => {
     if (!stock) return;
-    const shares = number(item.shares);
+    const shares = holdingShares(item);
     const value = shares ? stock.close * shares : 0;
     const sector = inferSector(stock);
     sectorMap.set(sector, (sectorMap.get(sector) || 0) + value);
   });
   const largestSector = Array.from(sectorMap.entries()).sort((a, b) => b[1] - a[1])[0];
   const weakCount = tracked.filter((entry) => entry.signal.tone === "bad").length;
-  const noCostCount = watchList.filter((item) => !number(item.cost) || !number(item.shares)).length;
+  const noCostCount = watchList.filter((item) => !averageHoldingCost(item) || !holdingShares(item)).length;
   const concentration = largestSector && holdingValue ? (largestSector[1] / holdingValue) * 100 : 0;
   const cards = [
     ["持股數量", holdings.length ? `${holdings.length} 檔` : "尚未建立", holdings.length >= 3 ? "good" : "warn", holdings.length >= 3 ? "分散度開始建立。" : "可逐步建立 3 檔以上，不要只看單一股票。"],
@@ -1388,19 +1485,19 @@ function renderPreflightChecklist(tracked, ranking) {
 function renderDisciplineList(holdings, tracked, holdingValue) {
   const sectorValue = new Map();
   holdings.forEach(({ item, stock }) => {
-    const shares = number(item.shares);
+    const shares = holdingShares(item);
     if (!stock || !shares) return;
     const sector = inferSector(stock);
     sectorValue.set(sector, (sectorValue.get(sector) || 0) + stock.close * shares);
   });
   const largestHolding = holdings.map(({ item, stock }) => {
-    const shares = number(item.shares);
+    const shares = holdingShares(item);
     return { item, stock, value: stock && shares ? stock.close * shares : 0 };
   }).sort((a, b) => b.value - a.value)[0];
   const largestSector = Array.from(sectorValue.entries()).sort((a, b) => b[1] - a[1])[0];
   const singleRatio = holdingValue && largestHolding?.value ? (largestHolding.value / holdingValue) * 100 : 0;
   const sectorRatio = holdingValue && largestSector ? (largestSector[1] / holdingValue) * 100 : 0;
-  const noCost = watchList.filter((item) => !number(item.cost) || !number(item.shares)).length;
+  const noCost = watchList.filter((item) => !averageHoldingCost(item) || !holdingShares(item)).length;
   const weak = tracked.filter((entry) => entry.signal.tone === "bad").length;
   const checks = [
     ["單檔集中", singleRatio > 20 ? "需調整" : "可接受", singleRatio > 20 ? "bad" : "good", largestHolding?.stock ? `${largestHolding.item.code} 約占 ${percent(singleRatio)}，新手單檔過高容易情緒化。` : "輸入持股後會檢查單檔比重。"],
@@ -1419,10 +1516,10 @@ function renderDisciplineList(holdings, tracked, holdingValue) {
 
 function holdingMetrics(entry) {
   const { item, stock, val } = entry;
-  const cost = number(item.cost);
-  const shares = number(item.shares);
+  const cost = averageHoldingCost(item);
+  const shares = holdingShares(item);
   const marketValue = stock && shares ? stock.close * shares : null;
-  const costValue = cost && shares ? cost * shares : null;
+  const costValue = holdingCostValue(item);
   const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
   const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
   const todayChange = stockTodayChange(stock);
@@ -2722,9 +2819,30 @@ function realizedProfitTotal() {
   return sellHistory.reduce((sum, item) => sum + (number(item.profit) || 0), 0);
 }
 
+function consumeLots(item, sellShares) {
+  const lots = holdingLots(item);
+  let remainingToSell = sellShares;
+  const soldLots = [];
+  const remainingLots = [];
+
+  lots.forEach((lot) => {
+    if (remainingToSell <= 0) {
+      remainingLots.push(lot);
+      return;
+    }
+    const soldShares = Math.min(lot.shares, remainingToSell);
+    soldLots.push({ ...lot, shares: soldShares });
+    remainingToSell -= soldShares;
+    const leftoverShares = lot.shares - soldShares;
+    if (leftoverShares > 0) remainingLots.push({ ...lot, shares: roundPrice(leftoverShares) });
+  });
+
+  return { soldLots, remainingLots, unsoldShares: remainingToSell };
+}
+
 function sellHolding(item, stock) {
-  const shares = number(item.shares);
-  const cost = number(item.cost);
+  const shares = holdingShares(item);
+  const cost = averageHoldingCost(item);
   if (!Number.isFinite(shares) || shares <= 0) {
     alert("這檔持股沒有股數，先補上股數後才能記錄賣出。");
     return;
@@ -2751,22 +2869,33 @@ function sellHolding(item, stock) {
     return;
   }
 
-  const profit = (sellPrice - cost) * sellShares;
+  const { soldLots, remainingLots, unsoldShares } = consumeLots(item, sellShares);
+  if (unsoldShares > 0.0001 || !soldLots.length) {
+    alert("賣出股數超過目前可用持股，請重新確認。");
+    return;
+  }
+  const soldCostValue = soldLots.reduce((sum, lot) => sum + lot.cost * lot.shares, 0);
+  const averageBuyCost = soldCostValue / sellShares;
+  const profit = (sellPrice * sellShares) - soldCostValue;
   const remainingShares = shares - sellShares;
   sellHistory.unshift({
     id: `${Date.now()}-${item.code}`,
     code: item.code,
     name: stock?.name || item.name || "",
-    buyCost: cost,
+    buyCost: averageBuyCost,
     sellPrice,
     shares: sellShares,
+    costValue: soldCostValue,
+    soldValue: sellPrice * sellShares,
     profit,
-    profitRate: cost ? ((sellPrice - cost) / cost) * 100 : null,
+    profitRate: soldCostValue ? (profit / soldCostValue) * 100 : null,
+    lots: soldLots,
     soldAt: new Date().toISOString()
   });
 
   if (remainingShares > 0) {
-    item.shares = String(remainingShares);
+    item.lots = remainingLots;
+    syncHoldingTotals(item);
   } else {
     watchList = watchList.filter((entry) => entry.code !== item.code);
   }
@@ -2786,67 +2915,115 @@ function historyStockLabel(item) {
   return item.name ? `${item.name} ${item.code}` : item.code;
 }
 
+function buyLotRows() {
+  return watchList
+    .filter((item) => (item.type || "holding") === "holding")
+    .flatMap((item) => {
+      const stock = getStock(item.code);
+      return holdingLots(item).map((lot) => {
+        const currentPrice = number(stock?.close);
+        const marketValue = Number.isFinite(currentPrice) ? currentPrice * lot.shares : null;
+        const costValue = lot.cost * lot.shares;
+        const profit = marketValue === null ? null : marketValue - costValue;
+        const profitRate = profit === null || !costValue ? null : (profit / costValue) * 100;
+        return {
+          id: lot.id,
+          type: "buy",
+          code: item.code,
+          name: stock?.name || item.name || "",
+          date: lot.boughtAt,
+          shares: lot.shares,
+          buyCost: lot.cost,
+          currentPrice,
+          profit,
+          profitRate
+        };
+      });
+    });
+}
+
+function tradeHistoryRows() {
+  const sells = sellHistory.map((item) => ({
+    ...item,
+    type: "sell",
+    date: item.soldAt
+  }));
+  return [...sells, ...buyLotRows()]
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+}
+
 function renderSellHistory() {
   if (!els.realizedOverview || !els.sellHistoryList) return;
   const totalProfit = realizedProfitTotal();
-  const totalSoldValue = sellHistory.reduce((sum, item) => {
-    const sellPrice = number(item.sellPrice);
-    const shares = number(item.shares);
-    return sum + (Number.isFinite(sellPrice) && Number.isFinite(shares) ? sellPrice * shares : 0);
-  }, 0);
-  const winnerCount = sellHistory.filter((item) => (number(item.profit) || 0) > 0).length;
-  const loserCount = sellHistory.filter((item) => (number(item.profit) || 0) < 0).length;
-  const latest = sellHistory[0];
+  const buyRows = buyLotRows();
+  const unrealizedProfit = buyRows.reduce((sum, item) => sum + (number(item.profit) || 0), 0);
+  const rows = tradeHistoryRows();
+  const latest = rows[0];
 
   els.realizedOverview.innerHTML = `
     <div class="realized-overview-grid">
       <article>
-        <span>累積已實現獲利</span>
+        <span>已實現損益</span>
         <strong class="${priceTone(totalProfit)}">${sellHistory.length ? formatCurrency(totalProfit) : "--"}</strong>
       </article>
       <article>
-        <span>歷史賣出筆數</span>
+        <span>未實現損益</span>
+        <strong class="${priceTone(unrealizedProfit)}">${buyRows.length ? formatCurrency(unrealizedProfit) : "--"}</strong>
+      </article>
+      <article>
+        <span>買進紀錄</span>
+        <strong>${buyRows.length ? `${buyRows.length} 筆` : "--"}</strong>
+      </article>
+      <article>
+        <span>賣出紀錄</span>
         <strong>${sellHistory.length ? `${sellHistory.length} 筆` : "--"}</strong>
       </article>
       <article>
-        <span>賣出總金額</span>
-        <strong>${sellHistory.length ? compactMoney(totalSoldValue) : "--"}</strong>
-      </article>
-      <article>
-        <span>獲利 / 虧損</span>
-        <strong>${sellHistory.length ? `${winnerCount} / ${loserCount} 筆` : "--"}</strong>
-      </article>
-      <article>
-        <span>最近賣出</span>
+        <span>最近交易</span>
         <strong>${latest ? escapeHtml(historyStockLabel(latest)) : "--"}</strong>
       </article>
     </div>
   `;
 
-  if (!sellHistory.length) {
-    els.sellHistoryList.innerHTML = '<p class="empty">在我的存股卡片按「賣出」後，這裡會保留歷史存股與已實現獲利。</p>';
+  if (!rows.length) {
+    els.sellHistoryList.innerHTML = '<p class="empty">新增持股後會列出每次買進；在我的存股卡片按「賣出」後，這裡會保留賣出價位與損益。</p>';
     return;
   }
 
   els.sellHistoryList.innerHTML = "";
-  sellHistory.forEach((item) => {
+  rows.forEach((item) => {
     const profit = number(item.profit);
     const row = document.createElement("article");
-    row.className = "sell-history-row";
+    row.className = `sell-history-row ${item.type === "buy" ? "buy-history-row" : ""}`;
     const profitRate = number(item.profitRate);
-    row.innerHTML = `
-      <div class="sell-history-main">
-        <strong>${escapeHtml(historyStockLabel(item))}</strong>
-        <span>${escapeHtml(formatDateOnly(item.soldAt))} ｜ 賣出 ${money(item.shares)} 股 ｜ 買進 ${money(item.buyCost)} ｜ 賣出 ${money(item.sellPrice)}</span>
-      </div>
-      <div class="sell-history-profit">
-        <span>已實現</span>
-        <strong class="${priceTone(profit)}">${formatCurrency(profit)}</strong>
-        <small>${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
-      </div>
-      <button class="history-delete" type="button" aria-label="刪除歷史紀錄">刪除</button>
-    `;
-    row.querySelector(".history-delete").addEventListener("click", () => deleteSellRecord(item.id));
+    if (item.type === "buy") {
+      row.innerHTML = `
+        <div class="sell-history-main">
+          <strong>${escapeHtml(historyStockLabel(item))}</strong>
+          <span>${escapeHtml(formatDateOnly(item.date))} ｜ 買進 ${money(item.shares)} 股 ｜ 買進價 ${money(item.buyCost)} ｜ 現價 ${Number.isFinite(item.currentPrice) ? money(item.currentPrice) : "--"}</span>
+        </div>
+        <div class="sell-history-profit">
+          <span>未實現</span>
+          <strong class="${priceTone(profit)}">${Number.isFinite(profit) ? formatCurrency(profit) : "--"}</strong>
+          <small>${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+        </div>
+        <span class="trade-badge buy">買進</span>
+      `;
+    } else {
+      row.innerHTML = `
+        <div class="sell-history-main">
+          <strong>${escapeHtml(historyStockLabel(item))}</strong>
+          <span>${escapeHtml(formatDateOnly(item.soldAt))} ｜ 賣出 ${money(item.shares)} 股 ｜ 均買 ${money(item.buyCost)} ｜ 賣出 ${money(item.sellPrice)} ｜ 金額 ${compactMoney(number(item.soldValue) || number(item.sellPrice) * number(item.shares))}</span>
+        </div>
+        <div class="sell-history-profit">
+          <span>已實現</span>
+          <strong class="${priceTone(profit)}">${formatCurrency(profit)}</strong>
+          <small>${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+        </div>
+        <button class="history-delete" type="button" aria-label="刪除歷史紀錄">刪除</button>
+      `;
+      row.querySelector(".history-delete").addEventListener("click", () => deleteSellRecord(item.id));
+    }
     els.sellHistoryList.append(row);
   });
 }
@@ -2861,6 +3038,7 @@ function renderHoldings(holdings) {
   holdings.forEach(({ item, stock, val, rev, signal }) => {
     const inst = getInstitutional(item.code);
     const { cost, shares, marketValue, costValue, pnl, pnlRate, todayChange, todayChangePercent, todayPnl, yearlyDividend } = holdingMetrics({ item, stock, val });
+    const lots = holdingLots(item);
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
     const warning = dataWarning(val, rev, inst);
@@ -2870,7 +3048,7 @@ function renderHoldings(holdings) {
       <div class="holding-top">
         <div class="holding-title">
           <strong>${item.code} ${stock?.name || "查無名稱"}</strong>
-          <span>${shares ? `${money(shares)} 股` : "未填股數"} ｜ 成本 ${cost ? money(cost) : "--"}</span>
+          <span>${shares ? `${money(shares)} 股` : "未填股數"} ｜ 均價 ${cost ? money(cost) : "--"}${lots.length > 1 ? ` ｜ ${lots.length} 筆買進` : ""}</span>
         </div>
         <div class="holding-live-quote">
           <span>${stockPriceLabel(stock)}</span>
@@ -2898,6 +3076,24 @@ function renderHoldings(holdings) {
         <div class="metric"><span>狀態</span><strong><span class="pill ${decision.tone}">${decision.label}</span></strong></div>
         <div class="metric"><span>風險等級</span><strong><span class="pill ${risk.tone}">${risk.label}</span></strong></div>
       </div>
+      ${lots.length ? `
+        <div class="holding-lot-list" aria-label="買進批次">
+          <div class="holding-lot-head">
+            <strong>買進紀錄</strong>
+            <span>均價 ${cost ? money(cost) : "--"}，總成本 ${costValue === null ? "--" : compactMoney(costValue)}</span>
+          </div>
+          ${lots.map((lot) => {
+            const lotPnl = stock && Number.isFinite(stock.close) ? (stock.close - lot.cost) * lot.shares : null;
+            return `
+              <div class="holding-lot-row">
+                <span>${escapeHtml(formatDateOnly(lot.boughtAt))}</span>
+                <strong>${money(lot.shares)} 股 @ ${money(lot.cost)}</strong>
+                <small class="${priceTone(lotPnl)}">${Number.isFinite(lotPnl) ? formatCurrency(lotPnl) : "--"}</small>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      ` : ""}
       <p class="holding-note">${revenueSummaryText(rev)} ${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
@@ -3606,8 +3802,12 @@ function renderQuickAddedStocks() {
     codeEl.textContent = stockDisplayName(item);
     info.appendChild(codeEl);
     let details = "";
-    if (item.cost) details += `買進：$${item.cost}`;
-    if (item.shares) details += (details ? " | " : "") + `股數：${item.shares}`;
+    const avgCost = averageHoldingCost(item);
+    const shares = holdingShares(item);
+    const lots = holdingLots(item);
+    if (avgCost) details += `均價：$${money(avgCost)}`;
+    if (shares) details += (details ? " | " : "") + `股數：${money(shares)}`;
+    if (lots.length > 1) details += ` | ${lots.length} 筆買進`;
     if (!details) details = item.type === "holding" ? "我的存股" : "觀察名單";
     const detailEl = document.createElement("div");
     detailEl.className = "quick-stock-details";
@@ -3659,19 +3859,12 @@ if (els.quickAddForm) {
       alert("請輸入正確的股票代號（4-6 碼數字）");
       return;
     }
-    const existing = watchList.find((item) => item.code === code);
-    if (existing) {
-      existing.cost = els.quickCostInput.value;
-      existing.shares = els.quickSharesInput.value;
-      existing.type = els.quickTypeInput.value;
-    } else {
-      watchList.push({
-        code,
-        cost: els.quickCostInput.value,
-        shares: els.quickSharesInput.value,
-        type: els.quickTypeInput.value,
-      });
-    }
+    upsertWatchItem({
+      code,
+      cost: els.quickCostInput.value,
+      shares: els.quickSharesInput.value,
+      type: els.quickTypeInput.value
+    });
     saveWatchList();
     els.quickAddForm.reset();
     if (els.searchResults) els.searchResults.hidden = true;
@@ -3691,14 +3884,12 @@ els.form.addEventListener("submit", (event) => {
   const code = els.symbol.value.trim();
   if (!/^\d{4,6}$/.test(code)) return;
 
-  const existing = watchList.find((item) => item.code === code);
-  if (existing) {
-    existing.cost = els.cost.value;
-    existing.shares = els.shares.value;
-    existing.type = els.type.value;
-  } else {
-    watchList.push({ code, cost: els.cost.value, shares: els.shares.value, type: els.type.value });
-  }
+  upsertWatchItem({
+    code,
+    cost: els.cost.value,
+    shares: els.shares.value,
+    type: els.type.value
+  });
 
   saveWatchList();
   els.form.reset();
@@ -3848,7 +4039,16 @@ els.demo.addEventListener("click", () => {
     return;
   }
   watchList = [
-    { code: "2330", cost: "920", shares: "1000", type: "holding" },
+    {
+      code: "2330",
+      cost: "936.67",
+      shares: "1500",
+      type: "holding",
+      lots: [
+        { id: "demo-2330-1", cost: 920, shares: 1000, boughtAt: "2026-04-15T00:00:00.000Z" },
+        { id: "demo-2330-2", cost: 970, shares: 500, boughtAt: "2026-05-10T00:00:00.000Z" }
+      ]
+    },
     { code: "0050", cost: "180", shares: "1000", type: "holding" },
     { code: "2317", cost: "190", shares: "1000", type: "watch" }
   ];

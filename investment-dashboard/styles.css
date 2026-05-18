@@ -1632,6 +1632,50 @@ label span {
   line-height: 1.6;
 }
 
+.holding-lot-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbf8f2;
+}
+
+.holding-lot-head,
+.holding-lot-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.holding-lot-head strong {
+  font-size: 16px;
+}
+
+.holding-lot-head span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.holding-lot-row {
+  grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1fr) auto;
+  padding-top: 8px;
+  border-top: 1px solid rgba(45, 39, 32, 0.08);
+}
+
+.holding-lot-row span,
+.holding-lot-row small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.holding-lot-row strong {
+  font-size: 15px;
+}
+
 .metric {
   padding: 10px;
   border-radius: 8px;
@@ -1729,6 +1773,24 @@ label span {
 .sell-history-profit small {
   color: var(--muted);
   font-weight: 900;
+}
+
+.trade-badge {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f0eadf;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.trade-badge.buy {
+  background: rgba(47, 95, 143, 0.12);
+  color: var(--blue);
 }
 
 .rank-row strong {
@@ -2582,12 +2644,15 @@ body.chart-expanded .chart-wrap canvas {
 
   .small-cap-head,
   .trend-row,
+  .holding-lot-head,
+  .holding-lot-row,
   .sell-history-row {
     grid-template-columns: 1fr;
   }
 
   .trend-quote,
   .holding-live-quote,
+  .holding-lot-head span,
   .sell-history-profit {
     min-width: 0;
     text-align: left;
