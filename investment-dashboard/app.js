@@ -106,6 +106,7 @@ const els = {
   watchList: document.querySelector("#watchList"),
   holdingOverview: document.querySelector("#holdingOverview"),
   holdingList: document.querySelector("#holdingList"),
+  holdingTradeSummary: document.querySelector("#holdingTradeSummary"),
   realizedOverview: document.querySelector("#realizedOverview"),
   sellHistoryList: document.querySelector("#sellHistoryList"),
   newsList: document.querySelector("#newsList"),
@@ -1175,6 +1176,7 @@ function render() {
   renderDisciplineList(holdings, tracked, holdingValue);
   renderHoldingOverview(holdings);
   renderHoldings(holdings);
+  renderHoldingTradeSummary(holdings);
   renderSellHistory();
   renderNews();
   renderHoldingNews(tracked);
@@ -2913,6 +2915,78 @@ function deleteSellRecord(recordId) {
 
 function historyStockLabel(item) {
   return item.name ? `${item.name} ${item.code}` : item.code;
+}
+
+function realizedProfitByCode(code) {
+  return sellHistory
+    .filter((item) => item.code === code)
+    .reduce((sum, item) => sum + (number(item.profit) || 0), 0);
+}
+
+function renderHoldingTradeSummary(holdings) {
+  if (!els.holdingTradeSummary) return;
+  const holdingMap = new Map(holdings.map((entry) => [entry.item.code, entry]));
+  const codes = Array.from(new Set([
+    ...holdings.map((entry) => entry.item.code),
+    ...sellHistory.map((item) => item.code)
+  ])).filter(Boolean);
+
+  if (!codes.length) {
+    els.holdingTradeSummary.innerHTML = '<p class="empty">新增持股或賣出後，這裡會用表格彙總現價、目前持股數與累計虧損。</p>';
+    return;
+  }
+
+  const rows = codes.map((code) => {
+    const entry = holdingMap.get(code);
+    const stock = entry?.stock || getStock(code);
+    const item = entry?.item || sellHistory.find((history) => history.code === code) || { code };
+    const metrics = entry ? holdingMetrics(entry) : {};
+    const buyCount = entry ? holdingLots(entry.item).length : 0;
+    const sellCount = sellHistory.filter((history) => history.code === code).length;
+    const realizedPnl = realizedProfitByCode(code);
+    const currentPnl = Number.isFinite(metrics.pnl) ? metrics.pnl : 0;
+    const cumulativePnl = currentPnl + realizedPnl;
+    return {
+      code,
+      label: historyStockLabel({ code, name: stock?.name || item.name || "" }),
+      currentPrice: number(stock?.close),
+      currentShares: entry ? holdingShares(entry.item) : 0,
+      buyCount,
+      sellCount,
+      currentPnl,
+      realizedPnl,
+      cumulativePnl
+    };
+  }).sort((a, b) => a.cumulativePnl - b.cumulativePnl || a.code.localeCompare(b.code));
+
+  const totalLoss = rows.reduce((sum, row) => sum + Math.min(row.cumulativePnl, 0), 0);
+  const totalPnl = rows.reduce((sum, row) => sum + row.cumulativePnl, 0);
+
+  els.holdingTradeSummary.innerHTML = `
+    <div class="trade-summary-table" role="table" aria-label="歷史買賣紀錄彙總">
+      <div class="trade-summary-row trade-summary-head" role="row">
+        <span role="columnheader">股票</span>
+        <span role="columnheader">現價</span>
+        <span role="columnheader">目前持股數</span>
+        <span role="columnheader">買 / 賣</span>
+        <span role="columnheader">虧損</span>
+      </div>
+      ${rows.map((row) => `
+        <div class="trade-summary-row" role="row">
+          <strong role="cell">${escapeHtml(row.label)}</strong>
+          <span role="cell">${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}</span>
+          <span role="cell">${row.currentShares ? `${money(row.currentShares)} 股` : "0 股"}</span>
+          <span role="cell">${row.buyCount} / ${row.sellCount} 筆</span>
+          <strong role="cell" class="${priceTone(row.cumulativePnl)}">${formatCurrency(row.cumulativePnl)}</strong>
+        </div>
+      `).join("")}
+      <div class="trade-summary-total">
+        <span>總虧損</span>
+        <strong class="${priceTone(totalLoss)}">${formatCurrency(totalLoss)}</strong>
+        <small>累計損益 ${formatCurrency(totalPnl)}</small>
+      </div>
+    </div>
+  `;
 }
 
 function buyLotRows() {
