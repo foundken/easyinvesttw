@@ -1628,6 +1628,21 @@ function renderHoldingOverview(holdings) {
   const rows = holdings.map((entry) => ({ ...entry, metrics: holdingMetrics(entry) }));
   const totalMarketValue = rows.reduce((sum, row) => sum + (row.metrics.marketValue || 0), 0);
   const totalCost = rows.reduce((sum, row) => sum + (row.metrics.costValue || 0), 0);
+  const recoveredPrincipal = sellHistory.reduce((sum, item) => {
+    const costValue = number(item.costValue);
+    const buyCost = number(item.buyCost);
+    const shares = number(item.shares);
+    if (Number.isFinite(costValue)) return sum + costValue;
+    return sum + (Number.isFinite(buyCost) && Number.isFinite(shares) ? buyCost * shares : 0);
+  }, 0);
+  const totalSoldValue = sellHistory.reduce((sum, item) => {
+    const soldValue = number(item.soldValue);
+    const sellPrice = number(item.sellPrice);
+    const shares = number(item.shares);
+    if (Number.isFinite(soldValue)) return sum + soldValue;
+    return sum + (Number.isFinite(sellPrice) && Number.isFinite(shares) ? sellPrice * shares : 0);
+  }, 0);
+  const lifetimeInvested = totalCost + recoveredPrincipal;
   const totalPnl = totalMarketValue && totalCost ? totalMarketValue - totalCost : null;
   const totalPnlRate = totalPnl !== null && totalCost ? (totalPnl / totalCost) * 100 : null;
   const cumulativePnl = (totalPnl || 0) + realizedPnl;
@@ -1653,7 +1668,10 @@ function renderHoldingOverview(holdings) {
 
   const cards = [
     ["總市值", totalMarketValue ? compactMoney(totalMarketValue) : "--", ""],
-    ["總投入成本", totalCost ? compactMoney(totalCost) : "--", ""],
+    ["目前投入成本", totalCost ? compactMoney(totalCost) : "--", ""],
+    ["已回收本金", recoveredPrincipal ? compactMoney(recoveredPrincipal) : "--", ""],
+    ["累計投入本金", lifetimeInvested ? compactMoney(lifetimeInvested) : "--", ""],
+    ["已賣出金額", totalSoldValue ? compactMoney(totalSoldValue) : "--", ""],
     ["總帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down"],
     ["總損益率", totalPnlRate === null ? "--" : percent(totalPnlRate), totalPnlRate >= 0 ? "price-up" : "price-down"],
     ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
