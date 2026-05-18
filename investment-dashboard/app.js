@@ -2923,6 +2923,15 @@ function realizedProfitByCode(code) {
     .reduce((sum, item) => sum + (number(item.profit) || 0), 0);
 }
 
+function latestTradeDateText(values, label) {
+  const dates = values
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+  if (!dates.length) return `${label} --`;
+  const suffix = dates.length > 1 ? ` 等 ${dates.length} 筆` : "";
+  return `${label} ${formatDateOnly(dates[0])}${suffix}`;
+}
+
 function renderHoldingTradeSummary(holdings) {
   if (!els.holdingTradeSummary) return;
   const holdingMap = new Map(holdings.map((entry) => [entry.item.code, entry]));
@@ -2941,14 +2950,21 @@ function renderHoldingTradeSummary(holdings) {
     const stock = entry?.stock || getStock(code);
     const item = entry?.item || sellHistory.find((history) => history.code === code) || { code };
     const metrics = entry ? holdingMetrics(entry) : {};
-    const buyCount = entry ? holdingLots(entry.item).length : 0;
-    const sellCount = sellHistory.filter((history) => history.code === code).length;
+    const buyLots = entry ? holdingLots(entry.item) : [];
+    const sales = sellHistory.filter((history) => history.code === code);
+    const buyCount = buyLots.length;
+    const sellCount = sales.length;
     const realizedPnl = realizedProfitByCode(code);
     const currentPnl = Number.isFinite(metrics.pnl) ? metrics.pnl : 0;
     const cumulativePnl = currentPnl + realizedPnl;
+    const tradeDateText = [
+      latestTradeDateText(buyLots.map((lot) => lot.boughtAt), "買"),
+      latestTradeDateText(sales.map((history) => history.soldAt), "賣")
+    ].join(" / ");
     return {
       code,
       label: historyStockLabel({ code, name: stock?.name || item.name || "" }),
+      tradeDateText,
       currentPrice: number(stock?.close),
       currentShares: entry ? holdingShares(entry.item) : 0,
       buyCount,
@@ -2966,6 +2982,7 @@ function renderHoldingTradeSummary(holdings) {
     <div class="trade-summary-table" role="table" aria-label="歷史買賣紀錄彙總">
       <div class="trade-summary-row trade-summary-head" role="row">
         <span role="columnheader">股票</span>
+        <span role="columnheader">買賣日期</span>
         <span role="columnheader">現價</span>
         <span role="columnheader">目前持股數</span>
         <span role="columnheader">買 / 賣</span>
@@ -2974,6 +2991,7 @@ function renderHoldingTradeSummary(holdings) {
       ${rows.map((row) => `
         <div class="trade-summary-row" role="row">
           <strong role="cell">${escapeHtml(row.label)}</strong>
+          <span role="cell" class="trade-summary-date">${escapeHtml(row.tradeDateText)}</span>
           <span role="cell">${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}</span>
           <span role="cell">${row.currentShares ? `${money(row.currentShares)} 股` : "0 股"}</span>
           <span role="cell">${row.buyCount} / ${row.sellCount} 筆</span>
