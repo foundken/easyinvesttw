@@ -1855,6 +1855,11 @@ label span {
   overflow-wrap: anywhere;
 }
 
+.trade-date-lines {
+  display: grid;
+  gap: 2px;
+}
+
 .trade-detail-head {
   display: flex;
   justify-content: space-between;
@@ -2774,6 +2779,42 @@ body.chart-expanded .chart-wrap canvas {
   .sell-history-profit {
     min-width: 0;
     text-align: left;
+  }
+
+  .trade-summary-head {
+    display: none;
+  }
+
+  .trade-summary-row {
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .trade-summary-row > span,
+  .trade-summary-row > strong {
+    display: grid;
+    grid-template-columns: minmax(92px, 0.42fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    font-size: 15px;
+    line-height: 1.4;
+  }
+
+  .trade-summary-row > span::before,
+  .trade-summary-row > strong::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .trade-summary-date {
+    display: grid;
+    grid-template-columns: minmax(92px, 0.42fr) minmax(0, 1fr);
+  }
+
+  .trade-date-lines {
+    min-width: 0;
   }
 
   .trade-total-item {

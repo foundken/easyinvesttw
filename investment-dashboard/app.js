@@ -3012,14 +3012,14 @@ function renderHoldingTradeSummary(holdings) {
       </div>
       ${rows.map((row) => `
         <div class="trade-summary-row" role="row">
-          <strong role="cell">${escapeHtml(row.label)}</strong>
-          <span role="cell" class="trade-summary-date">
-            ${row.tradeDateLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}
+          <strong role="cell" data-label="股票">${escapeHtml(row.label)}</strong>
+          <span role="cell" class="trade-summary-date" data-label="買賣日期">
+            <span class="trade-date-lines">${row.tradeDateLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</span>
           </span>
-          <span role="cell">${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}</span>
-          <span role="cell">${row.currentShares ? `${money(row.currentShares)} 股` : "0 股"}</span>
-          <span role="cell">${row.buyCount} / ${row.sellCount} 筆</span>
-          <strong role="cell" class="${priceTone(row.cumulativePnl)}">${formatCurrency(row.cumulativePnl)}</strong>
+          <span role="cell" data-label="現價">${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}</span>
+          <span role="cell" data-label="目前持股數">${row.currentShares ? `${money(row.currentShares)} 股` : "0 股"}</span>
+          <span role="cell" data-label="買 / 賣">${row.buyCount} / ${row.sellCount} 筆</span>
+          <strong role="cell" data-label="買賣至今損益" class="${priceTone(row.cumulativePnl)}">${formatCurrency(row.cumulativePnl)}</strong>
         </div>
       `).join("")}
       <div class="trade-summary-total">
