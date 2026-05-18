@@ -1591,10 +1591,10 @@ function renderTodayPnl(holdings) {
   els.todayPnlMarketValue.textContent = totalMarketValue ? compactMoney(totalMarketValue) : "--";
 
   if (cumulativePnl !== 0) {
-    els.todayPnlAccumulated.textContent = pnlText(cumulativePnl, "持股增加", "持股減少", "持股持平", compactMoney);
+    els.todayPnlAccumulated.textContent = pnlText(cumulativePnl, "帳面增加", "帳面減少", "帳面持平", compactMoney);
     els.todayPnlAccumulated.className = cumulativePnl > 0 ? "price-up" : "price-down";
   } else {
-    els.todayPnlAccumulated.textContent = valid.length ? "持股持平 0" : "--";
+    els.todayPnlAccumulated.textContent = valid.length ? "帳面持平 0" : "--";
     els.todayPnlAccumulated.className = "";
   }
 
