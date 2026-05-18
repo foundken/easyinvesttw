@@ -932,7 +932,11 @@ async function fetchMarket() {
 
   try {
     const symbols = watchList.map((item) => item.code).join(",");
-    const url = symbols ? `${endpoints.bundle}?symbols=${encodeURIComponent(symbols)}` : endpoints.bundle;
+    const params = new URLSearchParams();
+    if (symbols) params.set("symbols", symbols);
+    params.set("_", String(Date.now()));
+    const separator = endpoints.bundle.includes("?") ? "&" : "?";
+    const url = `${endpoints.bundle}${separator}${params.toString()}`;
     const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) throw new Error("Netlify function unavailable");
     const payload = await response.json();
