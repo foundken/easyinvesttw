@@ -2888,6 +2888,15 @@ function formatMarketChartTime(value) {
   });
 }
 
+function marketAxisStep(range) {
+  if (!Number.isFinite(range) || range <= 0) return 100;
+  const roughStep = range / 8;
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const normalized = roughStep / magnitude;
+  const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return multiplier * magnitude;
+}
+
 function drawMarketBoardChart(points, index, isUp) {
   const canvas = els.marketIndexChart;
   const context = canvas.getContext("2d");
@@ -2908,40 +2917,54 @@ function drawMarketBoardChart(points, index, isUp) {
 
   const width = canvas.width;
   const height = canvas.height;
-  const rightRail = Math.min(190, Math.max(142, rect.width * 0.15)) * ratio;
-  const padding = { top: 30 * ratio, right: rightRail, bottom: 50 * ratio, left: 14 * ratio };
+  const padding = { top: 16 * ratio, right: 118 * ratio, bottom: 48 * ratio, left: 20 * ratio };
   const values = chartPoints.map((item) => item.close).filter(Number.isFinite);
   if (Number.isFinite(index.previousClose)) values.push(index.previousClose);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const rawRange = rawMax - rawMin || 1;
+  const step = marketAxisStep(rawRange);
+  const min = Math.floor((rawMin - step * 0.4) / step) * step;
+  const max = Math.ceil((rawMax + step * 0.25) / step) * step;
   const range = max - min || 1;
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const color = isUp ? "#ad3032" : "#176b55";
 
   context.clearRect(0, 0, width, height);
-  context.fillStyle = "#fffdf8";
+  context.fillStyle = "#fff";
   context.fillRect(0, 0, width, height);
-  context.strokeStyle = "#ece6dc";
-  context.lineWidth = 1;
-  for (let i = 0; i <= 4; i += 1) {
-    const y = padding.top + (chartHeight / 4) * i;
-    if (i % 2 === 0) {
-      context.fillStyle = "rgba(36, 36, 35, 0.035)";
-      context.fillRect(padding.left, y, chartWidth, chartHeight / 4);
-    }
+  context.strokeStyle = "#cfd6dc";
+  context.lineWidth = 1 * ratio;
+  const axisValues = [];
+  for (let value = min; value <= max + step * 0.1; value += step) {
+    axisValues.push(value);
+  }
+  axisValues.forEach((value) => {
+    const y = padding.top + ((max - value) / range) * chartHeight;
     context.beginPath();
     context.moveTo(padding.left, y);
-    context.lineTo(width - padding.right, y);
+    context.lineTo(width - padding.right + 4 * ratio, y);
     context.stroke();
-  }
+  });
 
   const pointX = (index) => padding.left + (chartWidth * index) / Math.max(chartPoints.length - 1, 1);
   const pointY = (value) => padding.top + ((max - value) / range) * chartHeight;
+  const labelIndexes = [0, 0.25, 0.5, 0.75, 1]
+    .map((ratioPoint) => Math.round((chartPoints.length - 1) * ratioPoint))
+    .filter((value, index, list) => list.indexOf(value) === index);
+  labelIndexes.forEach((pointIndex) => {
+    const x = pointX(pointIndex);
+    context.beginPath();
+    context.moveTo(x, padding.top);
+    context.lineTo(x, height - padding.bottom);
+    context.stroke();
+  });
+
   if (Number.isFinite(index.previousClose)) {
     const previousY = pointY(index.previousClose);
-    context.strokeStyle = "rgba(36, 36, 35, 0.38)";
-    context.setLineDash([6, 5]);
+    context.strokeStyle = "rgba(36, 36, 35, 0.55)";
+    context.setLineDash([5 * ratio, 5 * ratio]);
     context.beginPath();
     context.moveTo(padding.left, previousY);
     context.lineTo(width - padding.right, previousY);
@@ -2950,8 +2973,8 @@ function drawMarketBoardChart(points, index, isUp) {
   }
 
   const fillGradient = context.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-  fillGradient.addColorStop(0, isUp ? "rgba(173, 48, 50, 0.18)" : "rgba(23, 107, 85, 0.2)");
-  fillGradient.addColorStop(1, isUp ? "rgba(173, 48, 50, 0.02)" : "rgba(23, 107, 85, 0.03)");
+  fillGradient.addColorStop(0, isUp ? "rgba(173, 48, 50, 0.16)" : "rgba(23, 107, 85, 0.18)");
+  fillGradient.addColorStop(1, isUp ? "rgba(173, 48, 50, 0.03)" : "rgba(23, 107, 85, 0.03)");
   context.fillStyle = fillGradient;
   context.beginPath();
   chartPoints.forEach((point, index) => {
@@ -2966,7 +2989,7 @@ function drawMarketBoardChart(points, index, isUp) {
   context.fill();
 
   context.strokeStyle = color;
-  context.lineWidth = 3.2;
+  context.lineWidth = 3 * ratio;
   context.lineJoin = "round";
   context.lineCap = "round";
   context.beginPath();
@@ -2983,8 +3006,8 @@ function drawMarketBoardChart(points, index, isUp) {
   const maxVolume = Math.max(...chartPoints.map((point) => point.volume || 0), 0);
   if (maxVolume > 0) {
     chartPoints.forEach((point, index) => {
-      const barHeight = ((point.volume || 0) / maxVolume) * Math.min(52 * ratio, chartHeight * 0.18);
-      context.fillStyle = isUp ? "rgba(173, 48, 50, 0.24)" : "rgba(23, 107, 85, 0.22)";
+      const barHeight = ((point.volume || 0) / maxVolume) * Math.min(44 * ratio, chartHeight * 0.16);
+      context.fillStyle = "rgba(47, 111, 211, 0.52)";
       context.fillRect(pointX(index) - 2 * ratio, volumeBase - barHeight, 3 * ratio, barHeight);
     });
   }
@@ -3010,7 +3033,7 @@ function drawMarketBoardChart(points, index, isUp) {
       background: color,
       fontSize: 13,
       height: 27,
-      maxX: width - 8 * ratio,
+      maxX: width - 4 * ratio,
       minY: padding.top + 4 * ratio,
       maxY: height - padding.bottom - 6 * ratio
     });
@@ -3027,7 +3050,7 @@ function drawMarketBoardChart(points, index, isUp) {
       background: "#5d6470",
       fontSize: 13,
       height: 27,
-      maxX: width - 8 * ratio,
+      maxX: width - 4 * ratio,
       minY: padding.top + 4 * ratio,
       maxY: height - padding.bottom - 6 * ratio
     });
@@ -3035,16 +3058,12 @@ function drawMarketBoardChart(points, index, isUp) {
 
   context.fillStyle = "#4d5661";
   context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-  for (let i = 0; i <= 3; i += 1) {
-    const value = max - (range / 3) * i;
+  axisValues.slice().reverse().forEach((value) => {
     const y = pointY(value);
-    if (floatingLabelYs.some((labelY) => Math.abs(labelY - y) < 24 * ratio)) continue;
+    if (floatingLabelYs.some((labelY) => Math.abs(labelY - y) < 24 * ratio)) return;
     context.textAlign = "left";
     context.fillText(money(value), rightLabelX, y + 4 * ratio);
-  }
-  const labelIndexes = [0, 0.25, 0.5, 0.75, 1]
-    .map((ratioPoint) => Math.round((chartPoints.length - 1) * ratioPoint))
-    .filter((value, index, list) => list.indexOf(value) === index);
+  });
   labelIndexes.forEach((pointIndex, labelIndex) => {
     const label = formatMarketChartTime(chartPoints[pointIndex].date);
     if (!label) return;
