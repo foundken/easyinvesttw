@@ -3022,12 +3022,18 @@ function renderHoldingTradeSummary(holdings) {
         </div>
       `).join("")}
       <div class="trade-summary-total">
-        <span>今日下跌股合計</span>
-        <strong class="${priceTone(todayDownsideTotal)}">${formatCurrency(todayDownsideTotal)}</strong>
-        <small>
-          <span>全部股票今日淨損益 ${formatCurrency(todayNetPnl)}</span>
-          <span>買賣至今總損益 ${formatCurrency(totalPnl)}</span>
-        </small>
+        <div class="trade-total-item">
+          <span>今日下跌股合計</span>
+          <strong class="${priceTone(todayDownsideTotal)}">${formatCurrency(todayDownsideTotal)}</strong>
+        </div>
+        <div class="trade-total-item">
+          <span>全部股票今日淨損益</span>
+          <strong class="${priceTone(todayNetPnl)}">${formatCurrency(todayNetPnl)}</strong>
+        </div>
+        <div class="trade-total-item">
+          <span>買賣至今總損益</span>
+          <strong class="${priceTone(totalPnl)}">${formatCurrency(totalPnl)}</strong>
+        </div>
       </div>
     </div>
   `;

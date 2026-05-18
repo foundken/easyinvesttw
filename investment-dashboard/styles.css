@@ -1876,35 +1876,36 @@ label span {
 
 .trade-summary-total {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 14px;
-  align-items: center;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 14px;
   border-top: 1px solid var(--line);
   background: #fbf8f2;
 }
 
-.trade-summary-total span,
-.trade-summary-total small {
+.trade-total-item {
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  min-width: 0;
+  padding: 0 18px;
+  border-left: 1px solid rgba(45, 39, 32, 0.12);
+}
+
+.trade-total-item:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.trade-total-item span {
   color: var(--muted);
+  font-size: 14px;
   font-weight: 900;
 }
 
-.trade-summary-total strong,
-.trade-summary-total small {
+.trade-total-item strong {
   font-size: 22px;
-}
-
-.trade-summary-total small {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-}
-
-.trade-summary-total small span + span::before {
-  content: "|";
-  margin-right: 14px;
-  color: #c6beb2;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .rank-row strong {
@@ -2773,6 +2774,17 @@ body.chart-expanded .chart-wrap canvas {
   .sell-history-profit {
     min-width: 0;
     text-align: left;
+  }
+
+  .trade-total-item {
+    padding: 10px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(45, 39, 32, 0.12);
+  }
+
+  .trade-total-item:first-child {
+    padding-top: 0;
+    border-top: 0;
   }
 
   .holding-actions {
