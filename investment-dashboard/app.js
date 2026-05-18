@@ -2514,7 +2514,7 @@ function renderMarketIndex() {
   if (index.candles?.length) {
     drawMarketBoardChart(index.candles, index, isUp);
   } else {
-    drawEmptyMarketBoardChart("目前沒有可用的 5 分鐘線資料，請以上方即時數字為準");
+    drawMarketSnapshotChart(index, isUp);
   }
 }
 
@@ -2593,6 +2593,131 @@ function drawEmptyMarketBoardChart(message) {
   context.fillStyle = "#6f6a61";
   context.font = `${16 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
   context.fillText(message, 24 * ratio, 48 * ratio);
+}
+
+function drawMarketSnapshotChart(index, isUp) {
+  const canvas = els.marketIndexChart;
+  const context = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  const targetWidth = Math.max(640, Math.round(rect.width * ratio));
+  const targetHeight = Math.max(210, Math.round(rect.height * ratio));
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+  }
+
+  const latest = number(index.index);
+  const open = number(index.open);
+  const high = number(index.high);
+  const low = number(index.low);
+  const previousClose = number(index.previousClose);
+  const values = [latest, open, high, low, previousClose].filter(Number.isFinite);
+  if (!Number.isFinite(latest) || !Number.isFinite(high) || !Number.isFinite(low) || values.length < 3) {
+    drawEmptyMarketBoardChart("目前沒有可用的大盤圖表資料");
+    return;
+  }
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const padding = { top: 34 * ratio, right: 148 * ratio, bottom: 54 * ratio, left: 46 * ratio };
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const rawRange = rawMax - rawMin || 1;
+  const min = rawMin - rawRange * 0.08;
+  const max = rawMax + rawRange * 0.08;
+  const range = max - min || 1;
+  const chartWidth = width - padding.left - padding.right;
+  const centerY = Math.round(height * 0.54);
+  const color = isUp ? "#ad3032" : "#176b55";
+  const valueX = (value) => padding.left + ((value - min) / range) * chartWidth;
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "#6f6a61";
+  context.font = `${14 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  context.fillText("5 分鐘線暫無，顯示今日高低區間", padding.left, padding.top - 10 * ratio);
+
+  context.strokeStyle = "#ece6dc";
+  context.lineWidth = 1;
+  for (let i = 0; i <= 4; i += 1) {
+    const x = padding.left + (chartWidth / 4) * i;
+    context.beginPath();
+    context.moveTo(x, padding.top);
+    context.lineTo(x, height - padding.bottom);
+    context.stroke();
+  }
+
+  if (Number.isFinite(previousClose)) {
+    const x = valueX(previousClose);
+    context.strokeStyle = "rgba(36, 36, 35, 0.34)";
+    context.setLineDash([6, 5]);
+    context.beginPath();
+    context.moveTo(x, padding.top);
+    context.lineTo(x, height - padding.bottom);
+    context.stroke();
+    context.setLineDash([]);
+    drawCanvasPill(context, `昨收 ${money(previousClose)}`, x, centerY + 52 * ratio, {
+      ratio,
+      align: "center",
+      background: "#5d6470",
+      fontSize: 12,
+      height: 25,
+      minY: padding.top,
+      maxY: height - padding.bottom + 32 * ratio
+    });
+  }
+
+  const lowX = valueX(low);
+  const highX = valueX(high);
+  context.strokeStyle = "rgba(47, 95, 143, 0.18)";
+  context.lineWidth = 18 * ratio;
+  context.lineCap = "round";
+  context.beginPath();
+  context.moveTo(lowX, centerY);
+  context.lineTo(highX, centerY);
+  context.stroke();
+
+  context.strokeStyle = color;
+  context.lineWidth = 5 * ratio;
+  context.beginPath();
+  context.moveTo(lowX, centerY);
+  context.lineTo(valueX(latest), centerY);
+  context.stroke();
+  context.lineCap = "butt";
+
+  const markers = [
+    { label: "最低", value: low, y: centerY + 36 * ratio, color: "#176b55", align: "center" },
+    { label: "最高", value: high, y: centerY - 38 * ratio, color: "#ad3032", align: "center" },
+    { label: "開盤", value: open, y: centerY - 70 * ratio, color: "#2f5f8f", align: "center" },
+    { label: "目前", value: latest, y: centerY + 4 * ratio, color, align: "left" }
+  ].filter((item) => Number.isFinite(item.value));
+
+  markers.forEach((marker) => {
+    const x = valueX(marker.value);
+    context.fillStyle = marker.color;
+    context.beginPath();
+    context.arc(x, centerY, 5 * ratio, 0, Math.PI * 2);
+    context.fill();
+    drawCanvasPill(context, `${marker.label} ${money(marker.value)}`, marker.align === "left" ? x + 10 * ratio : x, marker.y, {
+      ratio,
+      align: marker.align,
+      background: marker.color,
+      fontSize: 12,
+      height: 25,
+      minY: padding.top,
+      maxY: height - padding.bottom + 32 * ratio
+    });
+  });
+
+  context.fillStyle = "#4d5661";
+  context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  context.textAlign = "left";
+  context.fillText(money(rawMin), padding.left, height - 18 * ratio);
+  context.textAlign = "right";
+  context.fillText(money(rawMax), width - padding.right, height - 18 * ratio);
+  context.textAlign = "left";
 }
 
 function renderMarketNumberDetails(index, change, changePercent) {
@@ -3487,7 +3612,11 @@ function drawCanvasPill(context, text, anchorX, anchorY, options = {}) {
 
   context.font = `${fontSize}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
   const width = Math.ceil(context.measureText(text).width + paddingX * 2);
-  const preferredX = options.align === "left" ? anchorX : anchorX - width;
+  const preferredX = options.align === "left"
+    ? anchorX
+    : options.align === "center"
+      ? anchorX - width / 2
+      : anchorX - width;
   const x = Math.min(Math.max(preferredX, minX), maxX - width);
   const y = Math.min(Math.max(anchorY - height / 2, minY), maxY - height);
 
