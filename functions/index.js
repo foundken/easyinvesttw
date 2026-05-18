@@ -10,7 +10,7 @@ const endpoints = {
 
 const FUGLE_BASE = "https://api.fugle.tw/marketdata/v1.0/stock";
 const MOPS_API_BASE = "https://mops.twse.com.tw/mops/api";
-const DASHBOARD_CACHE_TTL_MS = 25000;
+const DASHBOARD_CACHE_TTL_MS = 5000;
 const DASHBOARD_STALE_TTL_MS = 120000;
 const MONTHLY_REVENUE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 let dashboardCache = null;

@@ -1,6 +1,6 @@
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
-const MARKET_REFRESH_FAST_MS = 60000;
+const MARKET_REFRESH_FAST_MS = 5000;
 const MARKET_REFRESH_SLOW_MS = 10 * 60000;
 const QUOTE_REFRESH_MS = 5000;
 
