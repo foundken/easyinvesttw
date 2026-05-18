@@ -1876,7 +1876,7 @@ label span {
 
 .trade-summary-total {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 14px;
   border-top: 1px solid var(--line);
   background: #fbf8f2;
