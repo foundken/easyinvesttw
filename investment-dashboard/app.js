@@ -1538,7 +1538,7 @@ function renderTodayPnl(holdings) {
     .map((entry) => ({ entry, m: holdingMetrics(entry) }))
     .filter(({ entry, m }) => entry.stock && Number.isFinite(m.shares) && m.shares > 0);
 
-  // 今日損益 = sum((即時價 - 昨收) × shares)，和持股卡片共用同一組欄位。
+  // 今日波動 = sum((即時價 - 昨收) × shares)，和持股卡片共用同一組欄位。
   let todayPnl = null;
   let priorMarketValue = 0;
   let totalMarketValue = 0;
@@ -3202,7 +3202,7 @@ function renderHoldings(holdings) {
         <div class="metric"><span>投入成本</span><strong>${costValue === null ? "--" : compactMoney(costValue)}</strong></div>
         <div class="metric"><span>今日最高</span><strong>${Number.isFinite(dayHigh) ? money(dayHigh) : "--"}</strong></div>
         <div class="metric"><span>今日最低</span><strong>${Number.isFinite(dayLow) ? money(dayLow) : "--"}</strong></div>
-        <div class="metric"><span>今日損益</span><strong class="${priceTone(todayPnl)}">${todayPnl === null ? "--" : compactMoney(todayPnl)}</strong></div>
+        <div class="metric"><span>今日波動</span><strong class="${priceTone(todayPnl)}">${todayPnl === null ? "--" : compactMoney(todayPnl)}</strong></div>
         <div class="metric"><span>帳面損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
         <div class="metric"><span>殖利率</span><strong>${val?.yieldRate ?? "--"}%</strong></div>

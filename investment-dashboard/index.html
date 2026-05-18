@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260518-index-metric-cards">
+  <link rel="stylesheet" href="styles.css?v=20260518-today-move-label">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -19,9 +19,9 @@
   </div>
 
   <main class="shell">
-    <section class="today-pnl" aria-label="今日總損益">
+    <section class="today-pnl" aria-label="今日波動">
       <div class="today-pnl-head">
-        <p class="eyebrow">今日損益</p>
+        <p class="eyebrow">今日波動</p>
         <small id="todayPnlUpdatedAt">資料更新時間：尚未同步</small>
       </div>
       <div class="today-pnl-main">
@@ -42,7 +42,7 @@
           <strong id="todayPnlAccumulated">--</strong>
         </article>
       </div>
-      <p id="todayPnlNote" class="today-pnl-note">登入並新增持股後，這裡會顯示「今天賺多少 / 賠多少」。</p>
+      <p id="todayPnlNote" class="today-pnl-note">登入並新增持股後，這裡會顯示今天股價波動對持股市值的影響。</p>
     </section>
 
     <section class="hero advanced-section" aria-label="投資總覽">
@@ -637,6 +637,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260518-index-metric-cards"></script>
+  <script src="app.js?v=20260518-today-move-label"></script>
 </body>
 </html>
