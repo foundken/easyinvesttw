@@ -2511,7 +2511,11 @@ function renderMarketIndex() {
     : "大盤：非即時或範例資料";
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
-  drawMarketBoardChart(index.candles?.length ? index.candles : sampleIndex.candles, index, isUp);
+  if (index.candles?.length) {
+    drawMarketBoardChart(index.candles, index, isUp);
+  } else {
+    drawEmptyMarketBoardChart("目前沒有可用的 5 分鐘線資料，請以上方即時數字為準");
+  }
 }
 
 function renderMarketIndexUnavailable(message = "資料未連線") {
