@@ -2958,14 +2958,14 @@ function renderHoldingTradeSummary(holdings) {
     const currentPnl = Number.isFinite(metrics.pnl) ? metrics.pnl : 0;
     const todayPnl = Number.isFinite(metrics.todayPnl) ? metrics.todayPnl : 0;
     const cumulativePnl = currentPnl + realizedPnl;
-    const tradeDateText = [
+    const tradeDateLines = [
       latestTradeDateText(buyLots.map((lot) => lot.boughtAt), "買"),
       latestTradeDateText(sales.map((history) => history.soldAt), "賣")
-    ].join(" / ");
+    ];
     return {
       code,
       label: historyStockLabel({ code, name: stock?.name || item.name || "" }),
-      tradeDateText,
+      tradeDateLines,
       currentPrice: number(stock?.close),
       currentShares: entry ? holdingShares(entry.item) : 0,
       buyCount,
@@ -2994,7 +2994,9 @@ function renderHoldingTradeSummary(holdings) {
       ${rows.map((row) => `
         <div class="trade-summary-row" role="row">
           <strong role="cell">${escapeHtml(row.label)}</strong>
-          <span role="cell" class="trade-summary-date">${escapeHtml(row.tradeDateText)}</span>
+          <span role="cell" class="trade-summary-date">
+            ${row.tradeDateLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}
+          </span>
           <span role="cell">${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}</span>
           <span role="cell">${row.currentShares ? `${money(row.currentShares)} 股` : "0 股"}</span>
           <span role="cell">${row.buyCount} / ${row.sellCount} 筆</span>
@@ -3051,14 +3053,15 @@ function tradeHistoryRows() {
 }
 
 function renderSellHistory() {
-  if (!els.realizedOverview || !els.sellHistoryList) return;
+  if (!els.sellHistoryList) return;
   const totalProfit = realizedProfitTotal();
   const buyRows = buyLotRows();
   const unrealizedProfit = buyRows.reduce((sum, item) => sum + (number(item.profit) || 0), 0);
   const rows = tradeHistoryRows();
   const latest = rows[0];
 
-  els.realizedOverview.innerHTML = `
+  if (els.realizedOverview) {
+    els.realizedOverview.innerHTML = `
     <div class="realized-overview-grid">
       <article>
         <span>已實現損益</span>
@@ -3082,6 +3085,7 @@ function renderSellHistory() {
       </article>
     </div>
   `;
+  }
 
   if (!rows.length) {
     els.sellHistoryList.innerHTML = '<p class="empty">新增持股後會列出每次買進；在我的存股卡片按「賣出」後，這裡會保留賣出價位與損益。</p>';

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260518-summary-font">
+  <link rel="stylesheet" href="styles.css?v=20260518-combined-history">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -147,17 +147,13 @@
     <section class="panel" aria-label="持股歷史買賣紀錄">
       <div class="panel-head">
         <h2>歷史買賣紀錄</h2>
-        <span>現價、目前持股數與累計虧損</span>
+        <span>現價、目前持股數、交易明細與損益</span>
       </div>
       <div id="holdingTradeSummary" class="holding-trade-summary"></div>
-    </section>
-
-    <section class="panel" aria-label="交易歷史與損益">
-      <div class="panel-head">
-        <h2>交易歷史</h2>
-        <span>買進批次、賣出紀錄與累積損益</span>
+      <div class="trade-detail-head">
+        <strong>交易明細</strong>
+        <span>每筆買進批次與賣出紀錄</span>
       </div>
-      <div id="realizedOverview" class="realized-overview"></div>
       <div id="sellHistoryList" class="sell-history-list"></div>
     </section>
 
@@ -641,6 +637,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260518-summary-font"></script>
+  <script src="app.js?v=20260518-combined-history"></script>
 </body>
 </html>

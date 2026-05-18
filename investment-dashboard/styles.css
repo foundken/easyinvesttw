@@ -1849,7 +1849,29 @@ label span {
 }
 
 .trade-summary-date {
+  display: grid;
+  gap: 2px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.trade-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.trade-detail-head strong {
+  font-size: 18px;
+}
+
+.trade-detail-head span {
+  color: var(--muted);
+  font-weight: 900;
 }
 
 .trade-summary-total {
@@ -2624,7 +2646,8 @@ body.chart-expanded .chart-wrap canvas {
 
   .hero,
   .control-panel,
-  .panel-head {
+  .panel-head,
+  .trade-detail-head {
     flex-direction: column;
     align-items: stretch;
   }
