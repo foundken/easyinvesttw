@@ -2978,6 +2978,7 @@ function renderHoldingTradeSummary(holdings) {
   }).sort((a, b) => a.cumulativePnl - b.cumulativePnl || a.code.localeCompare(b.code));
 
   const todayLoss = rows.reduce((sum, row) => sum + Math.min(row.todayPnl, 0), 0);
+  const todayNetPnl = rows.reduce((sum, row) => sum + row.todayPnl, 0);
   const totalPnl = rows.reduce((sum, row) => sum + row.cumulativePnl, 0);
 
   els.holdingTradeSummary.innerHTML = `
@@ -3003,7 +3004,7 @@ function renderHoldingTradeSummary(holdings) {
       <div class="trade-summary-total">
         <span>今日虧損</span>
         <strong class="${priceTone(todayLoss)}">${formatCurrency(todayLoss)}</strong>
-        <small>累計損益 ${formatCurrency(totalPnl)}</small>
+        <small>今日淨損益 ${formatCurrency(todayNetPnl)} ｜ 累計損益 ${formatCurrency(totalPnl)}</small>
       </div>
     </div>
   `;
