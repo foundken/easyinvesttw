@@ -3007,7 +3007,7 @@ function renderHoldingTradeSummary(holdings) {
         <span role="columnheader">現價</span>
         <span role="columnheader">目前持股數</span>
         <span role="columnheader">買 / 賣</span>
-        <span role="columnheader">虧損</span>
+        <span role="columnheader">買賣至今損益</span>
       </div>
       ${rows.map((row) => `
         <div class="trade-summary-row" role="row">
@@ -3022,11 +3022,11 @@ function renderHoldingTradeSummary(holdings) {
         </div>
       `).join("")}
       <div class="trade-summary-total">
-        <span>今日下跌合計</span>
+        <span>今日下跌股合計</span>
         <strong class="${priceTone(todayDownsideTotal)}">${formatCurrency(todayDownsideTotal)}</strong>
         <small>
-          <span>今日總損益 ${formatCurrency(todayNetPnl)}</span>
-          <span>累計總損益 ${formatCurrency(totalPnl)}</span>
+          <span>全部股票今日淨損益 ${formatCurrency(todayNetPnl)}</span>
+          <span>買賣至今總損益 ${formatCurrency(totalPnl)}</span>
         </small>
       </div>
     </div>
