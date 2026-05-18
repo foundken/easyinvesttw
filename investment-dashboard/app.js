@@ -2995,7 +2995,7 @@ function renderHoldingTradeSummary(holdings) {
     };
   }).sort((a, b) => a.cumulativePnl - b.cumulativePnl || a.code.localeCompare(b.code));
 
-  const todayLoss = rows.reduce((sum, row) => sum + Math.min(row.todayPnl, 0), 0);
+  const todayDownsideTotal = rows.reduce((sum, row) => sum + Math.min(row.todayPnl, 0), 0);
   const todayNetPnl = rows.reduce((sum, row) => sum + row.todayPnl, 0);
   const totalPnl = rows.reduce((sum, row) => sum + row.cumulativePnl, 0);
 
@@ -3022,11 +3022,11 @@ function renderHoldingTradeSummary(holdings) {
         </div>
       `).join("")}
       <div class="trade-summary-total">
-        <span>今日虧損</span>
-        <strong class="${priceTone(todayLoss)}">${formatCurrency(todayLoss)}</strong>
+        <span>今日下跌合計</span>
+        <strong class="${priceTone(todayDownsideTotal)}">${formatCurrency(todayDownsideTotal)}</strong>
         <small>
-          <span>今日淨損益 ${formatCurrency(todayNetPnl)}</span>
-          <span>累計損益 ${formatCurrency(totalPnl)}</span>
+          <span>今日總損益 ${formatCurrency(todayNetPnl)}</span>
+          <span>累計總損益 ${formatCurrency(totalPnl)}</span>
         </small>
       </div>
     </div>
