@@ -3159,6 +3159,8 @@ function renderHoldings(holdings) {
     const inst = getInstitutional(item.code);
     const { cost, shares, marketValue, costValue, pnl, pnlRate, todayChange, todayChangePercent, todayPnl, yearlyDividend } = holdingMetrics({ item, stock, val });
     const lots = holdingLots(item);
+    const dayHigh = number(stock?.high);
+    const dayLow = number(stock?.low);
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
     const warning = dataWarning(val, rev, inst);
@@ -3183,6 +3185,8 @@ function renderHoldings(holdings) {
       <div class="metric-grid">
         <div class="metric"><span>目前市值</span><strong>${marketValue === null ? "--" : compactMoney(marketValue)}</strong></div>
         <div class="metric"><span>投入成本</span><strong>${costValue === null ? "--" : compactMoney(costValue)}</strong></div>
+        <div class="metric"><span>今日最高</span><strong>${Number.isFinite(dayHigh) ? money(dayHigh) : "--"}</strong></div>
+        <div class="metric"><span>今日最低</span><strong>${Number.isFinite(dayLow) ? money(dayLow) : "--"}</strong></div>
         <div class="metric"><span>今日損益</span><strong class="${priceTone(todayPnl)}">${todayPnl === null ? "--" : compactMoney(todayPnl)}</strong></div>
         <div class="metric"><span>帳面損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
