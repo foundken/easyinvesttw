@@ -2956,6 +2956,7 @@ function renderHoldingTradeSummary(holdings) {
     const sellCount = sales.length;
     const realizedPnl = realizedProfitByCode(code);
     const currentPnl = Number.isFinite(metrics.pnl) ? metrics.pnl : 0;
+    const todayPnl = Number.isFinite(metrics.todayPnl) ? metrics.todayPnl : 0;
     const cumulativePnl = currentPnl + realizedPnl;
     const tradeDateText = [
       latestTradeDateText(buyLots.map((lot) => lot.boughtAt), "買"),
@@ -2969,13 +2970,14 @@ function renderHoldingTradeSummary(holdings) {
       currentShares: entry ? holdingShares(entry.item) : 0,
       buyCount,
       sellCount,
+      todayPnl,
       currentPnl,
       realizedPnl,
       cumulativePnl
     };
   }).sort((a, b) => a.cumulativePnl - b.cumulativePnl || a.code.localeCompare(b.code));
 
-  const totalLoss = rows.reduce((sum, row) => sum + Math.min(row.cumulativePnl, 0), 0);
+  const todayLoss = rows.reduce((sum, row) => sum + Math.min(row.todayPnl, 0), 0);
   const totalPnl = rows.reduce((sum, row) => sum + row.cumulativePnl, 0);
 
   els.holdingTradeSummary.innerHTML = `
@@ -2999,8 +3001,8 @@ function renderHoldingTradeSummary(holdings) {
         </div>
       `).join("")}
       <div class="trade-summary-total">
-        <span>總虧損</span>
-        <strong class="${priceTone(totalLoss)}">${formatCurrency(totalLoss)}</strong>
+        <span>今日虧損</span>
+        <strong class="${priceTone(todayLoss)}">${formatCurrency(todayLoss)}</strong>
         <small>累計損益 ${formatCurrency(totalPnl)}</small>
       </div>
     </div>
