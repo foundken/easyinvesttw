@@ -1368,6 +1368,7 @@ label span {
 .watch-list,
 .holding-overview,
 .holding-list,
+.sell-history-list,
 .ranking-list,
 .finance-list,
 .insight-list,
@@ -1441,11 +1442,18 @@ label span {
 .sell-history-list {
   display: grid;
   gap: 10px;
+  max-height: clamp(340px, 46vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding-top: 14px;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .watch-list::-webkit-scrollbar,
 .holding-list::-webkit-scrollbar,
+.sell-history-list::-webkit-scrollbar,
 .ranking-list::-webkit-scrollbar,
 .finance-list::-webkit-scrollbar,
 .insight-list::-webkit-scrollbar,
@@ -1457,6 +1465,7 @@ label span {
 
 .watch-list::-webkit-scrollbar-track,
 .holding-list::-webkit-scrollbar-track,
+.sell-history-list::-webkit-scrollbar-track,
 .ranking-list::-webkit-scrollbar-track,
 .finance-list::-webkit-scrollbar-track,
 .insight-list::-webkit-scrollbar-track,
@@ -1469,6 +1478,7 @@ label span {
 
 .watch-list::-webkit-scrollbar-thumb,
 .holding-list::-webkit-scrollbar-thumb,
+.sell-history-list::-webkit-scrollbar-thumb,
 .ranking-list::-webkit-scrollbar-thumb,
 .finance-list::-webkit-scrollbar-thumb,
 .insight-list::-webkit-scrollbar-thumb,
@@ -2735,7 +2745,6 @@ body.chart-expanded .chart-wrap canvas {
 
   .watch-list,
   .holding-list,
-  .sell-history-list,
   .ranking-list,
   .finance-list,
   .insight-list,
@@ -2745,6 +2754,13 @@ body.chart-expanded .chart-wrap canvas {
     max-height: none;
     overflow: visible;
     overscroll-behavior: auto;
+    padding-right: 3px;
+  }
+
+  .sell-history-list {
+    max-height: min(520px, 58vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding-right: 3px;
   }
 
