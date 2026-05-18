@@ -3004,7 +3004,10 @@ function renderHoldingTradeSummary(holdings) {
       <div class="trade-summary-total">
         <span>今日虧損</span>
         <strong class="${priceTone(todayLoss)}">${formatCurrency(todayLoss)}</strong>
-        <small>今日淨損益 ${formatCurrency(todayNetPnl)} ｜ 累計損益 ${formatCurrency(totalPnl)}</small>
+        <small>
+          <span>今日淨損益 ${formatCurrency(todayNetPnl)}</span>
+          <span>累計損益 ${formatCurrency(totalPnl)}</span>
+        </small>
       </div>
     </div>
   `;

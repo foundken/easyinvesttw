@@ -1868,8 +1868,21 @@ label span {
   font-weight: 900;
 }
 
-.trade-summary-total strong {
+.trade-summary-total strong,
+.trade-summary-total small {
   font-size: 22px;
+}
+
+.trade-summary-total small {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.trade-summary-total small span + span::before {
+  content: "|";
+  margin-right: 14px;
+  color: #c6beb2;
 }
 
 .rank-row strong {
