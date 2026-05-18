@@ -2941,13 +2941,13 @@ function realizedProfitByCode(code) {
     .reduce((sum, item) => sum + (number(item.profit) || 0), 0);
 }
 
-function latestTradeDateText(values, label) {
-  const dates = values
+function tradeDateListText(values, label) {
+  const dates = [...new Set(values
     .filter(Boolean)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+    .map((date) => formatDateOnly(date)))];
   if (!dates.length) return `${label} --`;
-  const suffix = dates.length > 1 ? ` 等 ${dates.length} 筆` : "";
-  return `${label} ${formatDateOnly(dates[0])}${suffix}`;
+  return `${label} ${dates.join("、")}`;
 }
 
 function renderHoldingTradeSummary(holdings) {
@@ -2977,8 +2977,8 @@ function renderHoldingTradeSummary(holdings) {
     const todayPnl = Number.isFinite(metrics.todayPnl) ? metrics.todayPnl : 0;
     const cumulativePnl = currentPnl + realizedPnl;
     const tradeDateLines = [
-      latestTradeDateText(buyLots.map((lot) => lot.boughtAt), "買"),
-      latestTradeDateText(sales.map((history) => history.soldAt), "賣")
+      tradeDateListText(buyLots.map((lot) => lot.boughtAt), "買"),
+      tradeDateListText(sales.map((history) => history.soldAt), "賣")
     ];
     return {
       code,
