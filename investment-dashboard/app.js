@@ -832,11 +832,12 @@ function normalizeIndexGroups(groups = {}) {
 }
 
 function isValidMarketIndex(index) {
-  return ["Fugle", "TWSE", "Yahoo"].includes(index?.source) && Number.isFinite(index.index);
+  return ["Fugle", "TWSE", "Yahoo", "TWSE + Yahoo"].includes(index?.source) && Number.isFinite(index.index);
 }
 
 function marketIndexSourceText(source) {
   if (source === "Fugle") return "Fugle 即時指數資料";
+  if (source === "TWSE + Yahoo") return "TWSE 即時指數 + Yahoo 盤中線圖";
   if (source === "Yahoo") return "Yahoo 公開行情";
   if (source === "TWSE") return "TWSE 即時指數資料";
   return "非即時或範例資料";
@@ -2620,59 +2621,91 @@ function drawMarketSnapshotChart(index, isUp) {
 
   const width = canvas.width;
   const height = canvas.height;
-  const padding = { top: 34 * ratio, right: 148 * ratio, bottom: 54 * ratio, left: 46 * ratio };
+  const padding = { top: 46 * ratio, right: 48 * ratio, bottom: 42 * ratio, left: 48 * ratio };
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   const rawRange = rawMax - rawMin || 1;
-  const min = rawMin - rawRange * 0.08;
-  const max = rawMax + rawRange * 0.08;
+  const min = rawMin - rawRange * 0.06;
+  const max = rawMax + rawRange * 0.06;
   const range = max - min || 1;
-  const chartWidth = width - padding.left - padding.right;
-  const centerY = Math.round(height * 0.54);
+  const plotX = padding.left;
+  const plotY = padding.top + 24 * ratio;
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom - 36 * ratio;
+  const centerY = plotY + plotHeight * 0.58;
   const color = isUp ? "#ad3032" : "#176b55";
-  const valueX = (value) => padding.left + ((value - min) / range) * chartWidth;
+  const valueX = (value) => plotX + ((value - min) / range) * plotWidth;
+  const intradayPosition = high > low ? ((latest - low) / (high - low)) * 100 : null;
 
   context.clearRect(0, 0, width, height);
-  context.fillStyle = "#fff";
+  context.fillStyle = "#fffdf8";
   context.fillRect(0, 0, width, height);
-  context.fillStyle = "#6f6a61";
-  context.font = `${14 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-  context.fillText("5 分鐘線暫無，顯示今日高低區間", padding.left, padding.top - 10 * ratio);
+  context.save();
+  roundedRect(context, plotX, plotY, plotWidth, plotHeight, 12 * ratio);
+  context.fillStyle = "#fbf8f2";
+  context.fill();
+  context.restore();
 
-  context.strokeStyle = "#ece6dc";
-  context.lineWidth = 1;
+  context.fillStyle = "#242423";
+  context.font = `${17 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  context.fillText("今日區間概覽", padding.left, 28 * ratio);
+  context.fillStyle = "#6f6a61";
+  context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  context.fillText("5 分鐘線暫無，改用即時高低點與目前位置呈現", padding.left, 48 * ratio);
+  drawCanvasPill(context, "非走勢線", width - padding.right, 31 * ratio, {
+    ratio,
+    align: "right",
+    background: "#e8dfd2",
+    color: "#5a554d",
+    fontSize: 12,
+    height: 25
+  });
+
   for (let i = 0; i <= 4; i += 1) {
-    const x = padding.left + (chartWidth / 4) * i;
+    const x = plotX + (plotWidth / 4) * i;
+    context.strokeStyle = "rgba(45, 39, 32, 0.08)";
+    context.lineWidth = 1;
     context.beginPath();
-    context.moveTo(x, padding.top);
-    context.lineTo(x, height - padding.bottom);
+    context.moveTo(x, plotY + 18 * ratio);
+    context.lineTo(x, plotY + plotHeight - 18 * ratio);
     context.stroke();
   }
 
   if (Number.isFinite(previousClose)) {
+    const previousSideWidth = Math.abs(valueX(previousClose) - valueX(latest));
+    context.fillStyle = isUp ? "rgba(173, 48, 50, 0.06)" : "rgba(23, 107, 85, 0.07)";
+    context.fillRect(Math.min(valueX(previousClose), valueX(latest)), plotY, previousSideWidth, plotHeight);
+  }
+
+  if (Number.isFinite(previousClose)) {
     const x = valueX(previousClose);
-    context.strokeStyle = "rgba(36, 36, 35, 0.34)";
+    context.strokeStyle = "rgba(36, 36, 35, 0.36)";
     context.setLineDash([6, 5]);
     context.beginPath();
-    context.moveTo(x, padding.top);
-    context.lineTo(x, height - padding.bottom);
+    context.moveTo(x, plotY + 10 * ratio);
+    context.lineTo(x, plotY + plotHeight - 10 * ratio);
     context.stroke();
     context.setLineDash([]);
-    drawCanvasPill(context, `昨收 ${money(previousClose)}`, x, centerY + 52 * ratio, {
+    drawCanvasPill(context, `昨收 ${money(previousClose)}`, x, centerY + 60 * ratio, {
       ratio,
       align: "center",
       background: "#5d6470",
       fontSize: 12,
       height: 25,
-      minY: padding.top,
-      maxY: height - padding.bottom + 32 * ratio
+      minY: plotY + 8 * ratio,
+      maxY: plotY + plotHeight - 8 * ratio
     });
   }
 
   const lowX = valueX(low);
   const highX = valueX(high);
-  context.strokeStyle = "rgba(47, 95, 143, 0.18)";
-  context.lineWidth = 18 * ratio;
+  const latestX = valueX(latest);
+  const rangeGradient = context.createLinearGradient(lowX, 0, highX, 0);
+  rangeGradient.addColorStop(0, "rgba(23, 107, 85, 0.28)");
+  rangeGradient.addColorStop(0.5, "rgba(47, 95, 143, 0.18)");
+  rangeGradient.addColorStop(1, "rgba(173, 48, 50, 0.28)");
+  context.strokeStyle = rangeGradient;
+  context.lineWidth = 28 * ratio;
   context.lineCap = "round";
   context.beginPath();
   context.moveTo(lowX, centerY);
@@ -2680,44 +2713,82 @@ function drawMarketSnapshotChart(index, isUp) {
   context.stroke();
 
   context.strokeStyle = color;
-  context.lineWidth = 5 * ratio;
+  context.lineWidth = 8 * ratio;
   context.beginPath();
-  context.moveTo(lowX, centerY);
-  context.lineTo(valueX(latest), centerY);
+  context.moveTo(Number.isFinite(previousClose) ? valueX(previousClose) : lowX, centerY);
+  context.lineTo(latestX, centerY);
   context.stroke();
   context.lineCap = "butt";
 
-  const markers = [
-    { label: "最低", value: low, y: centerY + 36 * ratio, color: "#176b55", align: "center" },
-    { label: "最高", value: high, y: centerY - 38 * ratio, color: "#ad3032", align: "center" },
-    { label: "開盤", value: open, y: centerY - 70 * ratio, color: "#2f5f8f", align: "center" },
-    { label: "目前", value: latest, y: centerY + 4 * ratio, color, align: "left" }
+  const referenceMarkers = [
+    { label: "最低", value: low, color: "#176b55" },
+    { label: "最高", value: high, color: "#ad3032" },
+    { label: "開盤", value: open, color: "#2f5f8f" }
   ].filter((item) => Number.isFinite(item.value));
 
-  markers.forEach((marker) => {
+  const markerGroups = [];
+  referenceMarkers.forEach((marker) => {
     const x = valueX(marker.value);
+    const group = markerGroups.find((entry) => Math.abs(entry.x - x) < 18 * ratio);
+    if (group) {
+      group.labels.push(marker.label);
+      group.color = marker.color;
+    } else {
+      markerGroups.push({ x, value: marker.value, labels: [marker.label], color: marker.color });
+    }
+  });
+
+  markerGroups.forEach((marker, index) => {
     context.fillStyle = marker.color;
     context.beginPath();
-    context.arc(x, centerY, 5 * ratio, 0, Math.PI * 2);
+    context.arc(marker.x, centerY, 6 * ratio, 0, Math.PI * 2);
     context.fill();
-    drawCanvasPill(context, `${marker.label} ${money(marker.value)}`, marker.align === "left" ? x + 10 * ratio : x, marker.y, {
+    const y = index % 2 === 0 ? centerY - 44 * ratio : centerY + 44 * ratio;
+    drawCanvasPill(context, `${marker.labels.join(" / ")} ${money(marker.value)}`, marker.x, y, {
       ratio,
-      align: marker.align,
+      align: "center",
       background: marker.color,
       fontSize: 12,
       height: 25,
-      minY: padding.top,
-      maxY: height - padding.bottom + 32 * ratio
+      minY: plotY + 8 * ratio,
+      maxY: plotY + plotHeight - 8 * ratio
     });
+  });
+
+  context.strokeStyle = color;
+  context.lineWidth = 2 * ratio;
+  context.beginPath();
+  context.moveTo(latestX, centerY - 36 * ratio);
+  context.lineTo(latestX, centerY + 36 * ratio);
+  context.stroke();
+  context.fillStyle = color;
+  context.beginPath();
+  context.arc(latestX, centerY, 7 * ratio, 0, Math.PI * 2);
+  context.fill();
+  drawCanvasPill(context, `目前 ${money(latest)}`, latestX + 12 * ratio, centerY - 2 * ratio, {
+    ratio,
+    align: "left",
+    background: color,
+    fontSize: 13,
+    height: 29,
+    minX: plotX + 6 * ratio,
+    maxX: plotX + plotWidth - 6 * ratio,
+    minY: plotY + 8 * ratio,
+    maxY: plotY + plotHeight - 8 * ratio
   });
 
   context.fillStyle = "#4d5661";
   context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
   context.textAlign = "left";
-  context.fillText(money(rawMin), padding.left, height - 18 * ratio);
+  context.fillText(`低點 ${money(rawMin)}`, plotX, height - 20 * ratio);
   context.textAlign = "right";
-  context.fillText(money(rawMax), width - padding.right, height - 18 * ratio);
+  context.fillText(`高點 ${money(rawMax)}`, plotX + plotWidth, height - 20 * ratio);
   context.textAlign = "left";
+  if (Number.isFinite(intradayPosition)) {
+    context.fillStyle = "#6f6a61";
+    context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+    context.fillText(`目前位於今日區間 ${money(intradayPosition)}%`, plotX, plotY + plotHeight - 24 * ratio);
+  }
 }
 
 function renderMarketNumberDetails(index, change, changePercent) {

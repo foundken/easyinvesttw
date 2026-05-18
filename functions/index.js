@@ -633,10 +633,12 @@ function mergeMarketRows(twseRows, fugleRows) {
 
 async function fetchTwseIndex() {
   const date = taipeiDate();
-  const [groups, candles] = await Promise.all([
+  const [groups, twseCandles, yahooIndex] = await Promise.all([
     fetchTwseIndexGroups(),
-    fetchTwseIndexCandles(date)
+    fetchTwseIndexCandles(date),
+    fetchYahooIndex("^TWII", "台灣加權指數").catch(() => null)
   ]);
+  const candles = twseCandles.length ? twseCandles : yahooIndex?.candles || [];
   const summary = groups.listed || {};
   const latest = candles.at(-1);
   const index = toNumber(summary.index) || latest?.close;
@@ -655,7 +657,7 @@ async function fetchTwseIndex() {
     turnover: toNumber(summary.turnover),
     change,
     changePercent,
-    source: "TWSE",
+    source: twseCandles.length ? "TWSE" : candles.length ? "TWSE + Yahoo" : "TWSE",
     lastUpdated: summary.lastUpdated || latest?.date || new Date().toISOString(),
     candles,
     groups
@@ -1094,7 +1096,10 @@ async function fetchUsMarket() {
 
 async function fetchYahooIndex(symbol, fallbackName) {
   const response = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=5m`, {
-    headers: { accept: "application/json" }
+    headers: {
+      accept: "application/json",
+      "user-agent": "Mozilla/5.0 EasyInvestTW market data reader"
+    }
   }, 1800);
   if (!response.ok) throw new Error(`Yahoo request failed: ${symbol}`);
   const payload = await response.json();
