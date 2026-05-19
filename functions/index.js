@@ -13,9 +13,11 @@ const MOPS_API_BASE = "https://mops.twse.com.tw/mops/api";
 const DASHBOARD_CACHE_TTL_MS = 5000;
 const DASHBOARD_STALE_TTL_MS = 120000;
 const MONTHLY_REVENUE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const COMPANY_NAME_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 let dashboardCache = null;
 let quoteCache = null;
 let monthlyRevenueCache = null;
+let companyNameCache = null;
 
 exports.market = onRequest({
   region: "asia-east1",
@@ -44,12 +46,16 @@ exports.market = onRequest({
           cache: "fresh"
         });
       }
-      const [fugleRealtime, twseRealtime, yahooRealtime] = await Promise.all([
+      const [fugleRealtime, twseRealtime, yahooRealtime, companyNames] = await Promise.all([
         safeFetchFugleQuotes(symbols),
         safeFetchTwseRealtimeQuotes(symbols, 1800),
-        safeFetchYahooQuotes(symbols)
+        safeFetchYahooQuotes(symbols),
+        safeFetchCompanyNameMap()
       ]);
-      const realtime = mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime);
+      const realtime = localizeRealtimeNames(
+        mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime),
+        companyNames
+      );
       const payload = {
         ok: true,
         updatedAt: new Date().toISOString(),
@@ -87,12 +93,16 @@ exports.market = onRequest({
       ...symbols,
       ...topMarketSymbols(daily, 40)
     ]);
-    const [fugleRealtime, twseRealtime, yahooRealtime] = await Promise.all([
+    const [fugleRealtime, twseRealtime, yahooRealtime, companyNames] = await Promise.all([
       safeFetchFugleQuotes(realtimeSymbols),
       safeFetchTwseRealtimeQuotes(realtimeSymbols),
-      safeFetchYahooQuotes(symbols)
+      safeFetchYahooQuotes(symbols),
+      safeFetchCompanyNameMap()
     ]);
-    const realtime = mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime);
+    const realtime = localizeRealtimeNames(
+      mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime),
+      companyNames
+    );
     const relevantCodes = new Set(uniqueSymbols([
       ...symbols,
       ...topMarketSymbols(daily, 120)
@@ -293,9 +303,13 @@ function firstTwseLevel(value) {
 }
 
 function preferChineseName(primaryName, secondaryName, code) {
-  if (/[\u4e00-\u9fff]/.test(String(primaryName || ""))) return primaryName;
-  if (/[\u4e00-\u9fff]/.test(String(secondaryName || ""))) return secondaryName;
+  if (hasChineseText(primaryName)) return primaryName;
+  if (hasChineseText(secondaryName)) return secondaryName;
   return secondaryName || primaryName || code;
+}
+
+function hasChineseText(value) {
+  return /[\u4e00-\u9fff]/.test(String(value || ""));
 }
 
 function mergeRealtimePayloads(primary, preferred) {
@@ -311,6 +325,19 @@ function mergeRealtimePayloads(primary, preferred) {
     } : quote);
   });
   return [...map.values()];
+}
+
+function localizeRealtimeNames(rows = [], nameMap = new Map()) {
+  if (!nameMap?.size) return rows;
+  return rows.map((row) => {
+    const symbol = String(row.symbol || row.code || "").trim();
+    const chineseName = nameMap.get(symbol);
+    if (!chineseName || hasChineseText(row.name)) return row;
+    return {
+      ...row,
+      name: chineseName
+    };
+  });
 }
 
 function mergeByCode(primary = [], secondary = []) {
@@ -1388,6 +1415,85 @@ function tpexHeaders() {
   };
 }
 
+async function fetchCompanyNameMap() {
+  const now = Date.now();
+  if (companyNameCache && now - companyNameCache.createdAt < COMPANY_NAME_CACHE_TTL_MS) {
+    return companyNameCache.names;
+  }
+
+  const [listedRows, otcRows] = await Promise.all([
+    fetchJson("/opendata/t187ap03_L").catch(() => []),
+    fetchOtcCompanyNames().catch(() => [])
+  ]);
+  const names = new Map();
+  [...listedRows, ...otcRows].forEach((row) => {
+    const code = cleanTwseCell(row["公司代號"] || row.company_code || row.code);
+    const name = cleanTwseCell(row["公司簡稱"] || row.short_name || row["公司名稱"] || row.company_name || row.name);
+    if (/^\d{4,6}$/.test(code) && name) names.set(code, name);
+  });
+
+  companyNameCache = { createdAt: now, names };
+  return names;
+}
+
+async function fetchOtcCompanyNames() {
+  const response = await fetchWithTimeout("https://mopsfin.twse.com.tw/opendata/t187ap03_O.csv", {
+    headers: {
+      ...twseHeaders(),
+      accept: "text/csv,text/plain,*/*"
+    }
+  }, 3500);
+  if (!response.ok) throw new Error("MOPS OTC company names request failed");
+  return parseCsvRows(await response.text());
+}
+
+function parseCsvRows(text) {
+  const rows = parseCsv(text);
+  if (!rows.length) return [];
+  const headers = rows[0].map((cell) => cell.trim());
+  return rows.slice(1)
+    .filter((row) => row.some((cell) => String(cell || "").trim()))
+    .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] || ""])));
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < String(text || "").length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"') {
+      if (quoted && next === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -1422,6 +1528,14 @@ async function safeFetchYahooQuotes(symbols) {
     return await fetchYahooQuotes(symbols);
   } catch {
     return [];
+  }
+}
+
+async function safeFetchCompanyNameMap() {
+  try {
+    return await fetchCompanyNameMap();
+  } catch {
+    return new Map();
   }
 }
 
