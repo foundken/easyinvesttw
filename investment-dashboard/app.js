@@ -561,6 +561,13 @@ function stockPriceLabel(stock) {
   return stock?.realtime ? "即時價" : "收盤";
 }
 
+function stockQuoteStamp(stock) {
+  if (!stock) return "資料未連線";
+  const source = stock.source ? String(stock.source) : stock.realtime ? "即時資料" : "收盤資料";
+  const time = stock.quoteTime ? formatUpdateTime(stock.quoteTime) : "";
+  return time ? `${source} ｜ ${time}` : source;
+}
+
 function stockTodayChange(stock) {
   if (!stock) return null;
   const close = number(stock.close);
@@ -3367,6 +3374,7 @@ function renderHoldings(holdings) {
           <span>${stockPriceLabel(stock)}</span>
           <strong>${stock ? money(stock.close) : "--"}</strong>
           <small class="${priceTone(todayChange)}">今日 ${signedMoney(todayChange)} / ${percent(todayChangePercent)}</small>
+          <small class="quote-stamp">${escapeHtml(stockQuoteStamp(stock))}</small>
         </div>
         <div class="holding-actions">
           <button class="sell" type="button">賣出</button>

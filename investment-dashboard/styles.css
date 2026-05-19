@@ -1613,6 +1613,14 @@ label span {
   font-weight: 900;
 }
 
+.holding-live-quote .quote-stamp {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  max-width: 220px;
+}
+
 .holding-actions {
   display: flex;
   gap: 8px;
