@@ -1111,11 +1111,15 @@ async function fetchYahooIndex(symbol, fallbackName, interval = "5m") {
   const timestamps = result.timestamp || [];
   const closes = quote.close || [];
   const volumes = quote.volume || [];
-  const candles = timestamps.map((time, index) => ({
+  let candles = timestamps.map((time, index) => ({
     date: new Date(time * 1000).toISOString(),
     close: toNumber(closes[index]),
     volume: toNumber(volumes[index])
   })).filter((item) => Number.isFinite(item.close));
+  if (!candles.length && interval !== "5m") {
+    const fallback = await fetchYahooIndex(symbol, fallbackName, "5m").catch(() => null);
+    candles = fallback?.candles || [];
+  }
   const index = toNumber(meta.regularMarketPrice) || candles.at(-1)?.close;
   const previousClose = toNumber(meta.previousClose) || toNumber(meta.chartPreviousClose);
   const change = Number.isFinite(index) && Number.isFinite(previousClose) ? index - previousClose : null;
