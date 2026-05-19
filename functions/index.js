@@ -194,7 +194,7 @@ async function fetchTwseRealtimeQuotes(symbols, timeoutMs = 4500) {
 
   const batches = await Promise.all(chunks.map(async (chunk) => {
     const channels = chunk.flatMap((symbol) => [`tse_${symbol}.tw`, `otc_${symbol}.tw`]);
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${channels.join("|")}&json=1&delay=0&_=${Date.now()}`;
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(channels.join("|"))}&json=1&delay=0&_=${Date.now()}`;
     const response = await fetchWithTimeout(url, {
       headers: {
         ...twseHeaders(),
