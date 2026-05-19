@@ -48,7 +48,7 @@ exports.market = onRequest({
       }
       const [fugleRealtime, twseRealtime, yahooRealtime, companyNames] = await Promise.all([
         safeFetchFugleQuotes(symbols),
-        safeFetchTwseRealtimeQuotes(symbols, 1800),
+        safeFetchTwseRealtimeQuotes(symbols, 3200),
         safeFetchYahooQuotes(symbols),
         safeFetchCompanyNameMap()
       ]);
