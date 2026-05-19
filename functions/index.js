@@ -292,11 +292,23 @@ function firstTwseLevel(value) {
   return toNumber(first);
 }
 
+function preferChineseName(primaryName, secondaryName, code) {
+  if (/[\u4e00-\u9fff]/.test(String(primaryName || ""))) return primaryName;
+  if (/[\u4e00-\u9fff]/.test(String(secondaryName || ""))) return secondaryName;
+  return secondaryName || primaryName || code;
+}
+
 function mergeRealtimePayloads(primary, preferred) {
   const map = new Map();
   [...(primary || []), ...(preferred || [])].forEach((quote) => {
     const symbol = String(quote.symbol || quote.code || "").trim();
-    if (symbol) map.set(symbol, quote);
+    if (!symbol) return;
+    const current = map.get(symbol);
+    map.set(symbol, current ? {
+      ...current,
+      ...quote,
+      name: preferChineseName(current.name, quote.name, symbol)
+    } : quote);
   });
   return [...map.values()];
 }
