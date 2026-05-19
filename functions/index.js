@@ -761,9 +761,10 @@ async function fetchTwseIndexGroups(timeoutMs = 5000) {
     ["finance", "tse_t17.tw", "金融保險類指數"]
   ];
   const exCh = symbols.map((item) => item[1]).join("|");
-  const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0&_=${Date.now()}`;
+  const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(exCh)}&json=1&delay=0&_=${Date.now()}`;
   const response = await fetchWithTimeout(url, {
     headers: {
+      ...twseHeaders(),
       accept: "application/json",
       referer: "https://mis.twse.com.tw/stock/index.jsp",
       "cache-control": "no-cache"
