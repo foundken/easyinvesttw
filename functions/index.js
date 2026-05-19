@@ -1405,6 +1405,14 @@ async function safeFetchFugleQuotes(symbols) {
   }
 }
 
+async function safeFetchYahooQuotes(symbols) {
+  try {
+    return await fetchYahooQuotes(symbols);
+  } catch {
+    return [];
+  }
+}
+
 async function safeFetchTpexValuation() {
   try {
     return await fetchTpexValuation();
