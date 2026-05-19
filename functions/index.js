@@ -674,7 +674,7 @@ function mergeMarketRows(twseRows, fugleRows) {
     byCode.set(code, {
       ...current,
       ...row,
-      Name: row.Name || current.Name || current["證券名稱"] || code
+      Name: current.Name || current["證券名稱"] || row.Name || code
     });
   });
   return Array.from(byCode.values());

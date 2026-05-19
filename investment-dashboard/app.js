@@ -852,6 +852,12 @@ function quoteSourceText(source = "") {
   return "個股：等待公開資料或即時報價";
 }
 
+function preferLocalStockName(currentName, quoteName, code) {
+  if (/[\u4e00-\u9fff]/.test(String(currentName || ""))) return currentName;
+  if (/[\u4e00-\u9fff]/.test(String(quoteName || ""))) return quoteName;
+  return currentName || quoteName || code;
+}
+
 function mergeRealtimeQuotes(daily, realtime) {
   if (!realtime.length) return daily;
   const map = new Map(daily.map((item) => [item.code, item]));
@@ -861,7 +867,7 @@ function mergeRealtimeQuotes(daily, realtime) {
     map.set(quote.code, {
       ...current,
       ...quote,
-      name: quote.name || current.name || quote.code,
+      name: preferLocalStockName(current.name, quote.name, quote.code),
       volume: quote.volume || current.volume,
       value: quote.value || current.value,
       trades: quote.trades || current.trades
