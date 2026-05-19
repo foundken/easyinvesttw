@@ -318,13 +318,40 @@ function mergeRealtimePayloads(primary, preferred) {
     const symbol = String(quote.symbol || quote.code || "").trim();
     if (!symbol) return;
     const current = map.get(symbol);
-    map.set(symbol, current ? {
-      ...current,
-      ...quote,
-      name: preferChineseName(current.name, quote.name, symbol)
-    } : quote);
+    map.set(symbol, current ? mergeRealtimeQuote(current, quote, symbol) : quote);
   });
   return [...map.values()];
+}
+
+function mergeRealtimeQuote(current, incoming, symbol) {
+  const currentTime = quoteTimestamp(current);
+  const incomingTime = quoteTimestamp(incoming);
+  const hasCurrentTime = Number.isFinite(currentTime);
+  const hasIncomingTime = Number.isFinite(incomingTime);
+  const incomingIsFresher = hasCurrentTime && hasIncomingTime && incomingTime - currentTime > 60000;
+  const currentIsFresher = hasCurrentTime && hasIncomingTime && currentTime - incomingTime > 60000;
+  const preferIncoming = incomingIsFresher || (!currentIsFresher && quoteFreshnessRank(incoming) >= quoteFreshnessRank(current));
+  const merged = preferIncoming ? { ...current, ...incoming } : { ...incoming, ...current };
+  return {
+    ...merged,
+    name: preferChineseName(current.name, incoming.name, symbol)
+  };
+}
+
+function quoteFreshnessRank(quote) {
+  if (!quote || quote.source === "TWSE_PREVIOUS") return 0;
+  if (quote.source === "TWSE") return 2;
+  if (quote.source === "Yahoo") return 3;
+  if (quote.source === "Fugle") return 4;
+  return 1;
+}
+
+function quoteTimestamp(quote) {
+  const value = quote?.lastUpdated || quote?.closeTime || quote?.date || quote?.time;
+  if (!value) return null;
+  if (typeof value === "number") return value > 10000000000000 ? value / 1000 : value;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function localizeRealtimeNames(rows = [], nameMap = new Map()) {
