@@ -60,7 +60,7 @@ exports.market = onRequest({
         ok: true,
         updatedAt: new Date().toISOString(),
         realtime: compactRealtimeRows(realtime),
-        realtimeSource: fugleRealtime.length ? "Fugle" : yahooRealtime.length ? "Yahoo" : twseRealtime.length ? "TWSE" : null
+        realtimeSource: realtimeSourceLabel(realtime)
       };
       quoteCache = { key: cacheKey, createdAt: now, payload };
       return sendJson(res, 200, payload);
@@ -120,7 +120,7 @@ exports.market = onRequest({
       institutional: compactInstitutional(institutional, relevantCodes),
       news,
       dailySource: fugleActiveRanking.length ? "Fugle" : twseDaily.length ? "TWSE" : null,
-      realtimeSource: fugleRealtime.length ? "Fugle" : yahooRealtime.length ? "Yahoo" : twseRealtime.length ? "TWSE" : null
+      realtimeSource: realtimeSourceLabel(realtime)
     };
     dashboardCache = { key: cacheKey, createdAt: now, payload };
     return sendJson(res, 200, payload);
@@ -365,6 +365,12 @@ function localizeRealtimeNames(rows = [], nameMap = new Map()) {
       name: chineseName
     };
   });
+}
+
+function realtimeSourceLabel(rows = []) {
+  const sources = [...new Set(rows.map((row) => row.source).filter(Boolean))];
+  if (!sources.length) return null;
+  return sources.join("+");
 }
 
 function mergeByCode(primary = [], secondary = []) {
