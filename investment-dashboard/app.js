@@ -832,12 +832,13 @@ function normalizeIndexGroups(groups = {}) {
 }
 
 function isValidMarketIndex(index) {
-  return ["Fugle", "TWSE", "Yahoo", "TWSE + Yahoo"].includes(index?.source) && Number.isFinite(index.index);
+  return ["Fugle", "TWSE", "Yahoo", "TWSE + Yahoo", "Yahoo + TWSE"].includes(index?.source) && Number.isFinite(index.index);
 }
 
 function marketIndexSourceText(source) {
   if (source === "Fugle") return "Fugle 即時指數資料";
   if (source === "TWSE + Yahoo") return "TWSE 即時指數 + Yahoo 盤中線圖";
+  if (source === "Yahoo + TWSE") return "Yahoo 盤中指數 + TWSE 分類資料";
   if (source === "Yahoo") return "Yahoo 公開行情";
   if (source === "TWSE") return "TWSE 即時指數資料";
   return "非即時或範例資料";
@@ -2516,7 +2517,7 @@ function renderMarketIndex() {
     : "大盤：非即時或範例資料";
   els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
   els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
-  if (index.candles?.length) {
+  if (index.candles?.length >= 2) {
     drawMarketBoardChart(index.candles, index, isUp);
   } else {
     drawMarketSnapshotChart(index, isUp);
@@ -2601,198 +2602,31 @@ function drawEmptyMarketBoardChart(message) {
 }
 
 function drawMarketSnapshotChart(index, isUp) {
-  const canvas = els.marketIndexChart;
-  const context = canvas.getContext("2d");
-  const rect = canvas.getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  const targetWidth = Math.max(640, Math.round(rect.width * ratio));
-  const targetHeight = Math.max(210, Math.round(rect.height * ratio));
-  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-  }
-
   const latest = number(index.index);
   const open = number(index.open);
   const high = number(index.high);
   const low = number(index.low);
-  const previousClose = number(index.previousClose);
-  const values = [latest, open, high, low, previousClose].filter(Number.isFinite);
-  if (!Number.isFinite(latest) || !Number.isFinite(high) || !Number.isFinite(low) || values.length < 3) {
+  if (!Number.isFinite(latest) || !Number.isFinite(open)) {
     drawEmptyMarketBoardChart("目前沒有可用的大盤圖表資料");
     return;
   }
 
-  const width = canvas.width;
-  const height = canvas.height;
-  const padding = { top: 46 * ratio, right: 48 * ratio, bottom: 42 * ratio, left: 48 * ratio };
-  const rawMin = Math.min(...values);
-  const rawMax = Math.max(...values);
-  const rawRange = rawMax - rawMin || 1;
-  const min = rawMin - rawRange * 0.06;
-  const max = rawMax + rawRange * 0.06;
-  const range = max - min || 1;
-  const plotX = padding.left;
-  const plotY = padding.top + 24 * ratio;
-  const plotWidth = width - padding.left - padding.right;
-  const plotHeight = height - padding.top - padding.bottom - 36 * ratio;
-  const centerY = plotY + plotHeight * 0.58;
-  const color = isUp ? "#ad3032" : "#176b55";
-  const valueX = (value) => plotX + ((value - min) / range) * plotWidth;
-  const intradayPosition = high > low ? ((latest - low) / (high - low)) * 100 : null;
+  const latestMinute = clampMarketMinute(taipeiMinutes(index.lastUpdated), 9 * 60 + 1);
+  const highMinute = Math.max(9 * 60, Math.min(latestMinute, 9 * 60 + Math.round((latestMinute - 9 * 60) * 0.35)));
+  const lowMinute = Math.max(9 * 60, Math.min(latestMinute, 9 * 60 + Math.round((latestMinute - 9 * 60) * 0.7)));
+  const points = [{ sessionMinutes: 9 * 60, close: open, volume: 0 }];
 
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = "#fffdf8";
-  context.fillRect(0, 0, width, height);
-  context.save();
-  roundedRect(context, plotX, plotY, plotWidth, plotHeight, 12 * ratio);
-  context.fillStyle = "#fbf8f2";
-  context.fill();
-  context.restore();
-
-  context.fillStyle = "#242423";
-  context.font = `${17 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-  context.fillText("今日區間概覽", padding.left, 28 * ratio);
-  context.fillStyle = "#6f6a61";
-  context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-  context.fillText("5 分鐘線暫無，改用即時高低點與目前位置呈現", padding.left, 48 * ratio);
-  drawCanvasPill(context, "非走勢線", width - padding.right, 31 * ratio, {
-    ratio,
-    align: "right",
-    background: "#e8dfd2",
-    color: "#5a554d",
-    fontSize: 12,
-    height: 25
-  });
-
-  for (let i = 0; i <= 4; i += 1) {
-    const x = plotX + (plotWidth / 4) * i;
-    context.strokeStyle = "rgba(45, 39, 32, 0.08)";
-    context.lineWidth = 1;
-    context.beginPath();
-    context.moveTo(x, plotY + 18 * ratio);
-    context.lineTo(x, plotY + plotHeight - 18 * ratio);
-    context.stroke();
+  if (Number.isFinite(high) && Math.abs(high - open) >= 0.01) {
+    points.push({ sessionMinutes: highMinute, close: high, volume: 0 });
+  }
+  if (Number.isFinite(low) && Math.abs(low - high) >= 0.01 && Math.abs(low - open) >= 0.01) {
+    points.push({ sessionMinutes: lowMinute, close: low, volume: 0 });
+  }
+  if (Math.abs(latest - points.at(-1).close) >= 0.01 || points.length === 1) {
+    points.push({ sessionMinutes: latestMinute, close: latest, volume: 0 });
   }
 
-  if (Number.isFinite(previousClose)) {
-    const previousSideWidth = Math.abs(valueX(previousClose) - valueX(latest));
-    context.fillStyle = isUp ? "rgba(173, 48, 50, 0.06)" : "rgba(23, 107, 85, 0.07)";
-    context.fillRect(Math.min(valueX(previousClose), valueX(latest)), plotY, previousSideWidth, plotHeight);
-  }
-
-  if (Number.isFinite(previousClose)) {
-    const x = valueX(previousClose);
-    context.strokeStyle = "rgba(36, 36, 35, 0.36)";
-    context.setLineDash([6, 5]);
-    context.beginPath();
-    context.moveTo(x, plotY + 10 * ratio);
-    context.lineTo(x, plotY + plotHeight - 10 * ratio);
-    context.stroke();
-    context.setLineDash([]);
-    drawCanvasPill(context, `昨收 ${money(previousClose)}`, x, centerY + 60 * ratio, {
-      ratio,
-      align: "center",
-      background: "#5d6470",
-      fontSize: 12,
-      height: 25,
-      minY: plotY + 8 * ratio,
-      maxY: plotY + plotHeight - 8 * ratio
-    });
-  }
-
-  const lowX = valueX(low);
-  const highX = valueX(high);
-  const latestX = valueX(latest);
-  const rangeGradient = context.createLinearGradient(lowX, 0, highX, 0);
-  rangeGradient.addColorStop(0, "rgba(23, 107, 85, 0.28)");
-  rangeGradient.addColorStop(0.5, "rgba(47, 95, 143, 0.18)");
-  rangeGradient.addColorStop(1, "rgba(173, 48, 50, 0.28)");
-  context.strokeStyle = rangeGradient;
-  context.lineWidth = 28 * ratio;
-  context.lineCap = "round";
-  context.beginPath();
-  context.moveTo(lowX, centerY);
-  context.lineTo(highX, centerY);
-  context.stroke();
-
-  context.strokeStyle = color;
-  context.lineWidth = 8 * ratio;
-  context.beginPath();
-  context.moveTo(Number.isFinite(previousClose) ? valueX(previousClose) : lowX, centerY);
-  context.lineTo(latestX, centerY);
-  context.stroke();
-  context.lineCap = "butt";
-
-  const referenceMarkers = [
-    { label: "最低", value: low, color: "#176b55" },
-    { label: "最高", value: high, color: "#ad3032" },
-    { label: "開盤", value: open, color: "#2f5f8f" }
-  ].filter((item) => Number.isFinite(item.value));
-
-  const markerGroups = [];
-  referenceMarkers.forEach((marker) => {
-    const x = valueX(marker.value);
-    const group = markerGroups.find((entry) => Math.abs(entry.x - x) < 18 * ratio);
-    if (group) {
-      group.labels.push(marker.label);
-      group.color = marker.color;
-    } else {
-      markerGroups.push({ x, value: marker.value, labels: [marker.label], color: marker.color });
-    }
-  });
-
-  markerGroups.forEach((marker, index) => {
-    context.fillStyle = marker.color;
-    context.beginPath();
-    context.arc(marker.x, centerY, 6 * ratio, 0, Math.PI * 2);
-    context.fill();
-    const y = index % 2 === 0 ? centerY - 44 * ratio : centerY + 44 * ratio;
-    drawCanvasPill(context, `${marker.labels.join(" / ")} ${money(marker.value)}`, marker.x, y, {
-      ratio,
-      align: "center",
-      background: marker.color,
-      fontSize: 12,
-      height: 25,
-      minY: plotY + 8 * ratio,
-      maxY: plotY + plotHeight - 8 * ratio
-    });
-  });
-
-  context.strokeStyle = color;
-  context.lineWidth = 2 * ratio;
-  context.beginPath();
-  context.moveTo(latestX, centerY - 36 * ratio);
-  context.lineTo(latestX, centerY + 36 * ratio);
-  context.stroke();
-  context.fillStyle = color;
-  context.beginPath();
-  context.arc(latestX, centerY, 7 * ratio, 0, Math.PI * 2);
-  context.fill();
-  drawCanvasPill(context, `目前 ${money(latest)}`, latestX + 12 * ratio, centerY - 2 * ratio, {
-    ratio,
-    align: "left",
-    background: color,
-    fontSize: 13,
-    height: 29,
-    minX: plotX + 6 * ratio,
-    maxX: plotX + plotWidth - 6 * ratio,
-    minY: plotY + 8 * ratio,
-    maxY: plotY + plotHeight - 8 * ratio
-  });
-
-  context.fillStyle = "#4d5661";
-  context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-  context.textAlign = "left";
-  context.fillText(`低點 ${money(rawMin)}`, plotX, height - 20 * ratio);
-  context.textAlign = "right";
-  context.fillText(`高點 ${money(rawMax)}`, plotX + plotWidth, height - 20 * ratio);
-  context.textAlign = "left";
-  if (Number.isFinite(intradayPosition)) {
-    context.fillStyle = "#6f6a61";
-    context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
-    context.fillText(`目前位於今日區間 ${money(intradayPosition)}%`, plotX, plotY + plotHeight - 24 * ratio);
-  }
+  drawMarketBoardChart(points, index, isUp);
 }
 
 function renderMarketNumberDetails(index, change, changePercent) {
@@ -2861,6 +2695,42 @@ function renderMarketGroupCards(groups, fallbackGroups) {
   });
 }
 
+function taipeiMinutes(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  return Number.isFinite(hour) && Number.isFinite(minute) ? hour * 60 + minute : null;
+}
+
+function clampMarketMinute(value, fallback = 9 * 60) {
+  const minute = Number.isFinite(value) ? value : fallback;
+  return Math.min(13 * 60 + 30, Math.max(9 * 60, minute));
+}
+
+function marketMinuteRatio(minutes) {
+  return (clampMarketMinute(minutes) - 9 * 60) / (4.5 * 60);
+}
+
+function marketPointRatio(point, index, total) {
+  if (Number.isFinite(point?.sessionMinutes)) return marketMinuteRatio(point.sessionMinutes);
+  const minutes = taipeiMinutes(point?.date);
+  if (Number.isFinite(minutes)) return marketMinuteRatio(minutes);
+  return total > 1 ? index / (total - 1) : 0;
+}
+
+function formatMarketMinute(minutes) {
+  const hour = Math.floor(minutes / 60);
+  const minute = String(minutes % 60).padStart(2, "0");
+  return minute === "00" ? String(hour).padStart(2, "0") : `${String(hour).padStart(2, "0")}:${minute}`;
+}
+
 function marketChartPoints(points, index) {
   const cleanPoints = (points || [])
     .map((point) => ({
@@ -2915,7 +2785,7 @@ function drawMarketBoardChart(points, index, isUp) {
 
   const chartPoints = marketChartPoints(points, index);
   if (chartPoints.length < 2) {
-    drawMarketSnapshotChart(index, isUp);
+    drawEmptyMarketBoardChart("目前沒有足夠的大盤線圖資料");
     return;
   }
 
@@ -2952,13 +2822,12 @@ function drawMarketBoardChart(points, index, isUp) {
     context.stroke();
   });
 
-  const pointX = (index) => padding.left + (chartWidth * index) / Math.max(chartPoints.length - 1, 1);
+  const timeTicks = [9 * 60, 10 * 60, 11 * 60, 12 * 60, 13 * 60, 13 * 60 + 30];
+  const minuteX = (minutes) => padding.left + chartWidth * marketMinuteRatio(minutes);
+  const pointX = (point, index) => padding.left + chartWidth * marketPointRatio(point, index, chartPoints.length);
   const pointY = (value) => padding.top + ((max - value) / range) * chartHeight;
-  const labelIndexes = [0, 0.25, 0.5, 0.75, 1]
-    .map((ratioPoint) => Math.round((chartPoints.length - 1) * ratioPoint))
-    .filter((value, index, list) => list.indexOf(value) === index);
-  labelIndexes.forEach((pointIndex) => {
-    const x = pointX(pointIndex);
+  timeTicks.forEach((minutes) => {
+    const x = minuteX(minutes);
     context.beginPath();
     context.moveTo(x, padding.top);
     context.lineTo(x, height - padding.bottom);
@@ -2982,13 +2851,13 @@ function drawMarketBoardChart(points, index, isUp) {
   context.fillStyle = fillGradient;
   context.beginPath();
   chartPoints.forEach((point, index) => {
-    const x = pointX(index);
+    const x = pointX(point, index);
     const y = pointY(point.close);
     if (index === 0) context.moveTo(x, y);
     else context.lineTo(x, y);
   });
-  context.lineTo(pointX(chartPoints.length - 1), height - padding.bottom);
-  context.lineTo(pointX(0), height - padding.bottom);
+  context.lineTo(pointX(chartPoints.at(-1), chartPoints.length - 1), height - padding.bottom);
+  context.lineTo(pointX(chartPoints[0], 0), height - padding.bottom);
   context.closePath();
   context.fill();
 
@@ -2998,7 +2867,7 @@ function drawMarketBoardChart(points, index, isUp) {
   context.lineCap = "round";
   context.beginPath();
   chartPoints.forEach((point, index) => {
-    const x = pointX(index);
+    const x = pointX(point, index);
     const y = pointY(point.close);
     if (index === 0) context.moveTo(x, y);
     else context.lineTo(x, y);
@@ -3012,7 +2881,7 @@ function drawMarketBoardChart(points, index, isUp) {
     chartPoints.forEach((point, index) => {
       const barHeight = ((point.volume || 0) / maxVolume) * Math.min(44 * ratio, chartHeight * 0.16);
       context.fillStyle = "rgba(47, 111, 211, 0.52)";
-      context.fillRect(pointX(index) - 2 * ratio, volumeBase - barHeight, 3 * ratio, barHeight);
+      context.fillRect(pointX(point, index) - 2 * ratio, volumeBase - barHeight, 3 * ratio, barHeight);
     });
   }
 
@@ -3022,7 +2891,7 @@ function drawMarketBoardChart(points, index, isUp) {
   const floatingLabelYs = [];
   const rightLabelX = width - padding.right + 14 * ratio;
   if (latest) {
-    const x = pointX(chartPoints.length - 1);
+    const x = pointX(latest, chartPoints.length - 1);
     context.fillStyle = color;
     context.beginPath();
     context.arc(x, latestY, 5 * ratio, 0, Math.PI * 2);
@@ -3068,11 +2937,10 @@ function drawMarketBoardChart(points, index, isUp) {
     context.textAlign = "left";
     context.fillText(money(value), rightLabelX, y + 4 * ratio);
   });
-  labelIndexes.forEach((pointIndex, labelIndex) => {
-    const label = formatMarketChartTime(chartPoints[pointIndex].date);
-    if (!label) return;
-    const x = pointX(pointIndex);
-    context.textAlign = labelIndex === labelIndexes.length - 1 ? "right" : labelIndex === 0 ? "left" : "center";
+  timeTicks.forEach((minutes, labelIndex) => {
+    const label = formatMarketMinute(minutes);
+    const x = minuteX(minutes);
+    context.textAlign = labelIndex === timeTicks.length - 1 ? "right" : labelIndex === 0 ? "left" : "center";
     context.fillText(label, x, height - 14 * ratio);
   });
   context.textAlign = "left";

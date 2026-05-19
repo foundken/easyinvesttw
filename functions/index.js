@@ -636,13 +636,14 @@ async function fetchTwseIndex() {
   const [groups, twseCandles, yahooIndex] = await Promise.all([
     fetchTwseIndexGroups(),
     fetchTwseIndexCandles(date),
-    fetchYahooIndex("^TWII", "台灣加權指數").catch(() => null)
+    fetchYahooIndex("^TWII", "台灣加權指數", "1m").catch(() => null)
   ]);
-  const candles = twseCandles.length ? twseCandles : yahooIndex?.candles || [];
+  const hasYahooIndex = Number.isFinite(toNumber(yahooIndex?.index));
+  const candles = yahooIndex?.candles?.length ? yahooIndex.candles : twseCandles;
   const summary = groups.listed || {};
   const latest = candles.at(-1);
-  const index = toNumber(summary.index) || latest?.close;
-  const previousClose = toNumber(summary.previousClose);
+  const index = hasYahooIndex ? toNumber(yahooIndex.index) : toNumber(summary.index) || latest?.close;
+  const previousClose = hasYahooIndex ? toNumber(yahooIndex.previousClose) : toNumber(summary.previousClose);
   const change = Number.isFinite(index) && Number.isFinite(previousClose) ? index - previousClose : null;
   const changePercent = Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null;
 
@@ -651,14 +652,14 @@ async function fetchTwseIndex() {
     symbol: "t00",
     index,
     previousClose,
-    open: toNumber(summary.open) || candles[0]?.close,
-    high: toNumber(summary.high) || maxBy(candles, "close"),
-    low: toNumber(summary.low) || minBy(candles, "close"),
+    open: hasYahooIndex ? toNumber(yahooIndex.open) || toNumber(summary.open) : toNumber(summary.open) || candles[0]?.close,
+    high: hasYahooIndex ? toNumber(yahooIndex.high) || toNumber(summary.high) : toNumber(summary.high) || maxBy(candles, "close"),
+    low: hasYahooIndex ? toNumber(yahooIndex.low) || toNumber(summary.low) : toNumber(summary.low) || minBy(candles, "close"),
     turnover: toNumber(summary.turnover),
     change,
     changePercent,
-    source: twseCandles.length ? "TWSE" : candles.length ? "TWSE + Yahoo" : "TWSE",
-    lastUpdated: summary.lastUpdated || latest?.date || new Date().toISOString(),
+    source: hasYahooIndex ? "Yahoo + TWSE" : twseCandles.length ? "TWSE" : candles.length ? "TWSE + Yahoo" : "TWSE",
+    lastUpdated: hasYahooIndex ? yahooIndex.lastUpdated : summary.lastUpdated || latest?.date || new Date().toISOString(),
     candles,
     groups
   };
@@ -1094,8 +1095,8 @@ async function fetchUsMarket() {
   };
 }
 
-async function fetchYahooIndex(symbol, fallbackName) {
-  const response = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=5m`, {
+async function fetchYahooIndex(symbol, fallbackName, interval = "5m") {
+  const response = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=${encodeURIComponent(interval)}`, {
     headers: {
       accept: "application/json",
       "user-agent": "Mozilla/5.0 EasyInvestTW market data reader"
