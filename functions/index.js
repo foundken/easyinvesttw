@@ -722,8 +722,8 @@ function mergeMarketRows(twseRows, fugleRows) {
 async function fetchTwseIndex() {
   const date = taipeiDate();
   const [groups, twseCandles, yahooIndex] = await Promise.all([
-    fetchTwseIndexGroups(),
-    fetchTwseIndexCandles(date),
+    fetchTwseIndexGroups().catch(() => ({})),
+    fetchTwseIndexCandles(date).catch(() => []),
     fetchYahooIndex("^TWII", "台灣加權指數", "1m").catch(() => null)
   ]);
   const hasYahooIndex = Number.isFinite(toNumber(yahooIndex?.index));
@@ -1212,7 +1212,7 @@ async function fetchYahooIndex(symbol, fallbackName, interval = "5m") {
   const previousClose = toNumber(meta.previousClose) || toNumber(meta.chartPreviousClose);
   const change = Number.isFinite(index) && Number.isFinite(previousClose) ? index - previousClose : null;
   return {
-    name: meta.shortName || fallbackName,
+    name: fallbackName || meta.shortName,
     symbol,
     index,
     previousClose,
@@ -1578,7 +1578,19 @@ async function safeFetchTwseIndex() {
     throw new Error("TWSE index empty");
   } catch {
     try {
-      return await fetchYahooIndex("^TWII", "台灣加權指數");
+      const index = await fetchYahooIndex("^TWII", "發行量加權股價指數");
+      return {
+        ...index,
+        name: "發行量加權股價指數",
+        symbol: "t00",
+        groups: {
+          listed: {
+            ...index,
+            name: "發行量加權股價指數",
+            symbol: "t00"
+          }
+        }
+      };
     } catch {
       return null;
     }
