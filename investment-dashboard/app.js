@@ -208,7 +208,8 @@ let market = {
   usIndex: null,
   institutional: null,
   news: [],
-  source: "sample"
+  source: "sample",
+  updatedAt: null
 };
 const historyCache = new Map();
 let activeChartHistory = [];
@@ -844,6 +845,13 @@ function marketIndexSourceText(source) {
   return "非即時或範例資料";
 }
 
+function quoteSourceText(source = "") {
+  if (source.includes("Fugle")) return "個股：Fugle 即時報價";
+  if (source.includes("Yahoo")) return "個股：Yahoo 盤中報價，Fugle 目前未回傳";
+  if (source.includes("TWSE")) return "個股：TWSE 公開資料，非逐筆即時";
+  return "個股：等待公開資料或即時報價";
+}
+
 function mergeRealtimeQuotes(daily, realtime) {
   if (!realtime.length) return daily;
   const map = new Map(daily.map((item) => [item.code, item]));
@@ -953,7 +961,8 @@ async function fetchMarket() {
       usIndex: normalizeUsMarket(payload.usIndex) || sampleUsMarket,
       institutional: normalizeInstitutional(payload.institutional),
       news: normalizeNews(payload.news || []),
-      source: sources.length ? [...new Set(sources)].join(" + ") : daily.length ? "TWSE" : "資料不足"
+      source: sources.length ? [...new Set(sources)].join(" + ") : daily.length ? "TWSE" : "資料不足",
+      updatedAt: payload.updatedAt || new Date().toISOString()
     };
   } catch {
     market = {
@@ -964,7 +973,8 @@ async function fetchMarket() {
       usIndex: sampleUsMarket,
       institutional: sampleInstitutional,
       news: sampleNews,
-      source: "sample"
+      source: "sample",
+      updatedAt: new Date().toISOString()
     };
   }
 
@@ -1360,12 +1370,18 @@ function renderMarketScore(ranking, tracked) {
 
 function renderDataQuality() {
   const hasFugle = market.source.includes("Fugle");
+  const hasYahooQuotes = market.source.includes("Yahoo");
   const hasRealMarket = market.source !== "sample" && market.source !== "資料不足" && (market.daily.length || Number.isFinite(number(market.index?.index)));
   const institutionalSource = String(market.institutional?.source || "");
   const hasInstitutional = institutionalSource.includes("TWSE") || institutionalSource.includes("TPEx");
+  const quoteBadge = hasFugle
+    ? dataBadge("即時", "good", "個股報價使用 Fugle 即時行情。")
+    : hasYahooQuotes
+      ? dataBadge("盤中", "good", "Fugle 目前受限時，個股報價改用 Yahoo 盤中行情。")
+      : dataBadge("延遲", "warn", "個股多為 TWSE 公開資料或盤後資料，非逐筆即時。");
   els.dataQualityList.innerHTML = [
     dataBadge(hasRealMarket ? "即時/公開" : market.source === "sample" ? "範例" : "資料不足", hasRealMarket ? "good" : "bad", hasRealMarket ? "大盤與成交資料已連接公開資料來源。" : "主要市場資料目前沒有成功回傳，先不要用這個畫面做判斷。"),
-    dataBadge(hasFugle ? "即時" : "延遲", hasFugle ? "good" : "warn", hasFugle ? "個股報價使用 Fugle 即時行情。" : "個股多為 TWSE 公開資料或盤後資料，非逐筆即時。"),
+    quoteBadge,
     dataBadge(hasInstitutional ? "盤後" : "估算", hasInstitutional ? "warn" : "bad", hasInstitutional ? "法人資料為 TWSE / TPEx 盤後統計，適合看方向，不是即時籌碼。" : "法人資料尚未完整連接，先當參考。"),
     dataBadge("非建議", "warn", "AI 只整理訊號與風險，不保證獲利；下單前仍要檢查部位與停損。")
   ].join("");
@@ -2404,7 +2420,7 @@ function formatUpdateTime(value) {
   if (!value) return "尚未同步";
   const date = typeof value === "number" ? new Date(value / (value > 10000000000000 ? 1000 : 1)) : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString("zh-TW");
+  return date.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 }
 
 function formatDateOnly(value) {
@@ -2492,7 +2508,7 @@ function renderMarketIndex() {
   const changePercent = number(index.changePercent);
   const isUp = change >= 0;
   const hasMarketIndex = isValidMarketIndex(index);
-  const hasFugleQuotes = String(market.source || "").includes("Fugle");
+  const quoteSource = String(market.source || "");
   if (!hasMarketIndex) {
     renderMarketIndexUnavailable("資料未連線");
     return;
@@ -2515,8 +2531,12 @@ function renderMarketIndex() {
   els.marketRealtimeStatus.textContent = hasMarketIndex
     ? `大盤：${marketIndexSourceText(index.source)}${isStaleTaiwanIndex ? "，時間可能不是最近交易日" : ""}`
     : "大盤：非即時或範例資料";
-  els.quoteRealtimeStatus.textContent = hasFugleQuotes ? "個股：Fugle 即時報價" : "個股：TWSE 公開資料，非逐筆即時";
-  els.marketLastUpdated.textContent = `最後更新：${formatUpdateTime(index.lastUpdated || new Date())}`;
+  els.quoteRealtimeStatus.textContent = quoteSourceText(quoteSource);
+  const fetchedAt = market.updatedAt || new Date();
+  const quoteAt = index.lastUpdated;
+  els.marketLastUpdated.textContent = quoteAt
+    ? `資料更新：${formatUpdateTime(fetchedAt)}｜行情時間：${formatUpdateTime(quoteAt)}`
+    : `資料更新：${formatUpdateTime(fetchedAt)}`;
   if (index.candles?.length >= 2) {
     drawMarketBoardChart(index.candles, index, isUp);
   } else {

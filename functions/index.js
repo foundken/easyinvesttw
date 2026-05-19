@@ -44,15 +44,17 @@ exports.market = onRequest({
           cache: "fresh"
         });
       }
-      const [fugleRealtime, twseRealtime] = await Promise.all([
+      const [fugleRealtime, twseRealtime, yahooRealtime] = await Promise.all([
         safeFetchFugleQuotes(symbols),
-        safeFetchTwseRealtimeQuotes(symbols, 1800)
+        safeFetchTwseRealtimeQuotes(symbols, 1800),
+        safeFetchYahooQuotes(symbols)
       ]);
+      const realtime = mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime);
       const payload = {
         ok: true,
         updatedAt: new Date().toISOString(),
-        realtime: compactRealtimeRows(mergeRealtimePayloads(twseRealtime, fugleRealtime)),
-        realtimeSource: fugleRealtime.length ? "Fugle" : twseRealtime.length ? "TWSE" : null
+        realtime: compactRealtimeRows(realtime),
+        realtimeSource: fugleRealtime.length ? "Fugle" : yahooRealtime.length ? "Yahoo" : twseRealtime.length ? "TWSE" : null
       };
       quoteCache = { key: cacheKey, createdAt: now, payload };
       return sendJson(res, 200, payload);
@@ -85,11 +87,12 @@ exports.market = onRequest({
       ...symbols,
       ...topMarketSymbols(daily, 40)
     ]);
-    const [fugleRealtime, twseRealtime] = await Promise.all([
+    const [fugleRealtime, twseRealtime, yahooRealtime] = await Promise.all([
       safeFetchFugleQuotes(realtimeSymbols),
-      safeFetchTwseRealtimeQuotes(realtimeSymbols)
+      safeFetchTwseRealtimeQuotes(realtimeSymbols),
+      safeFetchYahooQuotes(symbols)
     ]);
-    const realtime = mergeRealtimePayloads(twseRealtime, fugleRealtime);
+    const realtime = mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime);
     const relevantCodes = new Set(uniqueSymbols([
       ...symbols,
       ...topMarketSymbols(daily, 120)
@@ -107,7 +110,7 @@ exports.market = onRequest({
       institutional: compactInstitutional(institutional, relevantCodes),
       news,
       dailySource: fugleActiveRanking.length ? "Fugle" : twseDaily.length ? "TWSE" : null,
-      realtimeSource: fugleRealtime.length ? "Fugle" : twseRealtime.length ? "TWSE" : null
+      realtimeSource: fugleRealtime.length ? "Fugle" : yahooRealtime.length ? "Yahoo" : twseRealtime.length ? "TWSE" : null
     };
     dashboardCache = { key: cacheKey, createdAt: now, payload };
     return sendJson(res, 200, payload);
@@ -194,6 +197,52 @@ async function fetchTwseRealtimeQuotes(symbols, timeoutMs = 4500) {
   }));
 
   return batches.flat();
+}
+
+async function fetchYahooQuotes(symbols) {
+  if (!symbols.length) return [];
+  const quotes = await Promise.all(symbols.slice(0, 30).map((symbol) => fetchYahooTaiwanQuote(symbol)));
+  return quotes.filter(Boolean);
+}
+
+async function fetchYahooTaiwanQuote(symbol) {
+  const code = String(symbol || "").trim();
+  if (!/^\d{4,6}$/.test(code)) return null;
+  return await fetchYahooTaiwanQuoteBySymbol(`${code}.TW`, code)
+    || await fetchYahooTaiwanQuoteBySymbol(`${code}.TWO`, code);
+}
+
+async function fetchYahooTaiwanQuoteBySymbol(yahooSymbol, code) {
+  const response = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1d&interval=1m`, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "Mozilla/5.0 EasyInvestTW quote reader"
+    }
+  }, 1800).catch(() => null);
+  if (!response?.ok) return null;
+  const payload = await response.json().catch(() => ({}));
+  const result = payload.chart?.result?.[0];
+  if (!result) return null;
+  const meta = result.meta || {};
+  const close = toNumber(meta.regularMarketPrice);
+  const previousClose = toNumber(meta.previousClose) || toNumber(meta.chartPreviousClose);
+  if (!Number.isFinite(close) || close <= 0 || !Number.isFinite(previousClose)) return null;
+  const change = close - previousClose;
+  return {
+    symbol: code,
+    name: meta.shortName || code,
+    openPrice: toNumber(meta.regularMarketOpen),
+    highPrice: toNumber(meta.regularMarketDayHigh),
+    lowPrice: toNumber(meta.regularMarketDayLow),
+    lastPrice: close,
+    closePrice: close,
+    previousClose,
+    change,
+    changePercent: previousClose ? (change / previousClose) * 100 : null,
+    tradeVolume: toNumber(meta.regularMarketVolume),
+    lastUpdated: meta.regularMarketTime ? meta.regularMarketTime * 1000 : new Date().toISOString(),
+    source: "Yahoo"
+  };
 }
 
 function normalizeTwseRealtimeRow(row) {
