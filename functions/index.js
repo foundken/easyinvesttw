@@ -193,20 +193,28 @@ async function fetchTwseRealtimeQuotes(symbols, timeoutMs = 4500) {
   }
 
   const batches = await Promise.all(chunks.map(async (chunk) => {
-    const channels = chunk.flatMap((symbol) => [`tse_${symbol}.tw`, `otc_${symbol}.tw`]);
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(channels.join("|"))}&json=1&delay=0&_=${Date.now()}`;
-    const response = await fetchWithTimeout(url, {
-      headers: {
-        ...twseHeaders(),
-        referer: "https://mis.twse.com.tw/stock/index.jsp"
-      }
-    }, timeoutMs).catch(() => null);
-    if (!response?.ok) return [];
-    const payload = await response.json().catch(() => ({}));
-    return (payload.msgArray || []).map(normalizeTwseRealtimeRow).filter(Boolean);
+    const [listedRows, otcRows] = await Promise.all([
+      fetchTwseRealtimeChannelBatch(chunk.map((symbol) => `tse_${symbol}.tw`), timeoutMs),
+      fetchTwseRealtimeChannelBatch(chunk.map((symbol) => `otc_${symbol}.tw`), timeoutMs)
+    ]);
+    return mergeRealtimePayloads(listedRows, otcRows);
   }));
 
   return batches.flat();
+}
+
+async function fetchTwseRealtimeChannelBatch(channels, timeoutMs) {
+  if (!channels.length) return [];
+  const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(channels.join("|"))}&json=1&delay=0&_=${Date.now()}`;
+  const response = await fetchWithTimeout(url, {
+    headers: {
+      ...twseHeaders(),
+      referer: "https://mis.twse.com.tw/stock/index.jsp"
+    }
+  }, timeoutMs).catch(() => null);
+  if (!response?.ok) return [];
+  const payload = await response.json().catch(() => ({}));
+  return (payload.msgArray || []).map(normalizeTwseRealtimeRow).filter(Boolean);
 }
 
 async function fetchYahooQuotes(symbols) {
