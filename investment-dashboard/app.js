@@ -564,8 +564,20 @@ function stockPriceLabel(stock) {
 function stockQuoteStamp(stock) {
   if (!stock) return "資料未連線";
   const source = stock.source ? String(stock.source) : stock.realtime ? "即時資料" : "收盤資料";
-  const time = stock.quoteTime ? formatUpdateTime(stock.quoteTime) : "";
-  return time ? `${source} ｜ ${time}` : source;
+  const timestamp = timestampMs(stock.quoteTime);
+  const time = timestamp ? formatUpdateTime(timestamp) : "";
+  const lagMs = timestamp ? Date.now() - timestamp : null;
+  const lagText = isTwMarketOpen() && Number.isFinite(lagMs) && lagMs > 120000
+    ? `（延遲 ${Math.max(1, Math.round(lagMs / 60000))} 分）`
+    : "";
+  return time ? `${source} ｜ ${time}${lagText}` : source;
+}
+
+function timestampMs(value) {
+  if (!value) return null;
+  if (typeof value === "number") return value > 10000000000000 ? value / 1000 : value;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function stockTodayChange(stock) {

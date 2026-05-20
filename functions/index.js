@@ -197,10 +197,25 @@ async function fetchTwseRealtimeQuotes(symbols, timeoutMs = 4500) {
       fetchTwseRealtimeChannelBatch(chunk.map((symbol) => `tse_${symbol}.tw`), timeoutMs),
       fetchTwseRealtimeChannelBatch(chunk.map((symbol) => `otc_${symbol}.tw`), timeoutMs)
     ]);
-    return mergeRealtimePayloads(listedRows, otcRows);
+    const merged = mergeRealtimePayloads(listedRows, otcRows);
+    const missing = chunk.filter((symbol) => !merged.some((row) => String(row.symbol) === String(symbol)));
+    if (!missing.length) return merged;
+    const retryRows = await fetchTwseRealtimeSingleQuotes(missing, Math.max(timeoutMs, 4500));
+    return mergeRealtimePayloads(merged, retryRows);
   }));
 
   return batches.flat();
+}
+
+async function fetchTwseRealtimeSingleQuotes(symbols, timeoutMs) {
+  const rows = await Promise.all(symbols.map(async (symbol) => {
+    const [listedRows, otcRows] = await Promise.all([
+      fetchTwseRealtimeChannelBatch([`tse_${symbol}.tw`], timeoutMs),
+      fetchTwseRealtimeChannelBatch([`otc_${symbol}.tw`], timeoutMs)
+    ]);
+    return mergeRealtimePayloads(listedRows, otcRows);
+  }));
+  return rows.flat();
 }
 
 async function fetchTwseRealtimeChannelBatch(channels, timeoutMs) {
