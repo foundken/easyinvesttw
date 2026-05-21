@@ -14,6 +14,28 @@ const DASHBOARD_CACHE_TTL_MS = 5000;
 const DASHBOARD_STALE_TTL_MS = 120000;
 const MONTHLY_REVENUE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const COMPANY_NAME_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CONCEPT_SYMBOLS = [
+  "1319", "1503", "1504", "1513", "1514", "1515", "1519", "1536", "1560", "1587",
+  "1590", "1609", "1720", "1760", "1789", "1795", "2049", "2231", "2303", "2308",
+  "2313", "2317", "2324", "2327", "2329", "2330", "2344", "2351", "2354", "2355",
+  "2356", "2359", "2368", "2374", "2375", "2376", "2379", "2382", "2383", "2392",
+  "2395", "2408", "2412", "2419", "2421", "2449", "2454", "2464", "2474", "2478",
+  "2492", "2497", "2603", "2605", "2606", "2607", "2609", "2610", "2612", "2615",
+  "2617", "2618", "2634", "2637", "2645", "2801", "2809", "2812", "2834", "2880",
+  "2881", "2882", "2883", "2884", "2885", "2886", "2887", "2888", "2889", "2890",
+  "2891", "2892", "2897", "3006", "3008", "3010", "3017", "3026", "3029", "3034",
+  "3035", "3037", "3042", "3044", "3081", "3131", "3138", "3163", "3189", "3231",
+  "3234", "3260", "3264", "3293", "3324", "3338", "3363", "3374", "3406", "3443",
+  "3450", "3529", "3576", "3587", "3653", "3661", "3665", "3706", "3708", "3711",
+  "4105", "4119", "4123", "4147", "4162", "4540", "4566", "4571", "4721", "4743",
+  "4908", "4938", "4958", "4966", "4967", "4977", "4979", "5009", "5274", "5351",
+  "5388", "5443", "5469", "5608", "5876", "5880", "6125", "6140", "6153", "6166",
+  "6173", "6176", "6191", "6196", "6207", "6213", "6214", "6215", "6224", "6230",
+  "6239", "6244", "6269", "6274", "6278", "6282", "6285", "6414", "6415", "6442",
+  "6443", "6446", "6469", "6472", "6477", "6488", "6515", "6531", "6547", "6589",
+  "6669", "6756", "6770", "6789", "6806", "6811", "6902", "8028", "8039", "8042",
+  "8046", "8210", "8299", "8996", "9958"
+];
 let dashboardCache = null;
 let quoteCache = null;
 let monthlyRevenueCache = null;
@@ -89,12 +111,16 @@ exports.market = onRequest({
       safeFetchMarketNews()
     ]);
     const daily = mergeMarketRows(twseDaily, fugleActiveRanking);
-    const realtimeSymbols = uniqueSymbols([
+    const activeQuoteSymbols = uniqueSymbols([
       ...symbols,
       ...topMarketSymbols(daily, 40)
     ]);
+    const realtimeSymbols = uniqueSymbols([
+      ...activeQuoteSymbols,
+      ...CONCEPT_SYMBOLS
+    ]);
     const [fugleRealtime, twseRealtime, yahooRealtime, companyNames] = await Promise.all([
-      safeFetchFugleQuotes(realtimeSymbols),
+      safeFetchFugleQuotes(activeQuoteSymbols),
       safeFetchTwseRealtimeQuotes(realtimeSymbols),
       safeFetchYahooQuotes(symbols),
       safeFetchCompanyNameMap()
@@ -105,7 +131,8 @@ exports.market = onRequest({
     );
     const relevantCodes = new Set(uniqueSymbols([
       ...symbols,
-      ...topMarketSymbols(daily, 120)
+      ...topMarketSymbols(daily, 180),
+      ...CONCEPT_SYMBOLS
     ]));
 
     const payload = {

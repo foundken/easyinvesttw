@@ -684,6 +684,17 @@ button.concept-rank-row em {
   text-align: right;
 }
 
+.concept-rank-note {
+  margin: 0;
+  padding: 16px 20px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 800;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-muted);
+}
+
 .trend-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
