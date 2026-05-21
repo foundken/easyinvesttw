@@ -10,6 +10,11 @@
   --amber: #b57a22;
   --blue: #2f5f8f;
   --soft: #ebe4d8;
+  --card: #fff;
+  --card-muted: #f7f3ec;
+  --card-soft: #fbf8f2;
+  --card-active: #f8fbff;
+  --line-subtle: rgba(45, 39, 32, 0.08);
   --shadow: 0 18px 48px rgba(58, 48, 36, 0.1);
   --pnl-up-bg: linear-gradient(140deg, #ffe8e6, #fff5f1 70%);
   --pnl-down-bg: linear-gradient(140deg, #e2f5ec, #f1faf3 70%);
@@ -28,6 +33,11 @@
   --amber: #f0b656;
   --blue: #6ea3d6;
   --soft: #2a2d34;
+  --card: #252932;
+  --card-muted: #242832;
+  --card-soft: #22262e;
+  --card-active: #263344;
+  --line-subtle: rgba(255, 255, 255, 0.08);
   --shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
   --pnl-up-bg: linear-gradient(140deg, #3a1d20, #251416 70%);
   --pnl-down-bg: linear-gradient(140deg, #143425, #0f261b 70%);
@@ -2837,6 +2847,155 @@ body.chart-expanded .chart-wrap canvas {
 
 [data-theme="dark"] .status-card {
   background: #324b67;
+}
+
+[data-theme="dark"] .market-board,
+[data-theme="dark"] .group-card.active,
+[data-theme="dark"] .index-metrics article,
+[data-theme="dark"] .market-number-grid article,
+[data-theme="dark"] .institution-grid article,
+[data-theme="dark"] .theme-grid article,
+[data-theme="dark"] .concept-list,
+[data-theme="dark"] .concept-detail-head,
+[data-theme="dark"] .concept-stat-grid article,
+[data-theme="dark"] button.concept-rank-row,
+[data-theme="dark"] .trend-chart-stats article,
+[data-theme="dark"] .trend-row,
+[data-theme="dark"] .ai-card,
+[data-theme="dark"] .trend-guide,
+[data-theme="dark"] .trend-summary,
+[data-theme="dark"] .small-cap-card,
+[data-theme="dark"] .sector-chip-list button,
+[data-theme="dark"] .score-ring,
+[data-theme="dark"] .score-list article,
+[data-theme="dark"] .brief-grid article,
+[data-theme="dark"] .quality-card,
+[data-theme="dark"] .health-card,
+[data-theme="dark"] .discipline-card,
+[data-theme="dark"] .preflight-card,
+[data-theme="dark"] .holding-overview-grid article,
+[data-theme="dark"] .stock-card,
+[data-theme="dark"] .holding-card,
+[data-theme="dark"] .sell-history-row,
+[data-theme="dark"] .rank-row,
+[data-theme="dark"] .finance-card,
+[data-theme="dark"] .insight-card,
+[data-theme="dark"] .news-card,
+[data-theme="dark"] .realized-overview-grid article,
+[data-theme="dark"] .trade-summary-table,
+[data-theme="dark"] .detail-summary article,
+[data-theme="dark"] .sector-group,
+[data-theme="dark"] .chart-wrap,
+[data-theme="dark"] body.chart-expanded .chart-wrap {
+  border-color: var(--line);
+  background: var(--card);
+}
+
+[data-theme="dark"] .freshness-grid span,
+[data-theme="dark"] .holding-overview-note,
+[data-theme="dark"] .brief-conclusion,
+[data-theme="dark"] .risk-banner,
+[data-theme="dark"] .auth-session,
+[data-theme="dark"] .security-notes,
+[data-theme="dark"] .empty,
+[data-theme="dark"] .detail-conclusion-card,
+[data-theme="dark"] .metric,
+[data-theme="dark"] .trade-summary-head {
+  background: var(--card-muted);
+  color: var(--muted);
+}
+
+[data-theme="dark"] .trade-plan,
+[data-theme="dark"] .holding-lot-list,
+[data-theme="dark"] .trade-summary-total {
+  background: var(--card-soft);
+}
+
+[data-theme="dark"] .trade-plan.good {
+  border-color: rgba(74, 216, 163, 0.28);
+  background: rgba(74, 216, 163, 0.08);
+}
+
+[data-theme="dark"] .trade-plan.warn {
+  border-color: rgba(240, 182, 86, 0.3);
+  background: rgba(240, 182, 86, 0.08);
+}
+
+[data-theme="dark"] .trade-plan.bad {
+  border-color: rgba(255, 116, 121, 0.28);
+  background: rgba(255, 116, 121, 0.08);
+}
+
+[data-theme="dark"] .trade-plan-grid div {
+  border-color: var(--line-subtle);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .concept-market-chip,
+[data-theme="dark"] button.concept-topic.active {
+  background: rgba(255, 116, 121, 0.12);
+  color: var(--red);
+}
+
+[data-theme="dark"] button.concept-mode-tab.active {
+  border-color: rgba(255, 116, 121, 0.5);
+  background: rgba(255, 116, 121, 0.1);
+  color: var(--red);
+}
+
+[data-theme="dark"] button.concept-topic,
+[data-theme="dark"] button.concept-topic strong {
+  background: var(--card);
+  color: var(--muted);
+}
+
+[data-theme="dark"] button.concept-topic.active strong {
+  color: var(--red);
+}
+
+[data-theme="dark"] .small-cap-card.active {
+  background: var(--card-active);
+}
+
+[data-theme="dark"] .pill.warn {
+  color: var(--amber);
+}
+
+[data-theme="dark"] .trade-badge,
+[data-theme="dark"] .close-button,
+[data-theme="dark"] .delete,
+[data-theme="dark"] .history-delete {
+  background: rgba(255, 116, 121, 0.12);
+}
+
+[data-theme="dark"] .sector-stock-row,
+[data-theme="dark"] .holding-lot-row,
+[data-theme="dark"] .trade-summary-row {
+  border-color: var(--line-subtle);
+}
+
+[data-theme="dark"] .watch-list::-webkit-scrollbar-track,
+[data-theme="dark"] .holding-list::-webkit-scrollbar-track,
+[data-theme="dark"] .sell-history-list::-webkit-scrollbar-track,
+[data-theme="dark"] .ranking-list::-webkit-scrollbar-track,
+[data-theme="dark"] .finance-list::-webkit-scrollbar-track,
+[data-theme="dark"] .insight-list::-webkit-scrollbar-track,
+[data-theme="dark"] .news-list::-webkit-scrollbar-track,
+[data-theme="dark"] .quality-list::-webkit-scrollbar-track,
+[data-theme="dark"] .health-list::-webkit-scrollbar-track {
+  background: var(--soft);
+}
+
+[data-theme="dark"] .watch-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .holding-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .sell-history-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .ranking-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .finance-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .insight-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .news-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .quality-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .health-list::-webkit-scrollbar-thumb {
+  background: #4a4f5b;
 }
 
 /* ===== 快速加入面板 ===== */
