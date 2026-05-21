@@ -1116,6 +1116,25 @@ function openBriefTarget(card) {
   }
 }
 
+function scrollToDashboardTarget(selector) {
+  const target = document.querySelector(selector);
+  if (!target) return;
+  if (target.classList.contains("advanced-section") && document.body.dataset.viewMode === "simple") {
+    applyViewMode("full");
+  }
+  document.querySelectorAll(".mobile-section-nav button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.target === selector);
+  });
+  target.classList.remove("target-highlight");
+  void target.offsetWidth;
+  target.classList.add("target-highlight");
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.setTimeout(() => target.classList.remove("target-highlight"), 1800);
+  if (selector === "#managePanel") {
+    window.setTimeout(() => els.symbol?.focus(), 450);
+  }
+}
+
 function getStock(code) {
   return market.daily.find((item) => item.code === code);
 }
@@ -4569,7 +4588,10 @@ function applyViewMode(mode) {
 
 function initViewMode() {
   let saved = "full";
-  try { saved = localStorage.getItem(VIEW_MODE_KEY) || "full"; } catch {}
+  const prefersCompact = window.matchMedia?.("(max-width: 880px)")?.matches;
+  try { saved = localStorage.getItem(VIEW_MODE_KEY) || (prefersCompact ? "simple" : "full"); } catch {
+    saved = prefersCompact ? "simple" : "full";
+  }
   applyViewMode(saved);
   if (els.viewModeToggle) {
     els.viewModeToggle.addEventListener("click", () => {
@@ -4577,6 +4599,9 @@ function initViewMode() {
       applyViewMode(current === "simple" ? "full" : "simple");
     });
   }
+  document.querySelectorAll(".mobile-section-nav button").forEach((button) => {
+    button.addEventListener("click", () => scrollToDashboardTarget(button.dataset.target));
+  });
 }
 
 // ===== 主題切換（日間 / 夜間） =====

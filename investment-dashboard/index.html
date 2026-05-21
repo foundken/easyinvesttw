@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260521-net-pnl-v1">
+  <link rel="stylesheet" href="styles.css?v=20260521-mobile-nav-v1">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -18,8 +18,16 @@
     </button>
   </div>
 
+  <nav class="mobile-section-nav" aria-label="手機快速導覽">
+    <button type="button" data-target="#todayPanel">今日</button>
+    <button type="button" data-target="#holdingsPanel">存股</button>
+    <button type="button" data-target="#historyPanel">紀錄</button>
+    <button type="button" data-target="#marketTape">大盤</button>
+    <button type="button" data-target="#managePanel">新增</button>
+  </nav>
+
   <main class="shell">
-    <section class="today-pnl" aria-label="今日波動">
+    <section id="todayPanel" class="today-pnl" aria-label="今日波動">
       <div class="today-pnl-head">
         <p class="eyebrow">今日波動</p>
         <small id="todayPnlUpdatedAt">資料更新時間：尚未同步</small>
@@ -106,7 +114,7 @@
       <strong>輸入自己的股票，看損益與提醒</strong>
     </div>
 
-    <section class="control-panel" aria-label="管理持股">
+    <section id="managePanel" class="control-panel" aria-label="管理持股">
       <form id="watchForm" autocomplete="off">
         <label>
           <span>股票代號</span>
@@ -135,7 +143,7 @@
       </div>
     </section>
 
-    <section class="panel" aria-label="我的存股">
+    <section id="holdingsPanel" class="panel" aria-label="我的存股">
       <div class="panel-head">
         <h2>我的存股</h2>
         <span>長期持有與股息觀察</span>
@@ -144,7 +152,7 @@
       <div id="holdingList" class="holding-list"></div>
     </section>
 
-    <section class="panel" aria-label="持股歷史買賣紀錄">
+    <section id="historyPanel" class="panel" aria-label="持股歷史買賣紀錄">
       <div class="panel-head">
         <h2>歷史買賣紀錄</h2>
         <span>現價、目前持股數、交易明細與損益</span>
@@ -637,6 +645,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260521-net-pnl-v1"></script>
+  <script src="app.js?v=20260521-mobile-nav-v1"></script>
 </body>
 </html>
