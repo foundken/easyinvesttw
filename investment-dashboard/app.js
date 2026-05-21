@@ -1759,7 +1759,9 @@ function setFlowClass(element, value) {
 
 function renderInstitutional() {
   const data = market.institutional;
-  if (!data || data.source !== "TWSE") {
+  const source = String(data?.source || "");
+  const hasPublicInstitutional = source.includes("TWSE") || source.includes("TPEx");
+  if (!data || !hasPublicInstitutional) {
     [els.foreignNet, els.trustNet, els.dealerNet, els.institutionTotalNet].forEach((element) => {
       element.textContent = "--";
       element.className = "";
@@ -1782,9 +1784,7 @@ function renderInstitutional() {
   });
 
   els.institutionDate.textContent = `資料日期：${formatDateOnly(data.date)}`;
-  els.institutionStatus.textContent = data.source === "TWSE"
-    ? "法人：TWSE 盤後統計，非逐筆即時"
-    : "法人：範例資料，等待 TWSE 更新";
+  els.institutionStatus.textContent = `法人：${source} 盤後統計，非逐筆即時`;
 }
 
 function renderMarketThemes(ranking) {

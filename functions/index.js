@@ -896,12 +896,12 @@ async function fetchInstitutional() {
 }
 
 async function fetchTwseInstitutional() {
-  const candidates = recentTaipeiDates(5);
+  const candidates = recentTaipeiDates(7);
   const results = await Promise.all(candidates.map(async (candidate) => {
     const url = `https://www.twse.com.tw/rwd/zh/fund/T86?date=${candidate}&selectType=ALLBUT0999&response=json&_=${Date.now()}`;
     const response = await fetchWithTimeout(url, {
       headers: twseHeaders()
-    }, 2200).catch(() => null);
+    }, 3500).catch(() => null);
     if (!response?.ok) return null;
     const candidatePayload = await response.json().catch(() => null);
     const candidateRows = Array.isArray(candidatePayload?.data) ? candidatePayload.data : [];
@@ -1664,7 +1664,7 @@ async function safeFetchUsMarket() {
 
 async function safeFetchInstitutional() {
   try {
-    return await withSoftTimeout(fetchInstitutional(), 3200, null);
+    return await withSoftTimeout(fetchInstitutional(), 5000, null);
   } catch {
     return null;
   }
