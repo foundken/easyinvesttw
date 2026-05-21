@@ -3341,9 +3341,12 @@ function renderHoldingTradeSummary(holdings) {
     };
   }).sort((a, b) => a.cumulativePnl - b.cumulativePnl || a.code.localeCompare(b.code));
 
-  const todayUpsideTotal = rows.reduce((sum, row) => sum + Math.max(row.todayPnl, 0), 0);
-  const todayDownsideTotal = rows.reduce((sum, row) => sum + Math.min(row.todayPnl, 0), 0);
-  const todayNetPnl = rows.reduce((sum, row) => sum + row.todayPnl, 0);
+  const holdingRows = rows.filter((row) => row.currentShares > 0);
+  const todayUpRows = holdingRows.filter((row) => row.todayPnl > 0);
+  const todayDownRows = holdingRows.filter((row) => row.todayPnl < 0);
+  const todayUpsideTotal = todayUpRows.reduce((sum, row) => sum + row.todayPnl, 0);
+  const todayDownsideTotal = todayDownRows.reduce((sum, row) => sum + row.todayPnl, 0);
+  const todayNetPnl = holdingRows.reduce((sum, row) => sum + row.todayPnl, 0);
   const totalPnl = rows.reduce((sum, row) => sum + row.cumulativePnl, 0);
   const totalNetPnl = rows.reduce((sum, row) => sum + row.netCumulativePnl, 0);
 
@@ -3363,7 +3366,10 @@ function renderHoldingTradeSummary(holdings) {
           <span role="cell" class="trade-summary-date" data-label="買賣日期">
             <span class="trade-date-lines">${row.tradeDateLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</span>
           </span>
-          <span role="cell" data-label="現價">${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}</span>
+          <span role="cell" data-label="現價">
+            ${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}
+            ${row.currentShares ? `<small class="${priceTone(row.todayPnl)}">今日 ${formatCurrency(row.todayPnl)}</small>` : ""}
+          </span>
           <span role="cell" data-label="目前持股數">${row.currentShares ? `${money(row.currentShares)} 股` : "0 股"}</span>
           <span role="cell" data-label="買 / 賣">${row.buyCount} / ${row.sellCount} 筆</span>
           <strong role="cell" data-label="買賣至今損益" class="${priceTone(row.cumulativePnl)}">
@@ -3374,16 +3380,19 @@ function renderHoldingTradeSummary(holdings) {
       `).join("")}
       <div class="trade-summary-total">
         <div class="trade-total-item">
-          <span>今日上漲股合計</span>
+          <span>持股今日上漲合計</span>
           <strong class="${priceTone(todayUpsideTotal)}">${formatCurrency(todayUpsideTotal)}</strong>
+          <small>上漲 ${todayUpRows.length} 檔</small>
         </div>
         <div class="trade-total-item">
-          <span>今日下跌股合計</span>
+          <span>持股今日下跌合計</span>
           <strong class="${priceTone(todayDownsideTotal)}">${formatCurrency(todayDownsideTotal)}</strong>
+          <small>下跌 ${todayDownRows.length} 檔</small>
         </div>
         <div class="trade-total-item">
-          <span>全部股票今日淨損益</span>
+          <span>持股今日淨損益</span>
           <strong class="${priceTone(todayNetPnl)}">${formatCurrency(todayNetPnl)}</strong>
+          <small>只計目前持股股數</small>
         </div>
         <div class="trade-total-item">
           <span>買賣至今總損益</span>
