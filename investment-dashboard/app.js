@@ -3,6 +3,8 @@ const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
 const MARKET_REFRESH_FAST_MS = 5000;
 const MARKET_REFRESH_SLOW_MS = 10 * 60000;
 const QUOTE_REFRESH_MS = 5000;
+const BROKERAGE_FEE_RATE = 0.001425;
+const STOCK_TRANSACTION_TAX_RATE = 0.003;
 
 const endpoints = {
   bundle: getMarketEndpoint()
@@ -555,6 +557,42 @@ function signedMoney(value) {
 function formatCurrency(value) {
   if (!Number.isFinite(value)) return "--";
   return `${signedMoney(value)} 元`;
+}
+
+function transactionFee(value) {
+  return Number.isFinite(value) && value > 0 ? value * BROKERAGE_FEE_RATE : 0;
+}
+
+function stockTransactionTax(value) {
+  return Number.isFinite(value) && value > 0 ? value * STOCK_TRANSACTION_TAX_RATE : 0;
+}
+
+function tradeCostBreakdown({ buyValue = 0, sellValue = 0 } = {}) {
+  const buyFee = transactionFee(buyValue);
+  const sellFee = transactionFee(sellValue);
+  const securitiesTax = stockTransactionTax(sellValue);
+  return {
+    buyFee,
+    sellFee,
+    securitiesTax,
+    total: buyFee + sellFee + securitiesTax
+  };
+}
+
+function netTradeMetrics({ buyValue, sellValue, grossProfit }) {
+  const costs = tradeCostBreakdown({ buyValue, sellValue });
+  const netProfit = Number.isFinite(grossProfit) ? grossProfit - costs.total : null;
+  const cashCost = Number.isFinite(buyValue) && buyValue > 0 ? buyValue + costs.buyFee : null;
+  const netProfitRate = netProfit !== null && cashCost ? (netProfit / cashCost) * 100 : null;
+  return {
+    ...costs,
+    netProfit,
+    netProfitRate
+  };
+}
+
+function tradingCostNote() {
+  return `稅後純盈虧以手續費 0.1425%、股票賣出證交稅 0.3%估算，未含券商折扣與最低手續費。`;
 }
 
 function stockPriceLabel(stock) {
@@ -1571,11 +1609,26 @@ function holdingMetrics(entry) {
   const costValue = holdingCostValue(item);
   const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
   const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
+  const net = netTradeMetrics({ buyValue: costValue, sellValue: marketValue, grossProfit: pnl });
   const todayChange = stockTodayChange(stock);
   const todayChangePercent = stockTodayChangePercent(stock);
   const todayPnl = Number.isFinite(todayChange) && Number.isFinite(shares) && shares > 0 ? todayChange * shares : null;
   const yearlyDividend = val?.yieldRate && marketValue ? marketValue * (val.yieldRate / 100) : null;
-  return { cost, shares, marketValue, costValue, pnl, pnlRate, todayChange, todayChangePercent, todayPnl, yearlyDividend };
+  return {
+    cost,
+    shares,
+    marketValue,
+    costValue,
+    pnl,
+    pnlRate,
+    netPnl: net.netProfit,
+    netPnlRate: net.netProfitRate,
+    tradingCost: net.total,
+    todayChange,
+    todayChangePercent,
+    todayPnl,
+    yearlyDividend
+  };
 }
 
 function renderTodayPnl(holdings) {
@@ -1675,6 +1728,8 @@ function renderHoldingOverview(holdings) {
   const rows = holdings.map((entry) => ({ ...entry, metrics: holdingMetrics(entry) }));
   const totalMarketValue = rows.reduce((sum, row) => sum + (row.metrics.marketValue || 0), 0);
   const totalCost = rows.reduce((sum, row) => sum + (row.metrics.costValue || 0), 0);
+  const realizedNetPnl = realizedNetProfitTotal();
+  const realizedTradingCost = realizedTradingCostTotal();
   const recoveredPrincipal = sellHistory.reduce((sum, item) => {
     const costValue = number(item.costValue);
     const buyCost = number(item.buyCost);
@@ -1693,6 +1748,11 @@ function renderHoldingOverview(holdings) {
   const totalPnl = totalMarketValue && totalCost ? totalMarketValue - totalCost : null;
   const totalPnlRate = totalPnl !== null && totalCost ? (totalPnl / totalCost) * 100 : null;
   const cumulativePnl = (totalPnl || 0) + realizedPnl;
+  const currentNetPnl = rows.reduce((sum, row) => sum + (Number.isFinite(row.metrics.netPnl) ? row.metrics.netPnl : 0), 0);
+  const currentTradingCost = rows.reduce((sum, row) => sum + (Number.isFinite(row.metrics.netPnl) ? row.metrics.tradingCost || 0 : 0), 0);
+  const totalNetPnl = currentNetPnl + realizedNetPnl;
+  const totalTradingCost = currentTradingCost + realizedTradingCost;
+  const hasNetPnl = rows.some((row) => Number.isFinite(row.metrics.netPnl)) || sellHistory.length;
   const totalDividend = rows.reduce((sum, row) => sum + (row.metrics.yearlyDividend || 0), 0);
   const averageYield = totalMarketValue ? (totalDividend / totalMarketValue) * 100 : null;
   const profitable = rows.filter((row) => row.metrics.pnl > 0);
@@ -1721,12 +1781,15 @@ function renderHoldingOverview(holdings) {
     ["已賣出金額", totalSoldValue ? compactMoney(totalSoldValue) : "--", ""],
     ["總帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down"],
     ["總損益率", totalPnlRate === null ? "--" : percent(totalPnlRate), totalPnlRate >= 0 ? "price-up" : "price-down"],
+    ["估計交易成本", totalTradingCost ? compactMoney(totalTradingCost) : "--", ""],
+    ["稅後純盈虧", hasNetPnl ? formatCurrency(totalNetPnl) : "--", priceTone(totalNetPnl)],
     ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
     ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
     ["獲利 / 虧損", `${profitable.length} / ${losing.length} 檔`, ""],
     ["最大獲利股", best ? holdingSummaryLabel(best) : "--", "price-up"],
     ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""],
     ["已實現獲利", sellHistory.length ? formatCurrency(realizedPnl) : "--", priceTone(realizedPnl)],
+    ["已實現稅後", sellHistory.length ? formatCurrency(realizedNetPnl) : "--", priceTone(realizedNetPnl)],
     ["累積總獲利", totalPnl === null && !sellHistory.length ? "--" : formatCurrency(cumulativePnl), priceTone(cumulativePnl)]
   ];
 
@@ -1739,7 +1802,7 @@ function renderHoldingOverview(holdings) {
         </article>
       `).join("")}
     </div>
-    <p class="holding-overview-note">${escapeHtml(aiTone)}</p>
+    <p class="holding-overview-note">${escapeHtml(aiTone)} ${escapeHtml(tradingCostNote())}</p>
   `;
 }
 
@@ -3038,6 +3101,51 @@ function realizedProfitTotal() {
   return sellHistory.reduce((sum, item) => sum + (number(item.profit) || 0), 0);
 }
 
+function realizedNetMetrics(item) {
+  const shares = number(item?.shares);
+  const costValue = number(item?.costValue) ?? (
+    Number.isFinite(number(item?.buyCost)) && Number.isFinite(shares)
+      ? number(item.buyCost) * shares
+      : null
+  );
+  const soldValue = number(item?.soldValue) ?? (
+    Number.isFinite(number(item?.sellPrice)) && Number.isFinite(shares)
+      ? number(item.sellPrice) * shares
+      : null
+  );
+  const grossProfit = number(item?.profit) ?? (
+    Number.isFinite(soldValue) && Number.isFinite(costValue) ? soldValue - costValue : null
+  );
+  const estimated = netTradeMetrics({ buyValue: costValue, sellValue: soldValue, grossProfit });
+  const storedFees = number(item?.fees);
+  const storedTax = number(item?.tax);
+  const tradingCost = Number.isFinite(storedFees) || Number.isFinite(storedTax)
+    ? (storedFees || 0) + (storedTax || 0)
+    : estimated.total;
+  const netProfit = number(item?.netProfit) ?? (
+    Number.isFinite(grossProfit) ? grossProfit - tradingCost : null
+  );
+  const cashCost = Number.isFinite(costValue) && costValue > 0 ? costValue + estimated.buyFee : null;
+  return {
+    ...estimated,
+    grossProfit,
+    tradingCost,
+    netProfit,
+    netProfitRate: number(item?.netProfitRate) ?? (netProfit !== null && cashCost ? (netProfit / cashCost) * 100 : null)
+  };
+}
+
+function realizedNetProfitTotal() {
+  return sellHistory.reduce((sum, item) => {
+    const netProfit = realizedNetMetrics(item).netProfit;
+    return sum + (Number.isFinite(netProfit) ? netProfit : 0);
+  }, 0);
+}
+
+function realizedTradingCostTotal() {
+  return sellHistory.reduce((sum, item) => sum + (realizedNetMetrics(item).tradingCost || 0), 0);
+}
+
 function consumeLots(item, sellShares) {
   const lots = holdingLots(item);
   let remainingToSell = sellShares;
@@ -3095,7 +3203,9 @@ function sellHolding(item, stock) {
   }
   const soldCostValue = soldLots.reduce((sum, lot) => sum + lot.cost * lot.shares, 0);
   const averageBuyCost = soldCostValue / sellShares;
-  const profit = (sellPrice * sellShares) - soldCostValue;
+  const soldValue = sellPrice * sellShares;
+  const profit = soldValue - soldCostValue;
+  const net = netTradeMetrics({ buyValue: soldCostValue, sellValue: soldValue, grossProfit: profit });
   const remainingShares = shares - sellShares;
   sellHistory.unshift({
     id: `${Date.now()}-${item.code}`,
@@ -3105,9 +3215,14 @@ function sellHolding(item, stock) {
     sellPrice,
     shares: sellShares,
     costValue: soldCostValue,
-    soldValue: sellPrice * sellShares,
+    soldValue,
     profit,
     profitRate: soldCostValue ? (profit / soldCostValue) * 100 : null,
+    fees: net.buyFee + net.sellFee,
+    tax: net.securitiesTax,
+    tradingCost: net.total,
+    netProfit: net.netProfit,
+    netProfitRate: net.netProfitRate,
     lots: soldLots,
     soldAt: new Date().toISOString()
   });
@@ -3138,6 +3253,15 @@ function realizedProfitByCode(code) {
   return sellHistory
     .filter((item) => item.code === code)
     .reduce((sum, item) => sum + (number(item.profit) || 0), 0);
+}
+
+function realizedNetProfitByCode(code) {
+  return sellHistory
+    .filter((item) => item.code === code)
+    .reduce((sum, item) => {
+      const netProfit = realizedNetMetrics(item).netProfit;
+      return sum + (Number.isFinite(netProfit) ? netProfit : 0);
+    }, 0);
 }
 
 function tradeDateListText(values, label) {
@@ -3172,9 +3296,12 @@ function renderHoldingTradeSummary(holdings) {
     const buyCount = buyLots.length;
     const sellCount = sales.length;
     const realizedPnl = realizedProfitByCode(code);
+    const realizedNetPnl = realizedNetProfitByCode(code);
     const currentPnl = Number.isFinite(metrics.pnl) ? metrics.pnl : 0;
+    const currentNetPnl = Number.isFinite(metrics.netPnl) ? metrics.netPnl : 0;
     const todayPnl = Number.isFinite(metrics.todayPnl) ? metrics.todayPnl : 0;
     const cumulativePnl = currentPnl + realizedPnl;
+    const netCumulativePnl = currentNetPnl + realizedNetPnl;
     const tradeDateLines = [
       tradeDateListText(buyLots.map((lot) => lot.boughtAt), "買"),
       tradeDateListText(sales.map((history) => history.soldAt), "賣")
@@ -3190,7 +3317,8 @@ function renderHoldingTradeSummary(holdings) {
       todayPnl,
       currentPnl,
       realizedPnl,
-      cumulativePnl
+      cumulativePnl,
+      netCumulativePnl
     };
   }).sort((a, b) => a.cumulativePnl - b.cumulativePnl || a.code.localeCompare(b.code));
 
@@ -3198,6 +3326,7 @@ function renderHoldingTradeSummary(holdings) {
   const todayDownsideTotal = rows.reduce((sum, row) => sum + Math.min(row.todayPnl, 0), 0);
   const todayNetPnl = rows.reduce((sum, row) => sum + row.todayPnl, 0);
   const totalPnl = rows.reduce((sum, row) => sum + row.cumulativePnl, 0);
+  const totalNetPnl = rows.reduce((sum, row) => sum + row.netCumulativePnl, 0);
 
   els.holdingTradeSummary.innerHTML = `
     <div class="trade-summary-table" role="table" aria-label="歷史買賣紀錄彙總">
@@ -3218,7 +3347,10 @@ function renderHoldingTradeSummary(holdings) {
           <span role="cell" data-label="現價">${Number.isFinite(row.currentPrice) ? money(row.currentPrice) : "--"}</span>
           <span role="cell" data-label="目前持股數">${row.currentShares ? `${money(row.currentShares)} 股` : "0 股"}</span>
           <span role="cell" data-label="買 / 賣">${row.buyCount} / ${row.sellCount} 筆</span>
-          <strong role="cell" data-label="買賣至今損益" class="${priceTone(row.cumulativePnl)}">${formatCurrency(row.cumulativePnl)}</strong>
+          <strong role="cell" data-label="買賣至今損益" class="${priceTone(row.cumulativePnl)}">
+            ${formatCurrency(row.cumulativePnl)}
+            <small class="${priceTone(row.netCumulativePnl)}">稅後 ${formatCurrency(row.netCumulativePnl)}</small>
+          </strong>
         </div>
       `).join("")}
       <div class="trade-summary-total">
@@ -3238,6 +3370,10 @@ function renderHoldingTradeSummary(holdings) {
           <span>買賣至今總損益</span>
           <strong class="${priceTone(totalPnl)}">${formatCurrency(totalPnl)}</strong>
         </div>
+        <div class="trade-total-item">
+          <span>稅後純盈虧</span>
+          <strong class="${priceTone(totalNetPnl)}">${formatCurrency(totalNetPnl)}</strong>
+        </div>
       </div>
     </div>
   `;
@@ -3254,6 +3390,7 @@ function buyLotRows() {
         const costValue = lot.cost * lot.shares;
         const profit = marketValue === null ? null : marketValue - costValue;
         const profitRate = profit === null || !costValue ? null : (profit / costValue) * 100;
+        const net = netTradeMetrics({ buyValue: costValue, sellValue: marketValue, grossProfit: profit });
         return {
           id: lot.id,
           type: "buy",
@@ -3264,7 +3401,10 @@ function buyLotRows() {
           buyCost: lot.cost,
           currentPrice,
           profit,
-          profitRate
+          profitRate,
+          tradingCost: net.total,
+          netProfit: net.netProfit,
+          netProfitRate: net.netProfitRate
         };
       });
     });
@@ -3283,8 +3423,11 @@ function tradeHistoryRows() {
 function renderSellHistory() {
   if (!els.sellHistoryList) return;
   const totalProfit = realizedProfitTotal();
+  const totalNetProfit = realizedNetProfitTotal();
+  const totalTradingCost = realizedTradingCostTotal();
   const buyRows = buyLotRows();
   const unrealizedProfit = buyRows.reduce((sum, item) => sum + (number(item.profit) || 0), 0);
+  const unrealizedNetProfit = buyRows.reduce((sum, item) => sum + (number(item.netProfit) || 0), 0);
   const rows = tradeHistoryRows();
   const latest = rows[0];
 
@@ -3296,8 +3439,20 @@ function renderSellHistory() {
         <strong class="${priceTone(totalProfit)}">${sellHistory.length ? formatCurrency(totalProfit) : "--"}</strong>
       </article>
       <article>
+        <span>已實現稅後</span>
+        <strong class="${priceTone(totalNetProfit)}">${sellHistory.length ? formatCurrency(totalNetProfit) : "--"}</strong>
+      </article>
+      <article>
         <span>未實現損益</span>
         <strong class="${priceTone(unrealizedProfit)}">${buyRows.length ? formatCurrency(unrealizedProfit) : "--"}</strong>
+      </article>
+      <article>
+        <span>未實現稅後</span>
+        <strong class="${priceTone(unrealizedNetProfit)}">${buyRows.length ? formatCurrency(unrealizedNetProfit) : "--"}</strong>
+      </article>
+      <article>
+        <span>已賣出交易成本</span>
+        <strong>${sellHistory.length ? `${money(totalTradingCost)} 元` : "--"}</strong>
       </article>
       <article>
         <span>買進紀錄</span>
@@ -3323,6 +3478,8 @@ function renderSellHistory() {
   els.sellHistoryList.innerHTML = "";
   rows.forEach((item) => {
     const profit = number(item.profit);
+    const net = item.type === "sell" ? realizedNetMetrics(item) : { netProfit: number(item.netProfit), netProfitRate: number(item.netProfitRate), tradingCost: number(item.tradingCost) };
+    const netProfit = number(net.netProfit);
     const row = document.createElement("article");
     row.className = `sell-history-row ${item.type === "buy" ? "buy-history-row" : ""}`;
     const profitRate = number(item.profitRate);
@@ -3335,7 +3492,7 @@ function renderSellHistory() {
         <div class="sell-history-profit">
           <span>未實現</span>
           <strong class="${priceTone(profit)}">${Number.isFinite(profit) ? formatCurrency(profit) : "--"}</strong>
-          <small>${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+          <small>${Number.isFinite(netProfit) ? `稅後 ${formatCurrency(netProfit)}` : "--"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
         </div>
         <span class="trade-badge buy">買進</span>
       `;
@@ -3348,7 +3505,7 @@ function renderSellHistory() {
         <div class="sell-history-profit">
           <span>已實現</span>
           <strong class="${priceTone(profit)}">${formatCurrency(profit)}</strong>
-          <small>${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+          <small>${Number.isFinite(netProfit) ? `稅後 ${formatCurrency(netProfit)}` : "--"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
         </div>
         <button class="history-delete" type="button" aria-label="刪除歷史紀錄">刪除</button>
       `;
@@ -3367,7 +3524,7 @@ function renderHoldings(holdings) {
 
   holdings.forEach(({ item, stock, val, rev, signal }) => {
     const inst = getInstitutional(item.code);
-    const { cost, shares, marketValue, costValue, pnl, pnlRate, todayChange, todayChangePercent, todayPnl, yearlyDividend } = holdingMetrics({ item, stock, val });
+    const { cost, shares, marketValue, costValue, pnl, pnlRate, netPnl, tradingCost, todayChange, todayChangePercent, todayPnl, yearlyDividend } = holdingMetrics({ item, stock, val });
     const lots = holdingLots(item);
     const dayHigh = number(stock?.high);
     const dayLow = number(stock?.low);
@@ -3400,6 +3557,8 @@ function renderHoldings(holdings) {
         <div class="metric"><span>今日最低</span><strong>${Number.isFinite(dayLow) ? money(dayLow) : "--"}</strong></div>
         <div class="metric"><span>今日波動</span><strong class="${priceTone(todayPnl)}">${todayPnl === null ? "--" : compactMoney(todayPnl)}</strong></div>
         <div class="metric"><span>帳面損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
+        <div class="metric"><span>估計交易成本</span><strong>${Number.isFinite(netPnl) ? compactMoney(tradingCost) : "--"}</strong></div>
+        <div class="metric"><span>稅後純盈虧</span><strong class="${priceTone(netPnl)}">${netPnl === null ? "--" : compactMoney(netPnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
         <div class="metric"><span>殖利率</span><strong>${val?.yieldRate ?? "--"}%</strong></div>
         <div class="metric"><span>估年股息</span><strong>${yearlyDividend === null ? "--" : compactMoney(yearlyDividend)}</strong></div>
