@@ -1415,6 +1415,15 @@ label span {
   font-size: 22px;
 }
 
+.holding-overview-grid small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .holding-overview-note {
   margin: 12px 0 0;
   padding: 12px 14px;

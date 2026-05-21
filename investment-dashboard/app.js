@@ -592,7 +592,7 @@ function netTradeMetrics({ buyValue, sellValue, grossProfit }) {
 }
 
 function tradingCostNote() {
-  return `稅後純盈虧以手續費 0.1425%、股票賣出證交稅 0.3%估算，未含券商折扣與最低手續費。`;
+  return `扣費後盈虧以手續費 0.1425%、股票賣出證交稅 0.3%估算，未含券商折扣與最低手續費。`;
 }
 
 function stockPriceLabel(stock) {
@@ -1739,7 +1739,7 @@ function renderHoldingOverview(holdings) {
   if (!holdings.length) {
     els.holdingOverview.innerHTML = `
       <p class="empty">新增「我的存股」後，這裡會自動計算總市值、總成本、總損益與預估股息。</p>
-      ${sellHistory.length ? `<p class="holding-overview-note">歷史累積已實現獲利：<strong class="${priceTone(realizedPnl)}">${formatCurrency(realizedPnl)}</strong></p>` : ""}
+      ${sellHistory.length ? `<p class="holding-overview-note">歷史已賣出毛損益：<strong class="${priceTone(realizedPnl)}">${formatCurrency(realizedPnl)}</strong></p>` : ""}
     `;
     return;
   }
@@ -1801,23 +1801,24 @@ function renderHoldingOverview(holdings) {
     ["總帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down"],
     ["總損益率", totalPnlRate === null ? "--" : percent(totalPnlRate), totalPnlRate >= 0 ? "price-up" : "price-down"],
     ["估計交易成本", totalTradingCost ? compactMoney(totalTradingCost) : "--", ""],
-    ["稅後純盈虧", hasNetPnl ? formatCurrency(totalNetPnl) : "--", priceTone(totalNetPnl)],
+    ["扣費後總盈虧", hasNetPnl ? formatCurrency(totalNetPnl) : "--", priceTone(totalNetPnl), "目前持股估算賣出 + 已賣出扣費後"],
     ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
     ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
     ["獲利 / 虧損", `${profitable.length} / ${losing.length} 檔`, ""],
     ["最大獲利股", best ? holdingSummaryLabel(best) : "--", "price-up"],
     ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""],
-    ["已實現獲利", sellHistory.length ? formatCurrency(realizedPnl) : "--", priceTone(realizedPnl)],
-    ["已實現稅後", sellHistory.length ? formatCurrency(realizedNetPnl) : "--", priceTone(realizedNetPnl)],
+    ["已賣出毛損益", sellHistory.length ? formatCurrency(realizedPnl) : "--", priceTone(realizedPnl), "賣出金額 - 當初買進成本"],
+    ["已賣出扣費後", sellHistory.length ? formatCurrency(realizedNetPnl) : "--", priceTone(realizedNetPnl), "毛損益 - 手續費 - 證交稅"],
     ["累積總獲利", totalPnl === null && !sellHistory.length ? "--" : formatCurrency(cumulativePnl), priceTone(cumulativePnl)]
   ];
 
   els.holdingOverview.innerHTML = `
     <div class="holding-overview-grid">
-      ${cards.map(([label, value, tone]) => `
+      ${cards.map(([label, value, tone, helper]) => `
         <article>
           <span>${escapeHtml(label)}</span>
           <strong class="${escapeHtml(tone)}">${value}</strong>
+          ${helper ? `<small>${escapeHtml(helper)}</small>` : ""}
         </article>
       `).join("")}
     </div>
@@ -3194,7 +3195,7 @@ function sellHolding(item, stock) {
     return;
   }
   if (!Number.isFinite(cost) || cost <= 0) {
-    alert("這檔持股沒有買進成本，先補上成本後才能計算已實現獲利。");
+    alert("這檔持股沒有買進成本，先補上成本後才能計算賣出損益。");
     return;
   }
 
@@ -3374,7 +3375,7 @@ function renderHoldingTradeSummary(holdings) {
           <span role="cell" data-label="買 / 賣">${row.buyCount} / ${row.sellCount} 筆</span>
           <strong role="cell" data-label="買賣至今損益" class="${priceTone(row.cumulativePnl)}">
             ${formatCurrency(row.cumulativePnl)}
-            <small class="${priceTone(row.netCumulativePnl)}">稅後 ${formatCurrency(row.netCumulativePnl)}</small>
+            <small class="${priceTone(row.netCumulativePnl)}">扣費後 ${formatCurrency(row.netCumulativePnl)}</small>
           </strong>
         </div>
       `).join("")}
@@ -3399,7 +3400,7 @@ function renderHoldingTradeSummary(holdings) {
           <strong class="${priceTone(totalPnl)}">${formatCurrency(totalPnl)}</strong>
         </div>
         <div class="trade-total-item">
-          <span>稅後純盈虧</span>
+          <span>扣費後總盈虧</span>
           <strong class="${priceTone(totalNetPnl)}">${formatCurrency(totalNetPnl)}</strong>
         </div>
       </div>
@@ -3463,19 +3464,19 @@ function renderSellHistory() {
     els.realizedOverview.innerHTML = `
     <div class="realized-overview-grid">
       <article>
-        <span>已實現損益</span>
+        <span>已賣出毛損益</span>
         <strong class="${priceTone(totalProfit)}">${sellHistory.length ? formatCurrency(totalProfit) : "--"}</strong>
       </article>
       <article>
-        <span>已實現稅後</span>
+        <span>已賣出扣費後</span>
         <strong class="${priceTone(totalNetProfit)}">${sellHistory.length ? formatCurrency(totalNetProfit) : "--"}</strong>
       </article>
       <article>
-        <span>未實現損益</span>
+        <span>持股帳面損益</span>
         <strong class="${priceTone(unrealizedProfit)}">${buyRows.length ? formatCurrency(unrealizedProfit) : "--"}</strong>
       </article>
       <article>
-        <span>未實現稅後</span>
+        <span>持股扣費後估算</span>
         <strong class="${priceTone(unrealizedNetProfit)}">${buyRows.length ? formatCurrency(unrealizedNetProfit) : "--"}</strong>
       </article>
       <article>
@@ -3518,9 +3519,9 @@ function renderSellHistory() {
           <span>${escapeHtml(formatDateOnly(item.date))} ｜ 買進 ${money(item.shares)} 股 ｜ 買進價 ${money(item.buyCost)} ｜ 現價 ${Number.isFinite(item.currentPrice) ? money(item.currentPrice) : "--"}</span>
         </div>
         <div class="sell-history-profit">
-          <span>未實現</span>
+          <span>持股中</span>
           <strong class="${priceTone(profit)}">${Number.isFinite(profit) ? formatCurrency(profit) : "--"}</strong>
-          <small>${Number.isFinite(netProfit) ? `稅後 ${formatCurrency(netProfit)}` : "--"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+          <small>${Number.isFinite(netProfit) ? `扣費後 ${formatCurrency(netProfit)}` : "--"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
         </div>
         <span class="trade-badge buy">買進</span>
       `;
@@ -3531,9 +3532,9 @@ function renderSellHistory() {
           <span>${escapeHtml(formatDateOnly(item.soldAt))} ｜ 賣出 ${money(item.shares)} 股 ｜ 均買 ${money(item.buyCost)} ｜ 賣出 ${money(item.sellPrice)} ｜ 金額 ${compactMoney(number(item.soldValue) || number(item.sellPrice) * number(item.shares))}</span>
         </div>
         <div class="sell-history-profit">
-          <span>已實現</span>
+          <span>已賣出</span>
           <strong class="${priceTone(profit)}">${formatCurrency(profit)}</strong>
-          <small>${Number.isFinite(netProfit) ? `稅後 ${formatCurrency(netProfit)}` : "--"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+          <small>${Number.isFinite(netProfit) ? `扣費後 ${formatCurrency(netProfit)}` : "--"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
         </div>
         <button class="history-delete" type="button" aria-label="刪除歷史紀錄">刪除</button>
       `;
@@ -3586,7 +3587,7 @@ function renderHoldings(holdings) {
         <div class="metric"><span>今日波動</span><strong class="${priceTone(todayPnl)}">${todayPnl === null ? "--" : compactMoney(todayPnl)}</strong></div>
         <div class="metric"><span>帳面損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>估計交易成本</span><strong>${Number.isFinite(netPnl) ? compactMoney(tradingCost) : "--"}</strong></div>
-        <div class="metric"><span>稅後純盈虧</span><strong class="${priceTone(netPnl)}">${netPnl === null ? "--" : compactMoney(netPnl)}</strong></div>
+        <div class="metric"><span>扣費後估算</span><strong class="${priceTone(netPnl)}">${netPnl === null ? "--" : compactMoney(netPnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
         <div class="metric"><span>殖利率</span><strong>${val?.yieldRate ?? "--"}%</strong></div>
         <div class="metric"><span>估年股息</span><strong>${yearlyDividend === null ? "--" : compactMoney(yearlyDividend)}</strong></div>
