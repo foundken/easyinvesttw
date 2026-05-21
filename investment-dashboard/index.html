@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260521-index-candles-v1">
+  <link rel="stylesheet" href="styles.css?v=20260521-concept-nav-v1">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -18,13 +18,18 @@
     </button>
   </div>
 
-  <nav class="mobile-section-nav" aria-label="手機快速導覽">
+  <nav class="mobile-section-nav" aria-label="分類快速導覽">
     <button type="button" data-target="#todayPanel">今日</button>
+    <button type="button" data-target="#managePanel">新增</button>
     <button type="button" data-target="#holdingsPanel">存股</button>
     <button type="button" data-target="#historyPanel">紀錄</button>
     <button type="button" data-target="#marketTape">大盤</button>
-    <button type="button" data-target="#managePanel">新增</button>
+    <button type="button" data-target="#conceptPanel">概念</button>
+    <button type="button" data-target="#trendPanel">趨勢</button>
+    <button type="button" data-target="#watchPanel">觀察</button>
+    <button type="button" data-target="#preflightPanel">檢查</button>
   </nav>
+  <button id="backToTopButton" class="back-to-top" type="button" aria-label="回到最上方">↑</button>
 
   <main class="shell">
     <section id="todayPanel" class="today-pnl" aria-label="今日波動">
@@ -375,6 +380,25 @@
       </div>
     </section>
 
+    <section id="conceptPanel" class="panel concept-panel" aria-label="概念股排行榜">
+      <div class="panel-head">
+        <h2>概念股排行榜</h2>
+        <span>熱門族群表現統整</span>
+      </div>
+      <div class="concept-toolbar">
+        <span class="concept-market-chip">台股</span>
+        <div class="concept-mode-tabs" role="tablist" aria-label="概念股表現排行">
+          <button class="concept-mode-tab active" type="button" data-concept-mode="leading" role="tab" aria-selected="true">領先</button>
+          <button class="concept-mode-tab" type="button" data-concept-mode="lagging" role="tab" aria-selected="false">落後</button>
+        </div>
+      </div>
+      <div class="concept-layout">
+        <div id="conceptList" class="concept-list" aria-label="概念股主題清單"></div>
+        <div id="conceptDetail" class="concept-detail"></div>
+      </div>
+      <p id="conceptStatus" class="last-updated">概念股：等待資料整理</p>
+    </section>
+
     <section id="trendPanel" class="panel trend-panel advanced-section" aria-label="近期大盤漲勢集中族群">
       <div class="panel-head">
         <h2>近期大盤漲勢集中族群</h2>
@@ -407,7 +431,7 @@
     </section>
 
     <section class="layout">
-      <section class="panel" aria-label="我的追蹤">
+      <section id="watchPanel" class="panel" aria-label="我的追蹤">
         <div class="panel-head">
           <h2>觀察名單</h2>
           <span>還沒買，先觀察的股票</span>
@@ -513,7 +537,7 @@
       </section>
     </section>
 
-    <section class="panel preflight-panel advanced-section" aria-label="下單前檢查表">
+    <section id="preflightPanel" class="panel preflight-panel advanced-section" aria-label="下單前檢查表">
       <div class="panel-head">
         <h2>下單前檢查表</h2>
         <span>防止新手追高或重押</span>
@@ -645,6 +669,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260521-index-candles-v1"></script>
+  <script src="app.js?v=20260521-concept-nav-v1"></script>
 </body>
 </html>

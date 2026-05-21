@@ -148,6 +148,10 @@ const els = {
   trendAiTitle: document.querySelector("#trendAiTitle"),
   trendAiText: document.querySelector("#trendAiText"),
   trendStatus: document.querySelector("#trendStatus"),
+  conceptList: document.querySelector("#conceptList"),
+  conceptDetail: document.querySelector("#conceptDetail"),
+  conceptStatus: document.querySelector("#conceptStatus"),
+  conceptModeTabs: document.querySelectorAll(".concept-mode-tab"),
   smallCapList: document.querySelector("#smallCapList"),
   smallCapAiTitle: document.querySelector("#smallCapAiTitle"),
   smallCapAiText: document.querySelector("#smallCapAiText"),
@@ -175,6 +179,7 @@ const els = {
   viewModeLabel: document.querySelector("#viewModeLabel"),
   themeToggle: document.querySelector("#themeToggle"),
   themeLabel: document.querySelector("#themeLabel"),
+  backToTop: document.querySelector("#backToTopButton"),
   googleSignIn: document.querySelector("#googleSignInButton"),
   authDivider: document.querySelector(".auth-divider"),
   quickAddForm: document.querySelector("#quickAddForm"),
@@ -224,12 +229,28 @@ let latestTrendItems = [];
 let smallCapRequestKey = "";
 let latestSmallCapItems = [];
 let selectedSmallCapCode = "";
+let selectedConceptId = "";
+let selectedConceptMode = "leading";
 
 const TIER_CONFIG = {
   small: { label: "小型股", min: 0, max: 100, listEl: "smallCapList", titleEl: "smallCapAiTitle", textEl: "smallCapAiText", statusEl: "smallCapStatus", emptyText: "百元以下" },
   mid:   { label: "中型股", min: 100, max: 300, listEl: "midCapList", titleEl: "midCapAiTitle", textEl: "midCapAiText", statusEl: "midCapStatus", emptyText: "100–300 元" },
   large: { label: "大型股", min: 300, max: Infinity, listEl: "largeCapList", titleEl: "largeCapAiTitle", textEl: "largeCapAiText", statusEl: "largeCapStatus", emptyText: "300 元以上" }
 };
+const CONCEPT_GROUPS = [
+  { id: "ai-server", name: "AI 伺服器", codes: ["2317", "2324", "2356", "2376", "2382", "3231", "3706", "6669", "8210"], pattern: /AI|伺服器|廣達|緯創|緯穎|英業達|仁寶|鴻海|技嘉|華碩|神達|勤誠|奇鋐/ },
+  { id: "semiconductor", name: "半導體", codes: ["2330", "2303", "2454", "3711", "3661", "3443", "3034", "2379", "3529", "6770"], pattern: /半導體|台積|聯電|聯發科|日月光|世芯|創意|瑞昱|聯詠|力積|矽|封測|IC/ },
+  { id: "advanced-packaging", name: "先進封裝", codes: ["2330", "3711", "3450", "6196", "2449", "3260", "6515"], pattern: /先進封裝|CoWoS|封裝|日月光|台積|志聖|精測|京元電|旺矽/ },
+  { id: "thermal", name: "散熱", codes: ["3017", "3324", "3653", "6230", "2421", "3338"], pattern: /散熱|奇鋐|雙鴻|健策|超眾|建準|泰碩/ },
+  { id: "pcb", name: "PCB", codes: ["2368", "3037", "3189", "4958", "6191", "6274", "8046"], pattern: /PCB|銅箔|載板|臻鼎|欣興|景碩|南電|台燿|金像電|聯茂|華通/ },
+  { id: "optical", name: "光通訊", codes: ["3081", "3163", "4908", "4979", "4977", "3363"], pattern: /光通訊|光纖|波若威|聯亞|前鼎|眾達|華星光|光環/ },
+  { id: "robotics", name: "機器人", codes: ["2049", "2308", "2374", "2359", "4566", "4571", "6125"], pattern: /機器人|自動化|上銀|台達電|佳能|所羅門|全球傳動|研華|廣明/ },
+  { id: "apple", name: "蘋概", codes: ["2317", "2474", "3008", "4938", "2354", "2392", "3406"], pattern: /蘋概|蘋果|鴻海|可成|大立光|和碩|鴻準|正崴|玉晶光/ },
+  { id: "finance", name: "金融", codes: ["2880", "2881", "2882", "2883", "2884", "2885", "2886", "2887", "2888", "2890", "2891", "2892"], pattern: /金融|金控|銀行|保險|富邦|國泰|中信金|玉山|元大金|兆豐|第一金|合庫/ },
+  { id: "shipping", name: "航運", codes: ["2603", "2609", "2615", "2618", "2634", "2610"], pattern: /航運|貨櫃|長榮|陽明|萬海|華航|航空|台驊/ },
+  { id: "biotech", name: "生技醫療", codes: ["1795", "1760", "4743", "6446", "4147", "6472"], pattern: /生技|醫療|藥|保瑞|藥華|美時|合一|台耀|神隆/ },
+  { id: "green-energy", name: "綠能電力", codes: ["1504", "1513", "1519", "1609", "6443", "6806"], pattern: /綠能|電力|重電|士電|中興電|華城|大亞|太陽能|風電|儲能/ }
+];
 const tierState = {
   small: { requestKey: "", items: [], selected: "" },
   mid:   { requestKey: "", items: [], selected: "" },
@@ -1135,6 +1156,27 @@ function scrollToDashboardTarget(selector) {
   }
 }
 
+function updateScrollUi() {
+  const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+  els.backToTop?.classList.toggle("is-visible", scrollTop > 420);
+  const navButtons = Array.from(document.querySelectorAll(".mobile-section-nav button"));
+  if (!navButtons.length) return;
+  const navEntries = navButtons.map((button) => ({
+    button,
+    target: document.querySelector(button.dataset.target)
+  }));
+  navEntries.forEach(({ button, target }) => {
+    button.hidden = !(target && target.offsetParent !== null);
+  });
+  const visibleTargets = navEntries.filter(({ target }) => target && target.offsetParent !== null);
+  const active = visibleTargets
+    .filter(({ target }) => target.getBoundingClientRect().top <= 150)
+    .at(-1) || visibleTargets[0];
+  navButtons.forEach((button) => {
+    button.classList.toggle("is-active", Boolean(active) && button === active.button);
+  });
+}
+
 function getStock(code) {
   return market.daily.find((item) => item.code === code);
 }
@@ -1285,6 +1327,7 @@ function render() {
   renderMarketIndex();
   renderInstitutional();
   renderMarketThemes(ranking);
+  renderConceptPanel();
   renderTrendPanel(trendRanking);
   renderSmallCapGuide();
 }
@@ -1498,6 +1541,68 @@ function operationScenario(item, stock, val, rev, inst, pnlRate = null) {
   if (decision.label === "等回檔") return "若還沒買：先等拉回或整理，避免看到強勢就追。";
   if (decision.label === "風險偏高") return "若還沒買：暫不追，等法人、營收或價格結構轉強。";
   return "若還沒買：先放觀察名單，等訊號一致。";
+}
+
+function tradingPlan(item, stock, val, rev, inst, pnlRate = null) {
+  const decision = stockDecision(scoreStock(stock, val, rev), stock, val, rev, inst);
+  if (!stock || !Number.isFinite(number(stock.close))) {
+    return {
+      tone: "warn",
+      headline: "資料不足，先不判斷買賣點",
+      buy: "等即時價、今日高低與基本資料補齊",
+      stop: "沒有價格就不設定停損",
+      trim: "沒有價格就不設定停利"
+    };
+  }
+
+  const close = number(stock.close);
+  const high = number(stock.high);
+  const low = number(stock.low);
+  const previousClose = number(stock.previousClose);
+  const cost = averageHoldingCost(item);
+  const isHolding = (item?.type || "watch") === "holding";
+  const support = Number.isFinite(low) ? low : Number.isFinite(previousClose) ? previousClose : close * 0.97;
+  const resistance = Number.isFinite(high) ? high : close * 1.03;
+  const stopLine = isHolding && Number.isFinite(cost) && pnlRate >= 15
+    ? Math.max(cost * 1.05, support * 0.98, close * 0.92)
+    : Number.isFinite(cost) && cost > 0
+      ? cost * 0.92
+      : support * 0.98;
+  const trimLine = Number.isFinite(cost) && cost > 0
+    ? Math.max(cost * 1.15, resistance)
+    : resistance * 1.02;
+  const buy = decision.label === "風險偏高"
+    ? `暫不買；等重新站回 ${money(resistance)} 再觀察`
+    : `接近 ${money(support)} 不破，或放量站上 ${money(resistance)}`;
+  const stop = `跌破 ${money(stopLine)} 先檢查，不用急著攤平`;
+  const trim = `接近 ${money(trimLine)} 或出現爆量長上影，先減碼`;
+
+  if (decision.label === "風險偏高") {
+    return { tone: "bad", headline: "先防守，不急著買進", buy, stop, trim };
+  }
+  if (isHolding && Number.isFinite(pnlRate) && pnlRate >= 15) {
+    return { tone: "good", headline: "已有獲利，改用移動停利", buy: "加碼只等回檔，不追高", stop, trim };
+  }
+  if (decision.label === "可觀察") {
+    return { tone: "good", headline: "可觀察，等回檔或突破確認", buy, stop, trim };
+  }
+  return { tone: "warn", headline: "訊號未齊，先等價格確認", buy, stop, trim };
+}
+
+function tradingPlanMarkup(plan) {
+  return `
+    <div class="trade-plan ${escapeHtml(plan.tone)}">
+      <div class="trade-plan-head">
+        <span>買賣點參考</span>
+        <strong>${escapeHtml(plan.headline)}</strong>
+      </div>
+      <div class="trade-plan-grid">
+        <div><span>買進觀察</span><strong>${escapeHtml(plan.buy)}</strong></div>
+        <div><span>停損線</span><strong>${escapeHtml(plan.stop)}</strong></div>
+        <div><span>停利/減碼</span><strong>${escapeHtml(plan.trim)}</strong></div>
+      </div>
+    </div>
+  `;
 }
 
 function dataWarning(val, rev, inst) {
@@ -1969,6 +2074,170 @@ function inferSector(stock) {
   if (/藥|醫|生技|保瑞|藥華/.test(text)) return "生技醫療";
   if (/0050|0056|ETF|元大|富邦台|國泰永續/.test(text)) return "ETF";
   return "其他";
+}
+
+function uniqueDailyStocks() {
+  const map = new Map();
+  market.daily.forEach((stock) => {
+    if (!stock?.code || !Number.isFinite(number(stock.close))) return;
+    const previous = map.get(stock.code);
+    if (!previous || (number(stock.value) || 0) > (number(previous.value) || 0)) {
+      map.set(stock.code, stock);
+    }
+  });
+  return Array.from(map.values());
+}
+
+function conceptMatches(stock, concept) {
+  const text = `${stock.code || ""} ${stock.name || ""}`;
+  return concept.codes.includes(String(stock.code)) || concept.pattern.test(text);
+}
+
+function stockConceptRow(stock) {
+  return {
+    stock,
+    change: stockTodayChange(stock),
+    changePercent: stockTodayChangePercent(stock),
+    value: number(stock.value) || 0
+  };
+}
+
+function buildConceptGroups() {
+  const stocks = uniqueDailyStocks();
+  return CONCEPT_GROUPS.map((concept) => {
+    const rows = stocks
+      .filter((stock) => conceptMatches(stock, concept))
+      .map(stockConceptRow);
+    if (!rows.length) return null;
+
+    const changedRows = rows.filter((row) => Number.isFinite(row.changePercent));
+    const avgChange = changedRows.length
+      ? changedRows.reduce((sum, row) => sum + row.changePercent, 0) / changedRows.length
+      : 0;
+    const upCount = changedRows.filter((row) => row.changePercent > 0).length;
+    const downCount = changedRows.filter((row) => row.changePercent < 0).length;
+    const totalValue = rows.reduce((sum, row) => sum + row.value, 0);
+    const sortedByChange = changedRows.slice().sort((a, b) => b.changePercent - a.changePercent);
+    return {
+      ...concept,
+      rows,
+      count: rows.length,
+      avgChange,
+      upCount,
+      downCount,
+      totalValue,
+      leader: sortedByChange[0] || rows[0],
+      laggard: sortedByChange.at(-1) || rows[0]
+    };
+  }).filter(Boolean).sort((a, b) => {
+    if (selectedConceptMode === "lagging") {
+      return a.avgChange - b.avgChange || b.downCount - a.downCount || b.totalValue - a.totalValue;
+    }
+    return b.avgChange - a.avgChange || b.upCount - a.upCount || b.totalValue - a.totalValue;
+  });
+}
+
+function renderConceptPanel() {
+  if (!els.conceptList || !els.conceptDetail) return;
+  const groups = buildConceptGroups();
+  els.conceptModeTabs.forEach((tab) => {
+    const active = tab.dataset.conceptMode === selectedConceptMode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+
+  if (!groups.length) {
+    selectedConceptId = "";
+    els.conceptList.innerHTML = '<p class="empty">等待台股資料更新後，這裡會顯示概念股主題。</p>';
+    els.conceptDetail.innerHTML = '<p class="empty">目前沒有足夠資料可整理概念股排行。</p>';
+    els.conceptStatus.textContent = "概念股：資料不足";
+    return;
+  }
+
+  if (!selectedConceptId || !groups.some((group) => group.id === selectedConceptId)) {
+    selectedConceptId = groups[0].id;
+  }
+  const selected = groups.find((group) => group.id === selectedConceptId) || groups[0];
+
+  els.conceptList.innerHTML = groups.map((group) => {
+    const active = group.id === selected.id;
+    return `
+      <button class="concept-topic ${active ? "active" : ""}" type="button" data-concept-id="${escapeAttribute(group.id)}" aria-pressed="${active ? "true" : "false"}">
+        <strong>${escapeHtml(group.name)}</strong>
+        <span>${group.count} 檔 ｜ ${group.upCount} 漲 ${group.downCount} 跌</span>
+        <small class="${priceTone(group.avgChange)}">${percent(group.avgChange)}</small>
+      </button>
+    `;
+  }).join("");
+
+  els.conceptList.querySelectorAll("[data-concept-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedConceptId = button.dataset.conceptId;
+      renderConceptPanel();
+    });
+  });
+
+  renderConceptDetail(selected);
+  const updatedAt = market.updatedAt ? formatUpdateTime(market.updatedAt) : "尚未同步";
+  els.conceptStatus.textContent = `概念股：以 ${uniqueDailyStocks().length} 檔台股資料整理，最後更新 ${updatedAt}`;
+}
+
+function renderConceptDetail(group) {
+  const rankedRows = group.rows.slice().sort((a, b) => {
+    if (selectedConceptMode === "lagging") {
+      return (a.changePercent ?? 0) - (b.changePercent ?? 0) || b.value - a.value;
+    }
+    return (b.changePercent ?? 0) - (a.changePercent ?? 0) || b.value - a.value;
+  });
+  const rows = rankedRows.slice(0, 8);
+  const leaderText = group.leader ? `${group.leader.stock.code} ${group.leader.stock.name}` : "--";
+  const laggardText = group.laggard ? `${group.laggard.stock.code} ${group.laggard.stock.name}` : "--";
+  const modeText = selectedConceptMode === "lagging" ? "落後" : "領先";
+
+  els.conceptDetail.innerHTML = `
+    <div class="concept-detail-head">
+      <div>
+        <span>目前主題</span>
+        <strong>${escapeHtml(group.name)}</strong>
+        <p>${modeText}排行依今日漲跌幅排序，搭配成交金額看資金是否真的集中。</p>
+      </div>
+      <div class="concept-score">
+        <span>平均漲跌</span>
+        <strong class="${priceTone(group.avgChange)}">${percent(group.avgChange)}</strong>
+      </div>
+    </div>
+    <div class="concept-stat-grid">
+      <article><span>上漲 / 下跌</span><strong>${group.upCount} / ${group.downCount} 檔</strong></article>
+      <article><span>成交金額</span><strong>${compactMoney(group.totalValue)}</strong></article>
+      <article><span>領先股</span><strong>${escapeHtml(leaderText)}</strong></article>
+      <article><span>落後股</span><strong>${escapeHtml(laggardText)}</strong></article>
+    </div>
+    <div class="concept-rank-list">
+      ${rows.map((row, index) => `
+        <button type="button" class="concept-rank-row" data-stock-code="${escapeAttribute(row.stock.code)}">
+          <span>${index + 1}</span>
+          <div>
+            <strong>${escapeHtml(row.stock.name)} ${escapeHtml(row.stock.code)}</strong>
+            <small>成交 ${compactMoney(row.value)} ｜ ${stockQuoteStamp(row.stock)}</small>
+          </div>
+          <em class="${priceTone(row.changePercent)}">${signedMoney(row.change)} / ${percent(row.changePercent)}</em>
+        </button>
+      `).join("")}
+    </div>
+  `;
+
+  els.conceptDetail.querySelectorAll("[data-stock-code]").forEach((button) => {
+    button.addEventListener("click", () => openConceptStock(button.dataset.stockCode));
+  });
+}
+
+function openConceptStock(code) {
+  const stock = getStock(code);
+  if (!stock) return;
+  const item = watchList.find((entry) => entry.code === stock.code) || { code: stock.code, cost: "", shares: "", type: "watch" };
+  const val = getValuation(stock.code);
+  const rev = getRevenue(stock.code);
+  openStockDetail({ item, stock, val, rev, signal: scoreStock(stock, val, rev) });
 }
 
 async function renderTrendPanel(ranking) {
@@ -3559,6 +3828,7 @@ function renderHoldings(holdings) {
     const dayLow = number(stock?.low);
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
+    const plan = tradingPlan(item, stock, val, rev, inst, pnlRate);
     const warning = dataWarning(val, rev, inst);
     const card = document.createElement("article");
     card.className = "holding-card";
@@ -3599,6 +3869,7 @@ function renderHoldings(holdings) {
         <div class="metric"><span>狀態</span><strong><span class="pill ${decision.tone}">${decision.label}</span></strong></div>
         <div class="metric"><span>風險等級</span><strong><span class="pill ${risk.tone}">${risk.label}</span></strong></div>
       </div>
+      ${tradingPlanMarkup(plan)}
       ${lots.length ? `
         <div class="holding-lot-list" aria-label="買進批次">
           <div class="holding-lot-head">
@@ -3729,6 +4000,7 @@ function renderWatchList(tracked) {
     const todayChangePercent = stockTodayChangePercent(stock);
     const decision = stockDecision(signal, stock, val, rev, inst);
     const risk = riskLevel(stock, val, rev, inst, pnlRate);
+    const plan = tradingPlan(item, stock, val, rev, inst, pnlRate);
     const warning = dataWarning(val, rev, inst);
     const card = document.createElement("article");
     card.className = "stock-card";
@@ -3747,6 +4019,7 @@ function renderWatchList(tracked) {
         <div class="metric"><span>持有損益</span><strong class="${pnl >= 0 ? "price-up" : "price-down"}">${pnl === null ? "--" : compactMoney(pnl)}</strong></div>
         <div class="metric"><span>損益率</span><strong class="${pnlRate >= 0 ? "price-up" : "price-down"}">${pnlRate === null ? "--" : percent(pnlRate)}</strong></div>
       </div>
+      ${tradingPlanMarkup(plan)}
       <p class="signal">${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning}</p>
       <p class="card-meta">本益比 ${val?.pe ?? "--"} ｜ 殖利率 ${val?.yieldRate ?? "--"}% ｜ 月營收年增 ${rev?.yoy ?? "--"}%</p>
     `;
@@ -3808,9 +4081,10 @@ async function openStockDetail(entry) {
   drawPriceChart(history);
 }
 
-function renderDetailConclusions({ stock, val, rev, inst, decision, risk, pnlRate, warning }) {
+function renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning }) {
   const strengths = [];
   const cautions = [];
+  const plan = tradingPlan(item, stock, val, rev, inst, pnlRate);
   if (rev?.yoy > 0) strengths.push(`營收年增 ${percent(rev.yoy)}`);
   if (inst?.total > 0) strengths.push(`法人買超 ${formatShareFlow(inst.total)}`);
   if (stock?.changePercent > 0) strengths.push(`今日上漲 ${percent(stock.changePercent)}`);
@@ -3824,6 +4098,7 @@ function renderDetailConclusions({ stock, val, rev, inst, decision, risk, pnlRat
 
   const rows = [
     ["目前狀態", `${decision.label}，風險 ${risk.label}`, decision.tone],
+    ["買賣點參考", plan.headline, plan.tone],
     ["最大優點", strengths[0] || "尚未看到明確優勢", strengths.length ? "good" : "warn"],
     ["最大風險", cautions[0] || "暫無明顯警訊", cautions.length ? "bad" : "good"]
   ];
@@ -4500,6 +4775,13 @@ els.groupCards.forEach((card) => {
     renderMarketIndex();
   });
 });
+els.conceptModeTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    selectedConceptMode = tab.dataset.conceptMode === "lagging" ? "lagging" : "leading";
+    selectedConceptId = "";
+    renderConceptPanel();
+  });
+});
 els.sectorThemeCard.addEventListener("click", openSectorDetail);
 els.sectorThemeCard.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
@@ -4541,6 +4823,7 @@ els.priceChart.addEventListener("pointermove", handleChartPointer);
 els.priceChart.addEventListener("mouseleave", clearChartHover);
 els.priceChart.addEventListener("pointerleave", clearChartHover);
 window.addEventListener("resize", redrawChart);
+window.addEventListener("scroll", updateScrollUi, { passive: true });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     window.clearTimeout(refreshTimer);
@@ -4594,6 +4877,7 @@ function applyViewMode(mode) {
     els.viewModeToggle.setAttribute("aria-pressed", next === "simple" ? "true" : "false");
   }
   try { localStorage.setItem(VIEW_MODE_KEY, next); } catch {}
+  requestAnimationFrame(updateScrollUi);
 }
 
 function initViewMode() {
@@ -4612,6 +4896,10 @@ function initViewMode() {
   document.querySelectorAll(".mobile-section-nav button").forEach((button) => {
     button.addEventListener("click", () => scrollToDashboardTarget(button.dataset.target));
   });
+  els.backToTop?.addEventListener("click", () => {
+    document.querySelector("#todayPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  updateScrollUi();
 }
 
 // ===== 主題切換（日間 / 夜間） =====
