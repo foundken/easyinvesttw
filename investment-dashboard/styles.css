@@ -504,6 +504,7 @@ button.concept-mode-tab.active {
 }
 
 button.concept-topic {
+  position: relative;
   display: grid;
   justify-items: start;
   min-height: 78px;
@@ -514,6 +515,7 @@ button.concept-topic {
   background: #fff;
   color: var(--muted);
   text-align: left;
+  touch-action: manipulation;
 }
 
 button.concept-topic:last-child {
@@ -534,6 +536,13 @@ button.concept-topic small {
 button.concept-topic.active {
   border-left: 4px solid #e34829;
   background: #fff0ed;
+}
+
+button.concept-topic:hover,
+button.concept-topic:focus-visible {
+  z-index: 1;
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(227, 72, 41, 0.28);
 }
 
 button.concept-topic.active strong {

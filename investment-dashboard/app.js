@@ -2170,16 +2170,15 @@ function renderConceptPanel() {
     `;
   }).join("");
 
-  els.conceptList.querySelectorAll("[data-concept-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      selectedConceptId = button.dataset.conceptId;
-      renderConceptPanel();
-    });
-  });
-
   renderConceptDetail(selected);
   const updatedAt = market.updatedAt ? formatUpdateTime(market.updatedAt) : "尚未同步";
   els.conceptStatus.textContent = `概念股：以 ${uniqueDailyStocks().length} 檔台股資料整理，最後更新 ${updatedAt}`;
+}
+
+function selectConceptTopic(conceptId) {
+  if (!conceptId || conceptId === selectedConceptId) return;
+  selectedConceptId = conceptId;
+  renderConceptPanel();
 }
 
 function renderConceptDetail(group) {
@@ -3920,7 +3919,7 @@ function renderNews() {
     };
   }).slice(0, 8);
   els.newsList.innerHTML = items.map((item) => `
-    <a class="news-card" href="${escapeAttribute(item.url)}" target="_blank" rel="noopener noreferrer">
+    <a class="news-card" href="${escapeUrlAttribute(item.url)}" target="_blank" rel="noopener noreferrer">
       <div>
         <strong>${escapeHtml(item.title)}</strong>
         <small>${escapeHtml(item.category || "市場")} ｜ ${escapeHtml(formatNewsDate(item.date))}</small>
@@ -3951,7 +3950,7 @@ function renderHoldingNews(tracked) {
   });
   const items = matched.length ? matched : fallback;
   els.holdingNewsList.innerHTML = items.length ? items.map((item) => `
-    <a class="news-card" href="${escapeAttribute(item.url)}" target="_blank" rel="noopener noreferrer">
+    <a class="news-card" href="${escapeUrlAttribute(item.url)}" target="_blank" rel="noopener noreferrer">
       <div>
         <strong>${escapeHtml(item.title)}</strong>
         <small>${escapeHtml(item.category || "持股")} ｜ ${escapeHtml(formatNewsDate(item.date))}</small>
@@ -3978,6 +3977,10 @@ function escapeHtml(value) {
 }
 
 function escapeAttribute(value) {
+  return escapeHtml(value ?? "");
+}
+
+function escapeUrlAttribute(value) {
   const text = String(value || "");
   if (!/^https?:\/\//.test(text)) return "https://www.cnyes.com/";
   return escapeHtml(text);
@@ -4781,6 +4784,11 @@ els.conceptModeTabs.forEach((tab) => {
     selectedConceptId = "";
     renderConceptPanel();
   });
+});
+els.conceptList?.addEventListener("click", (event) => {
+  const topic = event.target.closest("[data-concept-id]");
+  if (!topic || !els.conceptList.contains(topic)) return;
+  selectConceptTopic(topic.dataset.conceptId);
 });
 els.sectorThemeCard.addEventListener("click", openSectorDetail);
 els.sectorThemeCard.addEventListener("keydown", (event) => {
