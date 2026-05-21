@@ -2602,8 +2602,8 @@ function isCurrentMarketData(value) {
 function renderMarketIndex() {
   const marketData = selectedMarket === "us" ? (market.usIndex || sampleUsMarket) : { groups: (market.index?.groups || sampleIndex.groups), source: market.index?.source };
   const groups = selectedMarket === "us" ? marketData.groups : {
-    listed: market.index,
-    ...(market.index?.groups || {})
+    ...(market.index?.groups || {}),
+    listed: market.index
   };
   const fallbackGroups = selectedMarket === "us" ? sampleUsMarket.groups : {
     listed: null,
