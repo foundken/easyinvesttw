@@ -553,7 +553,7 @@ function twseQuotePrice(row) {
   if (Number.isFinite(lastMatched) && lastMatched > 0) return lastMatched;
   const bestAsk = firstTwseLevel(row.a);
   const bestBid = firstTwseLevel(row.b);
-  if (Number.isFinite(bestAsk) && Number.isFinite(bestBid)) return (bestAsk + bestBid) / 2;
+  // Do not average bid/ask here; the midpoint can create non-tick prices such as 14.675.
   if (Number.isFinite(bestBid)) return bestBid;
   if (Number.isFinite(bestAsk)) return bestAsk;
   return null;
