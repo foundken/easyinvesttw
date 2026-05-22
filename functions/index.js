@@ -40,6 +40,7 @@ let dashboardCache = null;
 let quoteCache = null;
 let monthlyRevenueCache = null;
 let companyNameCache = null;
+let twseSessionCookieCache = null;
 
 exports.market = onRequest({
   region: "asia-east1",
@@ -248,15 +249,47 @@ async function fetchTwseRealtimeSingleQuotes(symbols, timeoutMs) {
 async function fetchTwseRealtimeChannelBatch(channels, timeoutMs) {
   if (!channels.length) return [];
   const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(channels.join("|"))}&json=1&delay=0&_=${Date.now()}`;
+  const rows = await fetchTwseRealtimeRows(url, timeoutMs);
+  if (rows.length) return rows;
+  const cookie = await fetchTwseSessionCookie(Math.min(timeoutMs, 2200));
+  if (!cookie) return [];
+  return await fetchTwseRealtimeRows(url, Math.max(timeoutMs, 4500), cookie);
+}
+
+async function fetchTwseRealtimeRows(url, timeoutMs, cookie) {
   const response = await fetchWithTimeout(url, {
     headers: {
       ...twseHeaders(),
-      referer: "https://mis.twse.com.tw/stock/index.jsp"
+      referer: "https://mis.twse.com.tw/stock/index.jsp",
+      ...(cookie ? { cookie } : {})
     }
   }, timeoutMs).catch(() => null);
   if (!response?.ok) return [];
   const payload = await response.json().catch(() => ({}));
   return (payload.msgArray || []).map(normalizeTwseRealtimeRow).filter(Boolean);
+}
+
+async function fetchTwseSessionCookie(timeoutMs = 1800) {
+  const now = Date.now();
+  if (twseSessionCookieCache && now - twseSessionCookieCache.createdAt < 10 * 60 * 1000) {
+    return twseSessionCookieCache.cookie;
+  }
+  const response = await fetchWithTimeout("https://mis.twse.com.tw/stock/index.jsp", {
+    headers: twseHeaders()
+  }, timeoutMs).catch(() => null);
+  const cookie = cookieHeaderFromSetCookie(response?.headers?.get("set-cookie"));
+  if (cookie) {
+    twseSessionCookieCache = { cookie, createdAt: now };
+  }
+  return cookie;
+}
+
+function cookieHeaderFromSetCookie(setCookie) {
+  return String(setCookie || "")
+    .split(/,\s*/)
+    .map((part) => part.split(";")[0]?.trim())
+    .filter((part) => part && part.includes("="))
+    .join("; ");
 }
 
 async function fetchYahooQuotes(symbols) {
@@ -365,6 +398,7 @@ function hasChineseText(value) {
 function mergeRealtimePayloads(primary, preferred) {
   const map = new Map();
   [...(primary || []), ...(preferred || [])].forEach((quote) => {
+    if (!isUsableRealtimeQuote(quote)) return;
     const symbol = String(quote.symbol || quote.code || "").trim();
     if (!symbol) return;
     const current = map.get(symbol);
@@ -402,6 +436,15 @@ function quoteTimestamp(quote) {
   if (typeof value === "number") return value > 10000000000000 ? value / 1000 : value;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isUsableRealtimeQuote(quote) {
+  if (!quote) return false;
+  if (!isTwMarketOpen()) return true;
+  if (quote.source === "TWSE_PREVIOUS") return false;
+  const timestamp = quoteTimestamp(quote);
+  if (!Number.isFinite(timestamp)) return false;
+  return taipeiDateFromTimestamp(timestamp) === taipeiDate();
 }
 
 function localizeRealtimeNames(rows = [], nameMap = new Map()) {
@@ -1170,7 +1213,10 @@ function decodeHtml(value) {
 }
 
 function taipeiDate(daysAgo = 0) {
-  const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+  return taipeiDateKey(new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000));
+}
+
+function taipeiDateKey(date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
     year: "numeric",
@@ -1179,6 +1225,29 @@ function taipeiDate(daysAgo = 0) {
   }).formatToParts(date);
   const get = (type) => parts.find((part) => part.type === type).value;
   return `${get("year")}${get("month")}${get("day")}`;
+}
+
+function taipeiDateFromTimestamp(value) {
+  const timestamp = typeof value === "number" ? value : Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  return taipeiDateKey(new Date(timestamp));
+}
+
+function isTwMarketOpen(date = new Date()) {
+  const taipeiParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const get = (type) => taipeiParts.find((part) => part.type === type)?.value;
+  const weekday = get("weekday");
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  const minutes = hour * 60 + minute;
+  return minutes >= 9 * 60 && minutes <= 13 * 60 + 35;
 }
 
 function recentTaipeiDates(days) {

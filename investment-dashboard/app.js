@@ -621,12 +621,14 @@ function tradingCostNote() {
 }
 
 function stockPriceLabel(stock) {
+  if (isDelayedMarketQuote(stock)) return "延遲價";
   return stock?.realtime ? "即時價" : "收盤";
 }
 
 function stockQuoteStamp(stock) {
   if (!stock) return "資料未連線";
-  const source = stock.source ? String(stock.source) : stock.realtime ? "即時資料" : "收盤資料";
+  const rawSource = stock.source ? String(stock.source) : stock.realtime ? "即時資料" : "收盤資料";
+  const source = isDelayedMarketQuote(stock) ? `${rawSource} 延遲報價` : rawSource;
   const timestamp = timestampMs(stock.quoteTime);
   const time = timestamp ? formatUpdateTime(timestamp) : "";
   const lagMs = timestamp ? Date.now() - timestamp : null;
@@ -636,11 +638,39 @@ function stockQuoteStamp(stock) {
   return time ? `${source} ｜ ${time}${lagText}` : source;
 }
 
+function isDelayedMarketQuote(stock) {
+  if (!stock?.realtime || !isTwMarketOpen()) return false;
+  const timestamp = timestampMs(stock.quoteTime);
+  return Number.isFinite(timestamp) && Date.now() - timestamp > 120000;
+}
+
 function timestampMs(value) {
   if (!value) return null;
   if (typeof value === "number") return value > 10000000000000 ? value / 1000 : value;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function taipeiDateKey(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return `${get("year")}${get("month")}${get("day")}`;
+}
+
+function isUsableRealtimeQuote(quote) {
+  if (!quote?.realtime) return true;
+  if (!isTwMarketOpen()) return true;
+  if (quote.source === "TWSE_PREVIOUS") return false;
+  const timestamp = timestampMs(quote.quoteTime);
+  if (!timestamp) return false;
+  return taipeiDateKey(timestamp) === taipeiDateKey();
 }
 
 function stockTodayChange(stock) {
@@ -941,10 +971,11 @@ function preferLocalStockName(currentName, quoteName, code) {
 }
 
 function mergeRealtimeQuotes(daily, realtime) {
-  if (!realtime.length) return daily;
+  const usableRealtime = realtime.filter(isUsableRealtimeQuote);
+  if (!usableRealtime.length) return daily;
   const map = new Map(daily.map((item) => [item.code, item]));
 
-  realtime.forEach((quote) => {
+  usableRealtime.forEach((quote) => {
     const current = map.get(quote.code) || {};
     map.set(quote.code, {
       ...current,
