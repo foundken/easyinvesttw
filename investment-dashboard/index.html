@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260522-intraday-source-v1">
+  <link rel="stylesheet" href="styles.css?v=20260522-chinese-stock-input-v1">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -122,8 +122,8 @@
     <section id="managePanel" class="control-panel" aria-label="管理持股">
       <form id="watchForm" autocomplete="off">
         <label>
-          <span>股票代號</span>
-          <input id="symbolInput" inputmode="numeric" placeholder="例如：2330" required>
+          <span>股票代號 / 名稱</span>
+          <input id="symbolInput" inputmode="search" placeholder="例如：2330 或 台積電" required>
         </label>
         <label>
           <span>買進價</span>
@@ -669,6 +669,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260522-intraday-source-v1"></script>
+  <script src="app.js?v=20260522-chinese-stock-input-v1"></script>
 </body>
 </html>

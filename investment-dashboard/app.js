@@ -733,6 +733,27 @@ function stockDisplayName(item) {
   return stock?.name ? `${stock.name} ${item.code}` : item.name ? `${item.name} ${item.code}` : item.code;
 }
 
+async function resolveStockInput(input) {
+  const query = String(input || "").trim();
+  if (!query) return null;
+  const stocks = await getAvailableStocks();
+  const lowerQuery = query.toLowerCase();
+  const exact = stocks.find((stock) => stock.code === query || stock.name === query);
+  const partial = stocks.find((stock) =>
+    stock.code.includes(query) || stock.name.toLowerCase().includes(lowerQuery)
+  );
+  const match = exact || partial;
+  if (match) {
+    return {
+      code: match.code,
+      name: match.name || stockNameMap[match.code] || ""
+    };
+  }
+  return /^\d{4,6}$/.test(query)
+    ? { code: query, name: stockNameMap[query] || "" }
+    : null;
+}
+
 function roundPrice(value) {
   return Number.isFinite(value) ? Math.round(value * 10000) / 10000 : "";
 }
@@ -798,7 +819,7 @@ function createBuyLot(cost, shares) {
   });
 }
 
-function upsertWatchItem({ code, cost, shares, type }) {
+function upsertWatchItem({ code, name, cost, shares, type }) {
   const cleanType = type || "holding";
   const buyCost = number(cost);
   const buyShares = number(shares);
@@ -809,6 +830,7 @@ function upsertWatchItem({ code, cost, shares, type }) {
 
   if (existing) {
     existing.type = cleanType;
+    if (name) existing.name = name;
     if (canCreateLot) {
       existing.lots = holdingLots(existing);
       existing.lots.push(createBuyLot(buyCost, buyShares));
@@ -821,7 +843,7 @@ function upsertWatchItem({ code, cost, shares, type }) {
     return existing;
   }
 
-  const item = { code, cost, shares, type: cleanType };
+  const item = { code, name: name || "", cost, shares, type: cleanType };
   if (canCreateLot) {
     item.lots = [createBuyLot(buyCost, buyShares)];
     syncHoldingTotals(item);
@@ -4717,19 +4739,20 @@ function renderQuickAddedStocks() {
 }
 
 if (els.quickAddForm) {
-  els.quickAddForm.addEventListener("submit", (event) => {
+  els.quickAddForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (cloudEnabled && !currentUser) {
       setAuthStatus("請先登入，持股資料才會同步到你的雲端帳號。", true);
       return;
     }
-    const code = els.quickSymbolInput.value.trim();
-    if (!/^\d{4,6}$/.test(code)) {
-      alert("請輸入正確的股票代號（4-6 碼數字）");
+    const stock = await resolveStockInput(els.quickSymbolInput.value);
+    if (!stock) {
+      alert("請輸入正確的股票代號或中文股名");
       return;
     }
     upsertWatchItem({
-      code,
+      code: stock.code,
+      name: stock.name,
       cost: els.quickCostInput.value,
       shares: els.quickSharesInput.value,
       type: els.quickTypeInput.value
@@ -4744,17 +4767,21 @@ if (els.quickAddForm) {
 
 renderQuickAddedStocks();
 
-els.form.addEventListener("submit", (event) => {
+els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (cloudEnabled && !currentUser) {
     setAuthStatus("請先登入，持股資料才會同步到你的雲端帳號。", true);
     return;
   }
-  const code = els.symbol.value.trim();
-  if (!/^\d{4,6}$/.test(code)) return;
+  const stock = await resolveStockInput(els.symbol.value);
+  if (!stock) {
+    alert("請輸入正確的股票代號或中文股名");
+    return;
+  }
 
   upsertWatchItem({
-    code,
+    code: stock.code,
+    name: stock.name,
     cost: els.cost.value,
     shares: els.shares.value,
     type: els.type.value
