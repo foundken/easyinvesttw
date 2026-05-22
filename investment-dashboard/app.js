@@ -3903,15 +3903,44 @@ function tradeDateListText(values, label) {
   return `${label} ${dates.join("、")}`;
 }
 
-function buyDateListText(lots) {
-  const dates = [...new Set(lots
-    .map((lot) => lot?.boughtAt)
-    .filter(Boolean)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-    .map((date) => formatDateOnly(date)))];
-  const missingCount = lots.filter((lot) => !lot?.boughtAt).length;
-  if (!dates.length) return lots.length ? `買 日期未記錄 ${lots.length} 筆` : "買 --";
-  return `買 ${dates.join("、")}${missingCount ? `、未記錄 ${missingCount} 筆` : ""}`;
+function tradePricePointText(point) {
+  const dateText = point?.date ? formatDateOnly(point.date) : "日期未記錄";
+  const price = number(point?.price);
+  return `${dateText} @ ${Number.isFinite(price) ? money(price) : "--"}`;
+}
+
+function tradePriceListText(points, label) {
+  const grouped = new Map();
+  points.forEach((point) => {
+    const hasDate = Boolean(point?.date);
+    const price = number(point?.price);
+    if (!hasDate && !Number.isFinite(price)) return;
+    const key = tradePricePointText(point);
+    grouped.set(key, (grouped.get(key) || 0) + 1);
+  });
+  const lines = Array.from(grouped.entries()).map(([text, count]) => count > 1 ? `${text} x${count}` : text);
+  if (!lines.length) return `${label} --`;
+  return `${label} ${lines.join("、")}`;
+}
+
+function buyTradePriceListText(lots) {
+  return tradePriceListText(
+    lots
+      .slice()
+      .sort((a, b) => new Date(b?.boughtAt || 0).getTime() - new Date(a?.boughtAt || 0).getTime())
+      .map((lot) => ({ date: lot?.boughtAt, price: lot?.cost })),
+    "買"
+  );
+}
+
+function sellTradePriceListText(sales) {
+  return tradePriceListText(
+    sales
+      .slice()
+      .sort((a, b) => new Date(b?.soldAt || 0).getTime() - new Date(a?.soldAt || 0).getTime())
+      .map((history) => ({ date: history?.soldAt, price: history?.sellPrice })),
+    "賣"
+  );
 }
 
 function renderHoldingTradeSummary(holdings) {
@@ -3947,8 +3976,8 @@ function renderHoldingTradeSummary(holdings) {
     const cumulativePnl = currentPnl + realizedPnl;
     const netCumulativePnl = currentNetPnl + realizedNetPnl;
     const tradeDateLines = [
-      buyDateListText(buyLots),
-      tradeDateListText(sales.map((history) => history.soldAt), "賣")
+      buyTradePriceListText(buyLots),
+      sellTradePriceListText(sales)
     ];
     return {
       code,
@@ -3979,7 +4008,7 @@ function renderHoldingTradeSummary(holdings) {
     <div class="trade-summary-table" role="table" aria-label="歷史買賣紀錄彙總">
       <div class="trade-summary-row trade-summary-head" role="row">
         <span role="columnheader">股票</span>
-        <span role="columnheader">買賣日期</span>
+        <span role="columnheader">買賣日期 / 價格</span>
         <span role="columnheader">現價</span>
         <span role="columnheader">目前持股數</span>
         <span role="columnheader">買 / 賣</span>
@@ -3988,7 +4017,7 @@ function renderHoldingTradeSummary(holdings) {
       ${rows.map((row) => `
         <div class="trade-summary-row" role="row">
           <strong role="cell" data-label="股票">${escapeHtml(row.label)}</strong>
-          <span role="cell" class="trade-summary-date" data-label="買賣日期">
+          <span role="cell" class="trade-summary-date" data-label="買賣日期 / 價格">
             <span class="trade-date-lines">${row.tradeDateLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</span>
           </span>
           <span role="cell" data-label="現價">
