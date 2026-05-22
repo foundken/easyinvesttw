@@ -1527,6 +1527,100 @@ label span {
   color: var(--red) !important;
 }
 
+.portfolio-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(460px, 0.95fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.portfolio-copy p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.portfolio-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.portfolio-controls label {
+  display: grid;
+  gap: 7px;
+}
+
+.portfolio-controls label span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.portfolio-controls select,
+.portfolio-controls input {
+  width: 100%;
+}
+
+.portfolio-panel small {
+  justify-self: end;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.portfolio-compare-list {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.portfolio-compare-card {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-height: 84px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  text-align: left;
+}
+
+.portfolio-compare-card.active {
+  border-color: var(--blue);
+  background: var(--card-active);
+  box-shadow: inset 4px 0 0 var(--blue);
+}
+
+.portfolio-compare-card span,
+.portfolio-compare-card small {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.portfolio-compare-card strong {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
 .control-panel {
   display: flex;
   gap: 14px;
@@ -3309,6 +3403,7 @@ body.chart-expanded .chart-wrap canvas {
   .market-tape,
   .institution-strip,
   .control-panel,
+  .portfolio-panel,
   .quick-add-panel,
   .panel,
   .auth-panel,
@@ -3364,6 +3459,8 @@ body.chart-expanded .chart-wrap canvas {
 
   form,
   .auth-panel,
+  .portfolio-panel,
+  .portfolio-controls,
   .brief-grid,
   .market-score-panel,
   .score-list,
@@ -3440,6 +3537,11 @@ body.chart-expanded .chart-wrap canvas {
     grid-row: auto;
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .portfolio-panel small {
+    justify-self: stretch;
+    text-align: center;
   }
 
   .detail-summary,

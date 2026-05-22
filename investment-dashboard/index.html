@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260522-chinese-stock-input-v1">
+  <link rel="stylesheet" href="styles.css?v=20260522-multi-portfolio-v1">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -20,6 +20,7 @@
 
   <nav class="mobile-section-nav" aria-label="分類快速導覽">
     <button type="button" data-target="#todayPanel">今日</button>
+    <button type="button" data-target="#portfolioPanel">帳本</button>
     <button type="button" data-target="#managePanel">新增</button>
     <button type="button" data-target="#holdingsPanel">存股</button>
     <button type="button" data-target="#historyPanel">紀錄</button>
@@ -112,6 +113,27 @@
         <strong>使用 Firebase Authentication，密碼由 Firebase 保護。</strong>
         <small>持股資料存於 Firestore，搭配 Security Rules，使用者只能讀寫自己的資料。</small>
       </div>
+    </section>
+
+    <section id="portfolioPanel" class="portfolio-panel" aria-label="投資帳本切換">
+      <div class="portfolio-copy">
+        <p class="eyebrow">投資帳本</p>
+        <h2>同一帳號管理多組持股</h2>
+        <p id="portfolioSummary">目前使用主要帳本。</p>
+      </div>
+      <div class="portfolio-controls">
+        <label>
+          <span>目前帳本</span>
+          <select id="portfolioSelect"></select>
+        </label>
+        <label>
+          <span>新增帳本</span>
+          <input id="portfolioNameInput" placeholder="例如：家人帳戶">
+        </label>
+        <button id="addPortfolioButton" type="button">新增帳本</button>
+      </div>
+      <small id="portfolioCountLabel">0 檔追蹤</small>
+      <div id="portfolioCompareList" class="portfolio-compare-list"></div>
     </section>
 
     <div class="section-divider">
@@ -669,6 +691,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260522-chinese-stock-input-v1"></script>
+  <script src="app.js?v=20260522-multi-portfolio-v1"></script>
 </body>
 </html>

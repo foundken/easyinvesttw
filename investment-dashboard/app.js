@@ -1,5 +1,7 @@
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
+const PORTFOLIO_KEY = "plain-stock-dashboard-portfolios-v1";
+const DEFAULT_PORTFOLIO_ID = "main";
 const MARKET_REFRESH_FAST_MS = 5000;
 const MARKET_REFRESH_SLOW_MS = 10 * 60000;
 const QUOTE_REFRESH_MS = 5000;
@@ -189,7 +191,13 @@ const els = {
   quickTypeInput: document.querySelector("#quickTypeInput"),
   searchResults: document.querySelector("#searchResults"),
   searchResultsList: document.querySelector(".search-results-list"),
-  quickAddedStocks: document.querySelector("#quickAddedStocks")
+  quickAddedStocks: document.querySelector("#quickAddedStocks"),
+  portfolioSelect: document.querySelector("#portfolioSelect"),
+  portfolioNameInput: document.querySelector("#portfolioNameInput"),
+  addPortfolio: document.querySelector("#addPortfolioButton"),
+  portfolioSummary: document.querySelector("#portfolioSummary"),
+  portfolioCountLabel: document.querySelector("#portfolioCountLabel"),
+  portfolioCompareList: document.querySelector("#portfolioCompareList")
 };
 
 const VIEW_MODE_KEY = "easyinvest-view-mode";
@@ -202,6 +210,8 @@ const TREND_DATA_VERSION = "twse-history-v2";
 
 let watchList = [];
 let sellHistory = [];
+let portfolios = [];
+let activePortfolioId = DEFAULT_PORTFOLIO_ID;
 let cloudAuth = null;
 let cloudDb = null;
 let currentUser = null;
@@ -422,7 +432,98 @@ function loadSellHistory() {
   }
 }
 
+function createDefaultPortfolio(items = [], history = []) {
+  return {
+    id: DEFAULT_PORTFOLIO_ID,
+    name: "主要帳本",
+    items: Array.isArray(items) ? items : [],
+    sellHistory: Array.isArray(history) ? history : []
+  };
+}
+
+function normalizePortfolio(raw, index = 0) {
+  const fallbackId = index === 0 ? DEFAULT_PORTFOLIO_ID : `portfolio-${index + 1}`;
+  const id = String(raw?.id || fallbackId).trim() || fallbackId;
+  const name = String(raw?.name || (id === DEFAULT_PORTFOLIO_ID ? "主要帳本" : `帳本 ${index + 1}`)).trim();
+  return {
+    id,
+    name,
+    items: Array.isArray(raw?.items) ? raw.items : [],
+    sellHistory: Array.isArray(raw?.sellHistory) ? raw.sellHistory : []
+  };
+}
+
+function normalizePortfolioState(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const list = Array.isArray(source.portfolios)
+    ? source.portfolios.map(normalizePortfolio).filter((item) => item.id)
+    : [];
+  const hasLegacyPayload = Object.prototype.hasOwnProperty.call(source, "items")
+    || Object.prototype.hasOwnProperty.call(source, "sellHistory");
+  const legacyItems = hasLegacyPayload ? source.items : loadWatchList();
+  const legacySellHistory = hasLegacyPayload ? source.sellHistory : loadSellHistory();
+  const portfoliosList = list.length
+    ? list
+    : [createDefaultPortfolio(legacyItems, legacySellHistory)];
+  const activeId = portfoliosList.some((item) => item.id === source.activePortfolioId)
+    ? source.activePortfolioId
+    : portfoliosList[0].id;
+  return { activePortfolioId: activeId, portfolios: portfoliosList };
+}
+
+function loadPortfolioState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PORTFOLIO_KEY));
+    if (raw?.portfolios) return normalizePortfolioState(raw);
+  } catch {}
+  return normalizePortfolioState({
+    activePortfolioId: DEFAULT_PORTFOLIO_ID,
+    portfolios: [createDefaultPortfolio(loadWatchList(), loadSellHistory())]
+  });
+}
+
+function currentPortfolio() {
+  let portfolio = portfolios.find((item) => item.id === activePortfolioId);
+  if (!portfolio) {
+    portfolio = portfolios[0] || createDefaultPortfolio();
+    if (!portfolios.length) portfolios.push(portfolio);
+    activePortfolioId = portfolio.id;
+  }
+  return portfolio;
+}
+
+function syncCurrentPortfolio() {
+  const portfolio = currentPortfolio();
+  portfolio.items = watchList;
+  portfolio.sellHistory = sellHistory;
+  return portfolio;
+}
+
+function applyPortfolioState(state) {
+  const normalized = normalizePortfolioState(state);
+  portfolios = normalized.portfolios;
+  activePortfolioId = normalized.activePortfolioId;
+  const portfolio = currentPortfolio();
+  watchList = portfolio.items;
+  sellHistory = portfolio.sellHistory;
+  renderPortfolioSwitcher();
+}
+
+function portfolioPayload() {
+  syncCurrentPortfolio();
+  return {
+    activePortfolioId,
+    portfolios: portfolios.map((portfolio) => ({
+      id: portfolio.id,
+      name: portfolio.name,
+      items: Array.isArray(portfolio.items) ? portfolio.items : [],
+      sellHistory: Array.isArray(portfolio.sellHistory) ? portfolio.sellHistory : []
+    }))
+  };
+}
+
 async function saveWatchList() {
+  const payload = portfolioPayload();
   if (cloudEnabled && currentUser) {
     try {
       await cloudDb
@@ -430,16 +531,19 @@ async function saveWatchList() {
         .doc(currentUser.uid)
         .set({
           email: currentUser.email,
+          activePortfolioId: payload.activePortfolioId,
+          portfolios: payload.portfolios,
           items: watchList,
           sellHistory,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
-      setAuthStatus(`已登入：${currentUser.email}，持股資料已同步 Firebase。`);
+      setAuthStatus(`已登入：${currentUser.email}，${currentPortfolio().name} 已同步 Firebase。`);
     } catch (error) {
       setAuthStatus(`雲端同步失敗：${error.message}`, true);
     }
     return;
   }
+  localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(payload));
   localStorage.setItem(WATCH_KEY, JSON.stringify(watchList));
   localStorage.setItem(SELL_HISTORY_KEY, JSON.stringify(sellHistory));
 }
@@ -489,10 +593,110 @@ function updateAuthUi() {
   }
 }
 
+function portfolioHoldingCount(portfolio) {
+  return (portfolio.items || []).filter((item) => (item.type || "holding") === "holding").length;
+}
+
+function allTrackedSymbols() {
+  const codes = new Set();
+  portfolios.forEach((portfolio) => {
+    (portfolio.items || []).forEach((item) => {
+      if (item?.code) codes.add(item.code);
+    });
+  });
+  watchList.forEach((item) => {
+    if (item?.code) codes.add(item.code);
+  });
+  return [...codes];
+}
+
+function portfolioMetrics(portfolio) {
+  const items = (portfolio.items || []).filter((item) => (item.type || "holding") === "holding");
+  return items.reduce((result, item) => {
+    const stock = getStock(item.code);
+    const shares = holdingShares(item);
+    const costValue = holdingCostValue(item);
+    const todayChange = stockTodayChange(stock);
+    if (shares > 0) result.holdings += 1;
+    if (stock && Number.isFinite(shares) && shares > 0) {
+      result.marketValue += stock.close * shares;
+      if (Number.isFinite(todayChange)) result.todayPnl += todayChange * shares;
+    }
+    if (Number.isFinite(costValue)) result.costValue += costValue;
+    return result;
+  }, { holdings: 0, marketValue: 0, costValue: 0, todayPnl: 0 });
+}
+
+function renderPortfolioSwitcher() {
+  if (!els.portfolioSelect) return;
+  const portfolio = currentPortfolio();
+  const previousValue = els.portfolioSelect.value;
+  els.portfolioSelect.innerHTML = portfolios.map((item) => {
+    const count = (item.items || []).length;
+    return `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} (${count})</option>`;
+  }).join("");
+  els.portfolioSelect.value = portfolios.some((item) => item.id === activePortfolioId)
+    ? activePortfolioId
+    : previousValue;
+  const total = watchList.length;
+  const holdings = portfolioHoldingCount(portfolio);
+  if (els.portfolioSummary) {
+    els.portfolioSummary.textContent = `目前使用「${portfolio.name}」，可在同一登入帳號下切換不同持股組合。`;
+  }
+  if (els.portfolioCountLabel) {
+    els.portfolioCountLabel.textContent = `${total} 檔追蹤，${holdings} 檔持股`;
+  }
+  if (els.portfolioCompareList) {
+    els.portfolioCompareList.innerHTML = portfolios.map((item) => {
+      const metrics = portfolioMetrics(item);
+      const active = item.id === activePortfolioId;
+      return `
+        <button type="button" class="portfolio-compare-card${active ? " active" : ""}" data-portfolio-id="${escapeHtml(item.id)}">
+          <span>${escapeHtml(item.name)}</span>
+          <strong>${metrics.marketValue ? compactMoney(metrics.marketValue) : "--"}</strong>
+          <small>${metrics.holdings} 檔持股 ｜ 今日 ${pnlText(metrics.todayPnl, "增加", "減少", "持平")}</small>
+        </button>
+      `;
+    }).join("");
+    els.portfolioCompareList.querySelectorAll(".portfolio-compare-card").forEach((button) => {
+      button.addEventListener("click", () => switchPortfolio(button.dataset.portfolioId));
+    });
+  }
+}
+
+async function switchPortfolio(portfolioId) {
+  if (!portfolioId || portfolioId === activePortfolioId) return;
+  syncCurrentPortfolio();
+  activePortfolioId = portfolioId;
+  const portfolio = currentPortfolio();
+  watchList = portfolio.items || [];
+  sellHistory = portfolio.sellHistory || [];
+  await saveWatchList();
+  render();
+  fetchMarket();
+}
+
+async function addPortfolio() {
+  const name = els.portfolioNameInput?.value.trim();
+  if (!name) {
+    alert("請輸入帳本名稱");
+    return;
+  }
+  syncCurrentPortfolio();
+  const id = `portfolio-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  portfolios.push({ id, name, items: [], sellHistory: [] });
+  activePortfolioId = id;
+  watchList = [];
+  sellHistory = [];
+  if (els.portfolioNameInput) els.portfolioNameInput.value = "";
+  await saveWatchList();
+  render();
+  fetchMarket();
+}
+
 async function loadCloudWatchList() {
   if (!cloudEnabled || !currentUser) {
-    watchList = loadWatchList();
-    sellHistory = loadSellHistory();
+    applyPortfolioState(loadPortfolioState());
     render();
     return;
   }
@@ -501,18 +705,16 @@ async function loadCloudWatchList() {
     const snapshot = await cloudDb.collection("watchlists").doc(currentUser.uid).get();
     const data = snapshot.data();
     if (snapshot.exists) {
-      watchList = Array.isArray(data?.items) ? data.items : [];
-      sellHistory = Array.isArray(data?.sellHistory) ? data.sellHistory : [];
+      applyPortfolioState(normalizePortfolioState(data));
+      if (!Array.isArray(data?.portfolios)) await saveWatchList();
     } else {
-      watchList = loadWatchList();
-      sellHistory = loadSellHistory();
+      applyPortfolioState(loadPortfolioState());
       await saveWatchList();
     }
-    setAuthStatus(`已登入：${currentUser.email}，已讀取 Firebase 雲端持股資料。`);
+    setAuthStatus(`已登入：${currentUser.email}，已讀取 ${currentPortfolio().name}。`);
   } catch (error) {
     setAuthStatus(`讀取雲端資料失敗：${error.message}`, true);
-    watchList = [];
-    sellHistory = [];
+    applyPortfolioState({ portfolios: [createDefaultPortfolio()], activePortfolioId: DEFAULT_PORTFOLIO_ID });
   }
   loadingCloudData = false;
   render();
@@ -523,8 +725,7 @@ async function initCloudAuth() {
   const config = getCloudConfig();
   if (!config.ready || !window.firebase) {
     cloudEnabled = false;
-    watchList = loadWatchList();
-    sellHistory = loadSellHistory();
+    applyPortfolioState(loadPortfolioState());
     updateAuthUi();
     return;
   }
@@ -1067,15 +1268,16 @@ function scheduleMarketRefresh() {
 
 function scheduleQuoteRefresh() {
   window.clearTimeout(quoteRefreshTimer);
-  if (!isTwMarketOpen() || !watchList.length) return;
+  if (!isTwMarketOpen() || !allTrackedSymbols().length) return;
   quoteRefreshTimer = window.setTimeout(fetchRealtimeQuotes, QUOTE_REFRESH_MS);
 }
 
 async function fetchRealtimeQuotes() {
-  if (document.hidden || quoteFetchInFlight || !watchList.length) return;
+  const quoteSymbols = allTrackedSymbols();
+  if (document.hidden || quoteFetchInFlight || !quoteSymbols.length) return;
   quoteFetchInFlight = true;
   try {
-    const symbols = watchList.map((item) => item.code).join(",");
+    const symbols = quoteSymbols.join(",");
     const response = await fetch(`${endpoints.bundle}?fast=quotes&symbols=${encodeURIComponent(symbols)}&_=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error("Realtime quotes unavailable");
     const payload = await response.json();
@@ -1108,7 +1310,7 @@ async function fetchMarket() {
   fetchRealtimeQuotes();
 
   try {
-    const symbols = watchList.map((item) => item.code).join(",");
+    const symbols = allTrackedSymbols().join(",");
     const params = new URLSearchParams();
     if (symbols) params.set("symbols", symbols);
     params.set("_", String(Date.now()));
@@ -1390,6 +1592,7 @@ function render() {
   els.riskCount.textContent = tracked.filter((item) => item.signal.tone === "bad").length;
   els.sourceLabel.textContent = market.source === "sample" ? "範例" : market.source;
 
+  renderPortfolioSwitcher();
   renderTodayPnl(holdings);
   renderQuickAddedStocks();
   renderBeginnerBrief(ranking, tracked);
@@ -5068,8 +5271,7 @@ async function switchUser() {
   }
   await cloudAuth.signOut();
   currentUser = null;
-  watchList = [];
-  sellHistory = [];
+  applyPortfolioState({ portfolios: [createDefaultPortfolio()], activePortfolioId: DEFAULT_PORTFOLIO_ID });
   updateAuthUi();
   render();
   await signInWithGoogle();
@@ -5082,6 +5284,24 @@ function initGoogleSignIn() {
   }
   if (els.switchUser) {
     els.switchUser.addEventListener("click", switchUser);
+  }
+}
+
+function initPortfolioControls() {
+  if (els.portfolioSelect) {
+    els.portfolioSelect.addEventListener("change", () => {
+      switchPortfolio(els.portfolioSelect.value);
+    });
+  }
+  if (els.addPortfolio) {
+    els.addPortfolio.addEventListener("click", addPortfolio);
+  }
+  if (els.portfolioNameInput) {
+    els.portfolioNameInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      addPortfolio();
+    });
   }
 }
 
@@ -5106,11 +5326,11 @@ async function initApp() {
   initViewMode();
   initTheme();
   initGoogleSignIn();
+  initPortfolioControls();
   initTierTabs();
   await initCloudAuth();
   if (!cloudEnabled || !currentUser) {
-    watchList = loadWatchList();
-    sellHistory = loadSellHistory();
+    applyPortfolioState(loadPortfolioState());
     render();
   }
   fetchMarket();
