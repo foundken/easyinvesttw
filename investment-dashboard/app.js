@@ -1000,6 +1000,58 @@ function averageHoldingCost(item) {
   return Number.isFinite(shares) && shares > 0 && Number.isFinite(costValue) ? costValue / shares : number(item?.cost);
 }
 
+function soldRecordBuyLots(item) {
+  const sourceLots = Array.isArray(item?.buyLots)
+    ? item.buyLots
+    : Array.isArray(item?.lots)
+      ? item.lots
+      : [];
+  const fallbackShares = number(item?.shares);
+  const fallbackCost = number(item?.buyCost)
+    ?? (Number.isFinite(number(item?.costValue)) && Number.isFinite(fallbackShares) && fallbackShares > 0
+      ? number(item.costValue) / fallbackShares
+      : null);
+
+  const lots = sourceLots.map((lot, index) => {
+    const shares = number(lot?.shares);
+    const cost = number(lot?.cost) ?? fallbackCost;
+    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(cost) || cost <= 0) return null;
+    const boughtAt = lot?.boughtAt || lot?.buyAt || lot?.buyDate || item?.boughtAt || item?.buyAt || item?.buyDate || null;
+    return {
+      id: lot?.id || `${item?.id || item?.code || "sold"}-${index}`,
+      cost,
+      shares,
+      boughtAt,
+      soldRecordId: item?.id || ""
+    };
+  }).filter(Boolean);
+
+  if (lots.length) return lots;
+  if (!Number.isFinite(fallbackShares) || fallbackShares <= 0 || !Number.isFinite(fallbackCost) || fallbackCost <= 0) return [];
+  return [{
+    id: `${item?.id || item?.code || "sold"}-legacy-buy`,
+    cost: fallbackCost,
+    shares: fallbackShares,
+    boughtAt: item?.boughtAt || item?.buyAt || item?.buyDate || null,
+    soldRecordId: item?.id || ""
+  }];
+}
+
+function mergeBuyLots(lots) {
+  const merged = new Map();
+  lots.filter(Boolean).forEach((lot, index) => {
+    const key = lot.id || `${lot.boughtAt || "unknown"}-${lot.cost}-${index}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.shares = roundPrice((number(existing.shares) || 0) + (number(lot.shares) || 0));
+      if (!existing.boughtAt && lot.boughtAt) existing.boughtAt = lot.boughtAt;
+    } else {
+      merged.set(key, { ...lot });
+    }
+  });
+  return Array.from(merged.values());
+}
+
 function syncHoldingTotals(item) {
   const lots = holdingLots(item);
   if (!lots.length) return item;
@@ -3800,6 +3852,7 @@ function sellHolding(item, stock) {
     tradingCost: net.total,
     netProfit: net.netProfit,
     netProfitRate: net.netProfitRate,
+    buyLots: soldLots,
     lots: soldLots,
     soldAt: new Date().toISOString()
   });
@@ -3850,6 +3903,17 @@ function tradeDateListText(values, label) {
   return `${label} ${dates.join("、")}`;
 }
 
+function buyDateListText(lots) {
+  const dates = [...new Set(lots
+    .map((lot) => lot?.boughtAt)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+    .map((date) => formatDateOnly(date)))];
+  const missingCount = lots.filter((lot) => !lot?.boughtAt).length;
+  if (!dates.length) return lots.length ? `買 日期未記錄 ${lots.length} 筆` : "買 --";
+  return `買 ${dates.join("、")}${missingCount ? `、未記錄 ${missingCount} 筆` : ""}`;
+}
+
 function renderHoldingTradeSummary(holdings) {
   if (!els.holdingTradeSummary) return;
   const holdingMap = new Map(holdings.map((entry) => [entry.item.code, entry]));
@@ -3868,8 +3932,11 @@ function renderHoldingTradeSummary(holdings) {
     const stock = entry?.stock || getStock(code);
     const item = entry?.item || sellHistory.find((history) => history.code === code) || { code };
     const metrics = entry ? holdingMetrics(entry) : {};
-    const buyLots = entry ? holdingLots(entry.item) : [];
     const sales = sellHistory.filter((history) => history.code === code);
+    const buyLots = mergeBuyLots([
+      ...(entry ? holdingLots(entry.item) : []),
+      ...sales.flatMap((history) => soldRecordBuyLots(history))
+    ]);
     const buyCount = buyLots.length;
     const sellCount = sales.length;
     const realizedPnl = realizedProfitByCode(code);
@@ -3880,7 +3947,7 @@ function renderHoldingTradeSummary(holdings) {
     const cumulativePnl = currentPnl + realizedPnl;
     const netCumulativePnl = currentNetPnl + realizedNetPnl;
     const tradeDateLines = [
-      tradeDateListText(buyLots.map((lot) => lot.boughtAt), "買"),
+      buyDateListText(buyLots),
       tradeDateListText(sales.map((history) => history.soldAt), "賣")
     ];
     return {
@@ -3996,13 +4063,82 @@ function buyLotRows() {
     });
 }
 
+function tradeBuyLotRows() {
+  const rows = new Map();
+  const addLot = ({ item, stock, lot, activeShares = 0, soldShares = 0, soldAt = null }) => {
+    const key = lot.id || `${item.code}-${lot.boughtAt || "unknown"}-${lot.cost}-${rows.size}`;
+    const existing = rows.get(key);
+    if (existing) {
+      existing.shares = roundPrice(existing.shares + (number(lot.shares) || 0));
+      existing.activeShares = roundPrice(existing.activeShares + activeShares);
+      existing.soldShares = roundPrice(existing.soldShares + soldShares);
+      if (!existing.date && lot.boughtAt) existing.date = lot.boughtAt;
+      if (soldAt) existing.soldDates.push(soldAt);
+      return;
+    }
+    rows.set(key, {
+      id: key,
+      type: "buy",
+      code: item.code,
+      name: stock?.name || item.name || "",
+      date: lot.boughtAt || null,
+      shares: number(lot.shares) || 0,
+      activeShares,
+      soldShares,
+      soldDates: soldAt ? [soldAt] : [],
+      buyCost: lot.cost,
+      currentPrice: number(stock?.close),
+      profit: null,
+      profitRate: null,
+      tradingCost: null,
+      netProfit: null,
+      netProfitRate: null
+    });
+  };
+
+  watchList
+    .filter((item) => (item.type || "holding") === "holding")
+    .forEach((item) => {
+      const stock = getStock(item.code);
+      holdingLots(item).forEach((lot) => addLot({ item, stock, lot, activeShares: number(lot.shares) || 0 }));
+    });
+
+  sellHistory.forEach((sale) => {
+    const stock = getStock(sale.code);
+    soldRecordBuyLots(sale).forEach((lot) => addLot({
+      item: sale,
+      stock,
+      lot,
+      soldShares: number(lot.shares) || 0,
+      soldAt: sale.soldAt
+    }));
+  });
+
+  return Array.from(rows.values()).map((row) => {
+    if (!row.activeShares || !Number.isFinite(row.currentPrice)) return row;
+    const costValue = row.buyCost * row.activeShares;
+    const marketValue = row.currentPrice * row.activeShares;
+    const profit = marketValue - costValue;
+    const profitRate = costValue ? (profit / costValue) * 100 : null;
+    const net = netTradeMetrics({ buyValue: costValue, sellValue: marketValue, grossProfit: profit });
+    return {
+      ...row,
+      profit,
+      profitRate,
+      tradingCost: net.total,
+      netProfit: net.netProfit,
+      netProfitRate: net.netProfitRate
+    };
+  });
+}
+
 function tradeHistoryRows() {
   const sells = sellHistory.map((item) => ({
     ...item,
     type: "sell",
     date: item.soldAt
   }));
-  return [...sells, ...buyLotRows()]
+  return [...sells, ...tradeBuyLotRows()]
     .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 }
 
@@ -4012,6 +4148,7 @@ function renderSellHistory() {
   const totalNetProfit = realizedNetProfitTotal();
   const totalTradingCost = realizedTradingCostTotal();
   const buyRows = buyLotRows();
+  const allBuyRows = tradeBuyLotRows();
   const unrealizedProfit = buyRows.reduce((sum, item) => sum + (number(item.profit) || 0), 0);
   const unrealizedNetProfit = buyRows.reduce((sum, item) => sum + (number(item.netProfit) || 0), 0);
   const rows = tradeHistoryRows();
@@ -4042,7 +4179,7 @@ function renderSellHistory() {
       </article>
       <article>
         <span>買進紀錄</span>
-        <strong>${buyRows.length ? `${buyRows.length} 筆` : "--"}</strong>
+        <strong>${allBuyRows.length ? `${allBuyRows.length} 筆` : "--"}</strong>
       </article>
       <article>
         <span>賣出紀錄</span>
@@ -4070,15 +4207,23 @@ function renderSellHistory() {
     row.className = `sell-history-row ${item.type === "buy" ? "buy-history-row" : ""}`;
     const profitRate = number(item.profitRate);
     if (item.type === "buy") {
+      const dateText = item.date ? formatDateOnly(item.date) : "買入日期未記錄";
+      const soldDateText = item.soldDates?.length
+        ? ` ｜ 已賣出 ${tradeDateListText(item.soldDates, "").replace(/^\s+/, "")}`
+        : "";
+      const statusText = item.activeShares > 0 ? "持股中" : "已賣出批次";
+      const holdingText = item.activeShares > 0
+        ? ` ｜ 仍持有 ${money(item.activeShares)} 股 ｜ 現價 ${Number.isFinite(item.currentPrice) ? money(item.currentPrice) : "--"}`
+        : "";
       row.innerHTML = `
         <div class="sell-history-main">
           <strong>${escapeHtml(historyStockLabel(item))}</strong>
-          <span>${escapeHtml(formatDateOnly(item.date))} ｜ 買進 ${money(item.shares)} 股 ｜ 買進價 ${money(item.buyCost)} ｜ 現價 ${Number.isFinite(item.currentPrice) ? money(item.currentPrice) : "--"}</span>
+          <span>${escapeHtml(dateText)} ｜ 買進 ${money(item.shares)} 股 ｜ 買進價 ${money(item.buyCost)}${escapeHtml(holdingText)}${escapeHtml(soldDateText)}</span>
         </div>
         <div class="sell-history-profit">
-          <span>持股中</span>
+          <span>${escapeHtml(statusText)}</span>
           <strong class="${priceTone(profit)}">${Number.isFinite(profit) ? formatCurrency(profit) : "--"}</strong>
-          <small>${Number.isFinite(netProfit) ? `扣費後 ${formatCurrency(netProfit)}` : "--"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
+          <small>${item.activeShares > 0 && Number.isFinite(netProfit) ? `扣費後 ${formatCurrency(netProfit)}` : "損益見賣出紀錄"} ｜ ${Number.isFinite(profitRate) ? percent(profitRate) : "--"}</small>
         </div>
         <span class="trade-badge buy">買進</span>
       `;
