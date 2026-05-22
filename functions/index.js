@@ -630,12 +630,12 @@ function decorateRealtimeQuotes(rows = []) {
     const lagMs = Number.isFinite(timestamp) ? Math.max(0, now - timestamp) : null;
     const isIntraday = twMarketPhase() === "intraday";
     const currentPriceIsRealtime = isIntraday && Number.isFinite(lagMs) && lagMs <= QUOTE_REALTIME_LAG_MS;
-    const currentPriceIsStale = isIntraday && Number.isFinite(lagMs) && lagMs > QUOTE_REALTIME_LAG_MS;
+    const currentPriceIsStale = isIntraday && Number.isFinite(lagMs) && lagMs > INTRADAY_QUOTE_MAX_LAG_MS;
     const quoteQuality = !isIntraday
       ? "close"
       : currentPriceIsRealtime
         ? "realtime"
-        : currentPriceIsStale
+        : Number.isFinite(lagMs) && lagMs <= INTRADAY_QUOTE_MAX_LAG_MS
           ? "near-realtime"
           : "unknown";
     return {
