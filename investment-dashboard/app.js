@@ -621,27 +621,48 @@ function tradingCostNote() {
 }
 
 function stockPriceLabel(stock) {
-  if (isDelayedMarketQuote(stock)) return "延遲價";
-  return stock?.realtime ? "即時價" : "收盤";
+  if (!stock?.realtime) return "收盤";
+  if (!isTwMarketOpen()) return "收盤";
+  if (isDelayedMarketQuote(stock)) return "資料待更新";
+  return isNearRealtimeQuote(stock) ? "近即時" : "即時價";
 }
 
 function stockQuoteStamp(stock) {
   if (!stock) return "資料未連線";
   const rawSource = stock.source ? String(stock.source) : stock.realtime ? "即時資料" : "收盤資料";
-  const source = isDelayedMarketQuote(stock) ? `${rawSource} 延遲報價` : rawSource;
+  const source = quoteSourceLabel(rawSource, stock);
   const timestamp = timestampMs(stock.quoteTime);
   const time = timestamp ? formatUpdateTime(timestamp) : "";
   const lagMs = timestamp ? Date.now() - timestamp : null;
-  const lagText = isTwMarketOpen() && Number.isFinite(lagMs) && lagMs > 120000
-    ? `（延遲 ${Math.max(1, Math.round(lagMs / 60000))} 分）`
+  const lagText = isTwMarketOpen() && Number.isFinite(lagMs) && lagMs > 30000
+    ? `（${Math.max(1, Math.round(lagMs / 60000))} 分前）`
     : "";
   return time ? `${source} ｜ ${time}${lagText}` : source;
 }
 
 function isDelayedMarketQuote(stock) {
   if (!stock?.realtime || !isTwMarketOpen()) return false;
+  if (String(stock.source || "").includes("YahooDelayed")) return true;
   const timestamp = timestampMs(stock.quoteTime);
-  return Number.isFinite(timestamp) && Date.now() - timestamp > 120000;
+  return Number.isFinite(timestamp) && Date.now() - timestamp > 180000;
+}
+
+function isNearRealtimeQuote(stock) {
+  if (!stock?.realtime || !isTwMarketOpen()) return false;
+  if (stock.quoteQuality === "near-realtime" || stock.currentPriceIsStale) return true;
+  const timestamp = timestampMs(stock.quoteTime);
+  return Number.isFinite(timestamp) && Date.now() - timestamp > 30000;
+}
+
+function quoteSourceLabel(source, stock) {
+  const value = String(source || "");
+  if (value.includes("Fugle")) return "Fugle";
+  if (value.includes("TWSE")) return value.includes("Cache") ? "TWSE 快取" : "TWSE";
+  if (value.includes("TPEx")) return value.includes("Cache") ? "TPEx 快取" : "TPEx";
+  if (value.includes("YahooTW")) return value.includes("DELAYED") ? "Yahoo 台股延遲" : "Yahoo 台股";
+  if (value.includes("YahooDelayed") || value === "Yahoo") return "Yahoo 延遲";
+  if (stock?.realtime) return "即時資料";
+  return "收盤資料";
 }
 
 function timestampMs(value) {
@@ -667,10 +688,11 @@ function taipeiDateKey(value = Date.now()) {
 function isUsableRealtimeQuote(quote) {
   if (!quote?.realtime) return true;
   if (!isTwMarketOpen()) return true;
-  if (quote.source === "TWSE_PREVIOUS") return false;
+  const source = String(quote.source || "");
+  if (source === "TWSE_PREVIOUS" || source.includes("YahooDelayed") || source.includes("YahooTW_DELAYED")) return false;
   const timestamp = timestampMs(quote.quoteTime);
   if (!timestamp) return false;
-  return taipeiDateKey(timestamp) === taipeiDateKey();
+  return taipeiDateKey(timestamp) === taipeiDateKey() && Date.now() - timestamp <= 180000;
 }
 
 function stockTodayChange(stock) {
@@ -888,7 +910,7 @@ function normalizeRevenue(raw) {
 
 function normalizeRealtimeQuotes(raw) {
   return raw.map((item) => {
-    const close = number(item.lastPrice ?? item.closePrice);
+    const close = number(item.currentPrice ?? item.lastPrice ?? item.closePrice);
     const previousClose = number(item.previousClose);
     return {
       code: item.symbol || item.code,
@@ -904,8 +926,12 @@ function normalizeRealtimeQuotes(raw) {
       value: number(item.total?.tradeValue || item.tradeValue),
       trades: number(item.total?.transaction || item.transaction),
       realtime: true,
-      source: item.source || "Fugle",
-      quoteTime: item.lastUpdated || item.closeTime
+      source: item.currentPriceSource || item.source || "Fugle",
+      quoteTime: item.currentPriceTime || item.lastUpdated || item.closeTime,
+      currentPriceIsRealtime: Boolean(item.currentPriceIsRealtime),
+      currentPriceIsStale: Boolean(item.currentPriceIsStale),
+      quoteLagSeconds: number(item.quoteLagSeconds),
+      quoteQuality: item.quoteQuality || ""
     };
   }).filter((item) => item.code && Number.isFinite(item.close));
 }
@@ -959,8 +985,9 @@ function marketIndexSourceText(source) {
 
 function quoteSourceText(source = "") {
   if (source.includes("Fugle")) return "個股：Fugle 即時報價";
-  if (source.includes("Yahoo")) return "個股：Yahoo 盤中報價，Fugle 目前未回傳";
-  if (source.includes("TWSE")) return "個股：TWSE 公開資料，非逐筆即時";
+  if (source.includes("TWSE") || source.includes("TPEx")) return "個股：TWSE / TPEx 盤中報價";
+  if (source.includes("YahooTW")) return "個股：Yahoo 台股近即時備援";
+  if (source.includes("Yahoo")) return "個股：Yahoo 收盤 / 歷史備援";
   return "個股：等待公開資料或即時報價";
 }
 

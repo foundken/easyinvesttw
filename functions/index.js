@@ -14,6 +14,9 @@ const DASHBOARD_CACHE_TTL_MS = 5000;
 const DASHBOARD_STALE_TTL_MS = 120000;
 const MONTHLY_REVENUE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const COMPANY_NAME_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const INTRADAY_QUOTE_MAX_LAG_MS = 3 * 60 * 1000;
+const INTRADAY_QUOTE_CACHE_TTL_MS = 3 * 60 * 1000;
+const QUOTE_REALTIME_LAG_MS = 30 * 1000;
 const CONCEPT_SYMBOLS = [
   "1319", "1503", "1504", "1513", "1514", "1515", "1519", "1536", "1560", "1587",
   "1590", "1609", "1720", "1760", "1789", "1795", "2049", "2231", "2303", "2308",
@@ -41,6 +44,7 @@ let quoteCache = null;
 let monthlyRevenueCache = null;
 let companyNameCache = null;
 let twseSessionCookieCache = null;
+let intradayQuoteCache = new Map();
 
 exports.market = onRequest({
   region: "asia-east1",
@@ -69,21 +73,20 @@ exports.market = onRequest({
           cache: "fresh"
         });
       }
-      const [fugleRealtime, twseRealtime, yahooRealtime, companyNames] = await Promise.all([
-        safeFetchFugleQuotes(symbols),
-        safeFetchTwseRealtimeQuotes(symbols, 3200),
-        safeFetchYahooQuotes(symbols),
+      const [quoteBundle, companyNames] = await Promise.all([
+        fetchRealtimeQuoteBundle(symbols, { yahooRealtimeSymbols: symbols, timeoutMs: 3200 }),
         safeFetchCompanyNameMap()
       ]);
       const realtime = localizeRealtimeNames(
-        mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime),
+        quoteBundle.realtime,
         companyNames
       );
       const payload = {
         ok: true,
         updatedAt: new Date().toISOString(),
         realtime: compactRealtimeRows(realtime),
-        realtimeSource: realtimeSourceLabel(realtime)
+        realtimeSource: realtimeSourceLabel(realtime),
+        quotePolicy: quoteBundle.policy
       };
       quoteCache = { key: cacheKey, createdAt: now, payload };
       return sendJson(res, 200, payload);
@@ -112,22 +115,17 @@ exports.market = onRequest({
       safeFetchMarketNews()
     ]);
     const daily = mergeMarketRows(twseDaily, fugleActiveRanking);
-    const activeQuoteSymbols = uniqueSymbols([
-      ...symbols,
-      ...topMarketSymbols(daily, 40)
-    ]);
+    const activeQuoteSymbols = symbols;
     const realtimeSymbols = uniqueSymbols([
       ...activeQuoteSymbols,
       ...CONCEPT_SYMBOLS
     ]);
-    const [fugleRealtime, twseRealtime, yahooRealtime, companyNames] = await Promise.all([
-      safeFetchFugleQuotes(activeQuoteSymbols),
-      safeFetchTwseRealtimeQuotes(realtimeSymbols),
-      safeFetchYahooQuotes(symbols),
+    const [quoteBundle, companyNames] = await Promise.all([
+      fetchRealtimeQuoteBundle(realtimeSymbols, { fugleSymbols: activeQuoteSymbols, yahooRealtimeSymbols: activeQuoteSymbols }),
       safeFetchCompanyNameMap()
     ]);
     const realtime = localizeRealtimeNames(
-      mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooRealtime), fugleRealtime),
+      quoteBundle.realtime,
       companyNames
     );
     const relevantCodes = new Set(uniqueSymbols([
@@ -148,7 +146,8 @@ exports.market = onRequest({
       institutional: compactInstitutional(institutional, relevantCodes),
       news,
       dailySource: fugleActiveRanking.length ? "Fugle" : twseDaily.length ? "TWSE" : null,
-      realtimeSource: realtimeSourceLabel(realtime)
+      realtimeSource: realtimeSourceLabel(realtime),
+      quotePolicy: quoteBundle.policy
     };
     dashboardCache = { key: cacheKey, createdAt: now, payload };
     return sendJson(res, 200, payload);
@@ -191,6 +190,62 @@ function topMarketSymbols(rows, limit) {
     .slice(0, limit);
 }
 
+async function fetchRealtimeQuoteBundle(symbols, options = {}) {
+  const requestedSymbols = uniqueSymbols(symbols);
+  const fugleSymbols = uniqueSymbols(options.fugleSymbols || requestedSymbols);
+  const yahooRealtimeSymbols = uniqueSymbols(options.yahooRealtimeSymbols || []);
+  const phase = twMarketPhase();
+  const intraday = phase === "intraday";
+
+  const [fugleRealtime, twseRealtime, yahooTwRealtime, yahooFallback] = await Promise.all([
+    safeFetchFugleQuotes(fugleSymbols),
+    safeFetchTwseRealtimeQuotes(requestedSymbols, options.timeoutMs),
+    intraday && yahooRealtimeSymbols.length ? safeFetchYahooTwRealtimeQuotes(yahooRealtimeSymbols) : Promise.resolve([]),
+    intraday ? Promise.resolve([]) : safeFetchYahooQuotes(yahooRealtimeSymbols.length ? yahooRealtimeSymbols : requestedSymbols)
+  ]);
+
+  const primary = intraday
+    ? mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooTwRealtime), fugleRealtime)
+    : mergeRealtimePayloads(mergeRealtimePayloads(twseRealtime, yahooFallback), fugleRealtime);
+
+  rememberIntradayQuotes(primary);
+  const realtime = intraday
+    ? mergeRealtimePayloads(primary, cachedIntradayQuotes(requestedSymbols, primary))
+    : primary;
+
+  return {
+    realtime: decorateRealtimeQuotes(realtime),
+    fallback: decorateRealtimeQuotes(yahooFallback),
+    policy: quotePolicySummary({
+      phase,
+      realtime,
+      fugleRealtime,
+      twseRealtime,
+      yahooTwRealtime,
+      yahooFallback
+    })
+  };
+}
+
+function quotePolicySummary({ phase, realtime, fugleRealtime, twseRealtime, yahooTwRealtime, yahooFallback }) {
+  return {
+    phase,
+    maxIntradayLagSeconds: Math.round(INTRADAY_QUOTE_MAX_LAG_MS / 1000),
+    cacheTtlSeconds: Math.round(INTRADAY_QUOTE_CACHE_TTL_MS / 1000),
+    currentSources: realtimeSourceLabel(realtime),
+    sourceCounts: {
+      fugle: fugleRealtime.length,
+      twse: twseRealtime.length,
+      yahooTw: yahooTwRealtime.length,
+      yahooFallback: yahooFallback.length,
+      current: realtime.length
+    },
+    rule: phase === "intraday"
+      ? "盤中只允許 Fugle/TWSE/TPEx/YahooTW 新鮮報價更新 currentPrice，Yahoo 延遲報價不覆蓋。"
+      : "非盤中允許收盤與歷史資料補齊。"
+  };
+}
+
 async function fetchFugleQuotes(symbols) {
   const apiKey = process.env.FUGLE_API_KEY;
   if (!apiKey || !symbols.length) return [];
@@ -210,7 +265,40 @@ async function fetchFugleQuotes(symbols) {
     }
   }));
 
-  return quotes.filter(Boolean);
+  return quotes.map(normalizeFugleRealtimeQuote).filter(Boolean);
+}
+
+function normalizeFugleRealtimeQuote(row) {
+  if (!row) return null;
+  const symbol = String(row.symbol || row.code || row.stockNo || row.stockId || "").trim();
+  if (!/^\d{4,6}$/.test(symbol)) return null;
+  const close = toNumber(row.lastPrice ?? row.closePrice ?? row.price ?? row.close);
+  const previousClose = toNumber(row.previousClose ?? row.referencePrice ?? row.previousPrice);
+  if (!Number.isFinite(close) || close <= 0) return null;
+  const change = toNumber(row.change) ?? (Number.isFinite(previousClose) ? close - previousClose : null);
+  const changePercent = toNumber(row.changePercent) ?? (
+    Number.isFinite(change) && Number.isFinite(previousClose) && previousClose
+      ? (change / previousClose) * 100
+      : null
+  );
+  return {
+    symbol,
+    name: row.name || row.companyName || row.shortName || symbol,
+    exchange: row.market || row.exchange,
+    openPrice: toNumber(row.openPrice ?? row.open),
+    highPrice: toNumber(row.highPrice ?? row.high),
+    lowPrice: toNumber(row.lowPrice ?? row.low),
+    lastPrice: close,
+    closePrice: close,
+    previousClose,
+    change,
+    changePercent,
+    tradeVolume: toNumber(row.total?.tradeVolume ?? row.tradeVolume ?? row.volume),
+    tradeValue: toNumber(row.total?.tradeValue ?? row.tradeValue ?? row.turnover ?? row.value),
+    transaction: toNumber(row.total?.transaction ?? row.transaction ?? row.trades),
+    lastUpdated: row.lastUpdated || row.closeTime || row.date || row.time,
+    source: "Fugle"
+  };
 }
 
 async function fetchTwseRealtimeQuotes(symbols, timeoutMs = 4500) {
@@ -298,6 +386,97 @@ async function fetchYahooQuotes(symbols) {
   return quotes.filter(Boolean);
 }
 
+async function fetchYahooTwRealtimeQuotes(symbols) {
+  if (!symbols.length) return [];
+  const batches = [];
+  const limited = symbols.slice(0, 24);
+  for (let index = 0; index < limited.length; index += 4) {
+    batches.push(limited.slice(index, index + 4));
+  }
+  const rows = [];
+  for (const batch of batches) {
+    const quotes = await Promise.all(batch.map((symbol) => fetchYahooTwRealtimeQuote(symbol)));
+    rows.push(...quotes.filter(Boolean));
+  }
+  return rows;
+}
+
+async function fetchYahooTwRealtimeQuote(symbol) {
+  const code = String(symbol || "").trim();
+  if (!/^\d{4,6}$/.test(code)) return null;
+  return await fetchYahooTwRealtimeQuoteBySymbol(`${code}.TW`, code)
+    || await fetchYahooTwRealtimeQuoteBySymbol(`${code}.TWO`, code);
+}
+
+async function fetchYahooTwRealtimeQuoteBySymbol(yahooSymbol, code) {
+  const response = await fetchWithTimeout(`https://tw.stock.yahoo.com/quote/${encodeURIComponent(yahooSymbol)}`, {
+    headers: {
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+      "cache-control": "no-cache",
+      pragma: "no-cache",
+      "user-agent": "Mozilla/5.0 EasyInvestTW quote reader"
+    }
+  }, 2600).catch(() => null);
+  if (!response?.ok) return null;
+  const html = await response.text().catch(() => "");
+  const quote = parseYahooTwQuoteFromHtml(html, code);
+  if (!quote) return null;
+  return quote;
+}
+
+function parseYahooTwQuoteFromHtml(html, fallbackCode) {
+  const match = String(html || "").match(/"quote":\{"data":(\{.*?\}),"isFailed":false,"isFetching":false,"isLoaded":true\}/s);
+  if (!match) return null;
+  let data = null;
+  try {
+    data = JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+  const symbol = String(data.symbol || fallbackCode || "").split(".")[0].trim();
+  if (!/^\d{4,6}$/.test(symbol)) return null;
+  const close = yahooRawNumber(data.price);
+  const previousClose = yahooRawNumber(data.regularMarketPreviousClose);
+  if (!Number.isFinite(close) || close <= 0) return null;
+  const change = yahooRawNumber(data.change) ?? (Number.isFinite(previousClose) ? close - previousClose : null);
+  const changePercent = parseYahooPercent(data.changePercent) ?? (
+    Number.isFinite(change) && Number.isFinite(previousClose) && previousClose
+      ? (change / previousClose) * 100
+      : null
+  );
+  const delayMinutes = toNumber(data.exchangeDataDelayedBy);
+  return {
+    symbol,
+    name: data.symbolName || symbol,
+    exchange: data.exchange,
+    openPrice: yahooRawNumber(data.regularMarketOpen),
+    highPrice: yahooRawNumber(data.regularMarketDayHigh),
+    lowPrice: yahooRawNumber(data.regularMarketDayLow),
+    lastPrice: close,
+    closePrice: close,
+    previousClose,
+    change,
+    changePercent,
+    tradeVolume: toNumber(data.volume),
+    tradeValue: toNumber(data.turnoverM),
+    transaction: toNumber(data.transaction),
+    lastUpdated: data.regularMarketTime || new Date().toISOString(),
+    source: delayMinutes > 0 ? "YahooTW_DELAYED" : "YahooTW",
+    exchangeDataDelayedBy: delayMinutes,
+    marketStatus: data.marketStatus
+  };
+}
+
+function yahooRawNumber(value) {
+  return toNumber(value?.raw ?? value?.sort ?? value?.fmt ?? value);
+}
+
+function parseYahooPercent(value) {
+  if (typeof value !== "string") return toNumber(value);
+  return toNumber(value.replace("%", ""));
+}
+
 async function fetchYahooTaiwanQuote(symbol) {
   const code = String(symbol || "").trim();
   if (!/^\d{4,6}$/.test(code)) return null;
@@ -334,7 +513,7 @@ async function fetchYahooTaiwanQuoteBySymbol(yahooSymbol, code) {
     changePercent: previousClose ? (change / previousClose) * 100 : null,
     tradeVolume: toNumber(meta.regularMarketVolume),
     lastUpdated: meta.regularMarketTime ? meta.regularMarketTime * 1000 : new Date().toISOString(),
-    source: "Yahoo"
+    source: "YahooDelayed"
   };
 }
 
@@ -407,6 +586,71 @@ function mergeRealtimePayloads(primary, preferred) {
   return [...map.values()];
 }
 
+function rememberIntradayQuotes(rows = []) {
+  if (twMarketPhase() !== "intraday") return;
+  const now = Date.now();
+  rows.forEach((row) => {
+    if (!isUsableRealtimeQuote(row)) return;
+    const source = String(row.source || "");
+    if (source === "YahooDelayed" || source === "YahooTW_DELAYED" || source === "TWSE_PREVIOUS") return;
+    const symbol = String(row.symbol || row.code || "").trim();
+    if (!symbol) return;
+    intradayQuoteCache.set(symbol, {
+      quote: { ...row },
+      cachedAt: now
+    });
+  });
+
+  intradayQuoteCache = new Map([...intradayQuoteCache.entries()]
+    .filter(([, item]) => now - item.cachedAt <= INTRADAY_QUOTE_CACHE_TTL_MS));
+}
+
+function cachedIntradayQuotes(symbols = [], currentRows = []) {
+  const now = Date.now();
+  const current = new Set((currentRows || []).map((row) => String(row.symbol || row.code || "").trim()));
+  return uniqueSymbols(symbols)
+    .filter((symbol) => !current.has(symbol))
+    .map((symbol) => {
+      const cached = intradayQuoteCache.get(symbol);
+      if (!cached || now - cached.cachedAt > INTRADAY_QUOTE_CACHE_TTL_MS) return null;
+      return {
+        ...cached.quote,
+        source: `${cached.quote.source || "Realtime"}Cache`,
+        currentPriceIsStale: true,
+        cachedAt: cached.cachedAt
+      };
+    })
+    .filter(Boolean);
+}
+
+function decorateRealtimeQuotes(rows = []) {
+  const now = Date.now();
+  return rows.map((row) => {
+    const timestamp = quoteTimestamp(row);
+    const lagMs = Number.isFinite(timestamp) ? Math.max(0, now - timestamp) : null;
+    const isIntraday = twMarketPhase() === "intraday";
+    const currentPriceIsRealtime = isIntraday && Number.isFinite(lagMs) && lagMs <= QUOTE_REALTIME_LAG_MS;
+    const currentPriceIsStale = isIntraday && Number.isFinite(lagMs) && lagMs > QUOTE_REALTIME_LAG_MS;
+    const quoteQuality = !isIntraday
+      ? "close"
+      : currentPriceIsRealtime
+        ? "realtime"
+        : currentPriceIsStale
+          ? "near-realtime"
+          : "unknown";
+    return {
+      ...row,
+      currentPrice: toNumber(row.lastPrice ?? row.closePrice ?? row.close),
+      currentPriceSource: row.source,
+      currentPriceTime: row.lastUpdated || row.closeTime || row.date,
+      currentPriceIsRealtime,
+      currentPriceIsStale,
+      quoteLagSeconds: Number.isFinite(lagMs) ? Math.round(lagMs / 1000) : null,
+      quoteQuality
+    };
+  });
+}
+
 function mergeRealtimeQuote(current, incoming, symbol) {
   const currentTime = quoteTimestamp(current);
   const incomingTime = quoteTimestamp(incoming);
@@ -424,9 +668,10 @@ function mergeRealtimeQuote(current, incoming, symbol) {
 
 function quoteFreshnessRank(quote) {
   if (!quote || quote.source === "TWSE_PREVIOUS") return 0;
-  if (quote.source === "TWSE") return 2;
-  if (quote.source === "Yahoo") return 3;
-  if (quote.source === "Fugle") return 4;
+  if (String(quote.source || "").includes("YahooDelayed")) return 1;
+  if (String(quote.source || "").includes("YahooTW")) return 2;
+  if (String(quote.source || "").includes("TWSE") || String(quote.source || "").includes("TPEx")) return 4;
+  if (quote.source === "Fugle") return 5;
   return 1;
 }
 
@@ -441,10 +686,12 @@ function quoteTimestamp(quote) {
 function isUsableRealtimeQuote(quote) {
   if (!quote) return false;
   if (!isTwMarketOpen()) return true;
-  if (quote.source === "TWSE_PREVIOUS") return false;
+  const source = String(quote.source || "");
+  if (source === "TWSE_PREVIOUS" || source === "YahooDelayed" || source === "YahooTW_DELAYED") return false;
   const timestamp = quoteTimestamp(quote);
   if (!Number.isFinite(timestamp)) return false;
-  return taipeiDateFromTimestamp(timestamp) === taipeiDate();
+  if (taipeiDateFromTimestamp(timestamp) !== taipeiDate()) return false;
+  return Date.now() - timestamp <= INTRADAY_QUOTE_MAX_LAG_MS;
 }
 
 function localizeRealtimeNames(rows = [], nameMap = new Map()) {
@@ -528,6 +775,14 @@ function compactRealtimeRows(rows = []) {
   return rows.map((row) => ({
     symbol: cleanTwseCell(row.symbol || row.code),
     name: cleanTwseCell(row.name),
+    exchange: cleanTwseCell(row.exchange),
+    currentPrice: toNumber(row.currentPrice ?? row.lastPrice ?? row.closePrice ?? row.close),
+    currentPriceSource: cleanTwseCell(row.currentPriceSource || row.source),
+    currentPriceTime: row.currentPriceTime || row.lastUpdated || row.closeTime || row.date,
+    currentPriceIsRealtime: Boolean(row.currentPriceIsRealtime),
+    currentPriceIsStale: Boolean(row.currentPriceIsStale),
+    quoteLagSeconds: toNumber(row.quoteLagSeconds),
+    quoteQuality: cleanTwseCell(row.quoteQuality),
     openPrice: toNumber(row.openPrice ?? row.open),
     highPrice: toNumber(row.highPrice ?? row.high),
     lowPrice: toNumber(row.lowPrice ?? row.low),
@@ -540,7 +795,9 @@ function compactRealtimeRows(rows = []) {
     tradeValue: toNumber(row.tradeValue ?? row.total?.tradeValue ?? row.value),
     transaction: toNumber(row.transaction ?? row.total?.transaction ?? row.trades),
     lastUpdated: row.lastUpdated || row.closeTime || row.date,
-    source: row.source || "Realtime"
+    source: row.source || "Realtime",
+    exchangeDataDelayedBy: toNumber(row.exchangeDataDelayedBy),
+    marketStatus: cleanTwseCell(row.marketStatus)
   })).filter((row) => row.symbol && Number.isFinite(row.lastPrice));
 }
 
@@ -1233,7 +1490,7 @@ function taipeiDateFromTimestamp(value) {
   return taipeiDateKey(new Date(timestamp));
 }
 
-function isTwMarketOpen(date = new Date()) {
+function twMarketPhase(date = new Date()) {
   const taipeiParts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Taipei",
     weekday: "short",
@@ -1243,11 +1500,17 @@ function isTwMarketOpen(date = new Date()) {
   }).formatToParts(date);
   const get = (type) => taipeiParts.find((part) => part.type === type)?.value;
   const weekday = get("weekday");
-  if (weekday === "Sat" || weekday === "Sun") return false;
+  if (weekday === "Sat" || weekday === "Sun") return "closed";
   const hour = Number(get("hour"));
   const minute = Number(get("minute"));
   const minutes = hour * 60 + minute;
-  return minutes >= 9 * 60 && minutes <= 13 * 60 + 35;
+  if (minutes >= 9 * 60 && minutes <= 13 * 60 + 35) return "intraday";
+  if (minutes > 13 * 60 + 35 && minutes <= 15 * 60) return "closing";
+  return "closed";
+}
+
+function isTwMarketOpen(date = new Date()) {
+  return twMarketPhase(date) === "intraday";
 }
 
 function recentTaipeiDates(days) {
@@ -1679,6 +1942,14 @@ async function safeFetchFugleQuotes(symbols) {
 async function safeFetchYahooQuotes(symbols) {
   try {
     return await fetchYahooQuotes(symbols);
+  } catch {
+    return [];
+  }
+}
+
+async function safeFetchYahooTwRealtimeQuotes(symbols) {
+  try {
+    return await fetchYahooTwRealtimeQuotes(symbols);
   } catch {
     return [];
   }
