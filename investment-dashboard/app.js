@@ -272,6 +272,9 @@ const tierState = {
 };
 let refreshTimer = null;
 let quoteRefreshTimer = null;
+let conceptQuoteFetchInFlight = false;
+let conceptQuoteRequestKey = "";
+let conceptQuoteFetchedAt = 0;
 let marketFetchInFlight = false;
 let quoteFetchInFlight = false;
 
@@ -1493,6 +1496,9 @@ function scrollToDashboardTarget(selector) {
   if (selector === "#managePanel") {
     window.setTimeout(() => els.symbol?.focus(), 450);
   }
+  if (selector === "#conceptPanel") {
+    window.setTimeout(refreshSelectedConceptQuotes, 650);
+  }
 }
 
 function updateScrollUi() {
@@ -2512,7 +2518,10 @@ function renderConceptPanel() {
 
   renderConceptDetail(selected);
   const updatedAt = market.updatedAt ? formatUpdateTime(market.updatedAt) : "尚未同步";
-  els.conceptStatus.textContent = `概念股：以 ${uniqueDailyStocks().length} 檔台股資料整理，最後更新 ${updatedAt}`;
+  const conceptStocks = uniqueDailyStocks().filter((stock) => CONCEPT_GROUPS.some((group) => conceptMatches(stock, group)));
+  const realtimeCount = conceptStocks.filter((stock) => stock.realtime && !isDelayedMarketQuote(stock)).length;
+  els.conceptStatus.textContent = `概念股：即時/近即時 ${realtimeCount} 檔，以 ${conceptStocks.length} 檔台股資料整理，最後更新 ${updatedAt}`;
+  refreshConceptQuotes(selected);
 }
 
 function selectConceptTopic(conceptId) {
@@ -2558,7 +2567,7 @@ function renderConceptDetail(group) {
           <span>${index + 1}</span>
           <div>
             <strong>${escapeHtml(row.stock.name)} ${escapeHtml(row.stock.code)}</strong>
-            <small>成交 ${compactMoney(row.value)} ｜ ${stockQuoteStamp(row.stock)}</small>
+            <small>現價 ${Number.isFinite(number(row.stock.close)) ? money(row.stock.close) : "--"} ｜ 成交 ${compactMoney(row.value)} ｜ ${stockQuoteStamp(row.stock)}</small>
           </div>
           <em class="${priceTone(row.changePercent)}">${signedMoney(row.change)} / ${percent(row.changePercent)}</em>
         </button>
@@ -2570,6 +2579,57 @@ function renderConceptDetail(group) {
   els.conceptDetail.querySelectorAll("[data-stock-code]").forEach((button) => {
     button.addEventListener("click", () => openConceptStock(button.dataset.stockCode));
   });
+}
+
+async function refreshConceptQuotes(group) {
+  if (!group || !isTwMarketOpen() || document.hidden || conceptQuoteFetchInFlight || !isConceptPanelNearViewport()) return;
+  const symbols = [...new Set((group.codes || group.rows?.map((row) => row.stock.code) || [])
+    .map((code) => String(code || "").trim())
+    .filter((code) => /^\d{4,6}$/.test(code)))]
+    .slice(0, 30);
+  if (!symbols.length) return;
+
+  const key = `${group.id}:${symbols.join(",")}`;
+  const now = Date.now();
+  if (conceptQuoteRequestKey === key && now - conceptQuoteFetchedAt < QUOTE_REFRESH_MS) return;
+
+  conceptQuoteRequestKey = key;
+  conceptQuoteFetchedAt = now;
+  conceptQuoteFetchInFlight = true;
+  try {
+    const response = await fetch(`${endpoints.bundle}?fast=quotes&symbols=${encodeURIComponent(symbols.join(","))}&_=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Concept realtime quotes unavailable");
+    const payload = await response.json();
+    const realtime = normalizeRealtimeQuotes(payload.realtime || []);
+    if (realtime.length) {
+      market.daily = mergeRealtimeQuotes(market.daily || [], realtime);
+      if (payload.realtimeSource) {
+        const sourceParts = [market.source, payload.realtimeSource].filter(Boolean).join(" + ");
+        market.source = [...new Set(sourceParts.split(" + ").filter(Boolean))].join(" + ");
+      }
+      renderConceptPanel();
+      setStatus("已更新", new Date().toLocaleString("zh-TW"));
+    }
+  } catch {
+    // Keep the closing-price ranking visible; the next scheduled refresh will try again.
+  } finally {
+    conceptQuoteFetchInFlight = false;
+  }
+}
+
+function refreshSelectedConceptQuotes() {
+  const groups = buildConceptGroups();
+  if (!groups.length) return;
+  const selected = groups.find((group) => group.id === selectedConceptId) || groups[0];
+  refreshConceptQuotes(selected);
+}
+
+function isConceptPanelNearViewport() {
+  const panel = document.querySelector("#conceptPanel");
+  if (!panel || panel.offsetParent === null) return false;
+  const rect = panel.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  return rect.bottom >= -240 && rect.top <= viewportHeight + 480;
 }
 
 function openConceptStock(code) {

@@ -251,20 +251,26 @@ async function fetchFugleQuotes(symbols) {
   const apiKey = process.env.FUGLE_API_KEY;
   if (!apiKey || !symbols.length) return [];
 
-  const quotes = await Promise.all(symbols.map(async (symbol) => {
-    try {
-      const response = await fetchWithTimeout(`${FUGLE_BASE}/intraday/quote/${encodeURIComponent(symbol)}`, {
-        headers: {
-          accept: "application/json",
-          "X-API-KEY": apiKey
-        }
-      }, 2200);
-      if (!response.ok) return null;
-      return response.json();
-    } catch {
-      return null;
-    }
-  }));
+  const quotes = [];
+  const limited = uniqueSymbols(symbols).slice(0, 30);
+  for (let index = 0; index < limited.length; index += 6) {
+    const batch = limited.slice(index, index + 6);
+    const batchQuotes = await Promise.all(batch.map(async (symbol) => {
+      try {
+        const response = await fetchWithTimeout(`${FUGLE_BASE}/intraday/quote/${encodeURIComponent(symbol)}`, {
+          headers: {
+            accept: "application/json",
+            "X-API-KEY": apiKey
+          }
+        }, 2200);
+        if (!response.ok) return null;
+        return response.json();
+      } catch {
+        return null;
+      }
+    }));
+    quotes.push(...batchQuotes);
+  }
 
   return quotes.map(normalizeFugleRealtimeQuote).filter(Boolean);
 }
