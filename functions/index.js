@@ -45,6 +45,7 @@ let quoteCache = null;
 let monthlyRevenueCache = null;
 let companyNameCache = null;
 let twseSessionCookieCache = null;
+let marketIndexCache = null;
 let intradayQuoteCache = new Map();
 
 exports.market = onRequest({
@@ -2026,19 +2027,19 @@ async function safeFetchTwseIndex() {
   const phase = twMarketPhase();
   try {
     const index = await fetchTwseIndex();
-    if (phase === "intraday" ? isUsableIntradayIndex(index) : Number.isFinite(toNumber(index?.index))) return index;
+    if (phase === "intraday" ? isUsableIntradayIndex(index) : Number.isFinite(toNumber(index?.index))) return rememberMarketIndex(index);
     throw new Error("TWSE index empty");
   } catch {
     if (phase === "intraday") {
       try {
         const index = await fetchFugleIndex();
-        if (isUsableIntradayIndex(index) && !String(index.name || "").includes("報酬")) return index;
+        if (isUsableIntradayIndex(index) && !String(index.name || "").includes("報酬")) return rememberMarketIndex(index);
       } catch {}
-      return null;
+      return cachedMarketIndex();
     }
     try {
       const index = await fetchYahooIndex("^TWII", "發行量加權股價指數");
-      return {
+      return rememberMarketIndex({
         ...index,
         name: "發行量加權股價指數",
         symbol: "t00",
@@ -2049,11 +2050,31 @@ async function safeFetchTwseIndex() {
             symbol: "t00"
           }
         }
-      };
+      });
     } catch {
-      return null;
+      return cachedMarketIndex();
     }
   }
+}
+
+function rememberMarketIndex(index) {
+  if (!index || !Number.isFinite(toNumber(index.index))) return index;
+  marketIndexCache = {
+    index: { ...index },
+    createdAt: Date.now()
+  };
+  return index;
+}
+
+function cachedMarketIndex() {
+  if (!marketIndexCache?.index) return null;
+  if (twMarketPhase() === "intraday" && !isUsableIntradayIndex(marketIndexCache.index)) return null;
+  const maxAge = twMarketPhase() === "intraday" ? INTRADAY_INDEX_MAX_LAG_MS : DASHBOARD_STALE_TTL_MS;
+  if (Date.now() - marketIndexCache.createdAt > maxAge) return null;
+  return {
+    ...marketIndexCache.index,
+    cache: "last-good"
+  };
 }
 
 async function safeFetchUsMarket() {
