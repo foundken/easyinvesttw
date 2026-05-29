@@ -17,6 +17,7 @@ const COMPANY_NAME_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const INTRADAY_QUOTE_MAX_LAG_MS = 3 * 60 * 1000;
 const INTRADAY_QUOTE_CACHE_TTL_MS = 3 * 60 * 1000;
 const QUOTE_REALTIME_LAG_MS = 30 * 1000;
+const INTRADAY_INDEX_MAX_LAG_MS = 5 * 60 * 1000;
 const CONCEPT_SYMBOLS = [
   "1319", "1503", "1504", "1513", "1514", "1515", "1519", "1536", "1560", "1587",
   "1590", "1609", "1720", "1760", "1789", "1795", "2049", "2231", "2303", "2308",
@@ -982,7 +983,7 @@ async function fetchFugleActiveRanking() {
     .slice(0, 80);
 }
 
-async function fetchFugleIndex(symbol = "IR0001") {
+async function fetchFugleIndex(symbol = "IX0001") {
   const apiKey = process.env.FUGLE_API_KEY;
   if (!apiKey) throw new Error("Fugle API key missing");
 
@@ -1109,31 +1110,51 @@ async function fetchTwseIndex() {
     fetchTwseIndexCandles(date).catch(() => []),
     fetchYahooIndex("^TWII", "台灣加權指數", "1m").catch(() => null)
   ]);
-  const hasYahooIndex = Number.isFinite(toNumber(yahooIndex?.index));
-  const candles = yahooIndex?.candles?.length ? yahooIndex.candles : twseCandles;
+  const phase = twMarketPhase();
   const summary = groups.listed || {};
+  const hasTwseSummary = Number.isFinite(toNumber(summary.index));
+  const hasYahooIndex = Number.isFinite(toNumber(yahooIndex?.index));
+  const twseSummaryIsFresh = hasTwseSummary && isUsableIntradayIndex(summary);
+  const yahooIndexIsFresh = hasYahooIndex && isUsableIntradayIndex(yahooIndex);
+  const useTwseSummary = hasTwseSummary && (phase !== "intraday" || twseSummaryIsFresh || !yahooIndexIsFresh);
+  const useYahooIndex = hasYahooIndex && !useTwseSummary && (phase !== "intraday" || yahooIndexIsFresh);
+  const candles = twseCandles.length ? twseCandles : (useYahooIndex && yahooIndex?.candles?.length ? yahooIndex.candles : []);
   const latest = candles.at(-1);
-  const index = hasYahooIndex ? toNumber(yahooIndex.index) : toNumber(summary.index) || latest?.close;
-  const previousClose = hasYahooIndex ? toNumber(yahooIndex.previousClose) : toNumber(summary.previousClose);
+  const index = useTwseSummary ? toNumber(summary.index) : useYahooIndex ? toNumber(yahooIndex.index) : latest?.close;
+  const previousClose = useTwseSummary
+    ? toNumber(summary.previousClose)
+    : useYahooIndex
+      ? toNumber(yahooIndex.previousClose)
+      : toNumber(summary.previousClose) || toNumber(yahooIndex?.previousClose);
   const change = Number.isFinite(index) && Number.isFinite(previousClose) ? index - previousClose : null;
   const changePercent = Number.isFinite(change) && Number.isFinite(previousClose) ? (change / previousClose) * 100 : null;
+  const source = useTwseSummary ? "TWSE MIS" : useYahooIndex ? "Yahoo + TWSE" : twseCandles.length ? "TWSE" : "TWSE";
 
   return {
     name: "發行量加權股價指數",
     symbol: "t00",
     index,
     previousClose,
-    open: hasYahooIndex ? toNumber(yahooIndex.open) || toNumber(summary.open) : toNumber(summary.open) || candles[0]?.close,
-    high: hasYahooIndex ? toNumber(yahooIndex.high) || toNumber(summary.high) : toNumber(summary.high) || maxBy(candles, "close"),
-    low: hasYahooIndex ? toNumber(yahooIndex.low) || toNumber(summary.low) : toNumber(summary.low) || minBy(candles, "close"),
+    open: useTwseSummary ? toNumber(summary.open) || candles[0]?.close : toNumber(yahooIndex?.open) || toNumber(summary.open) || candles[0]?.close,
+    high: useTwseSummary ? toNumber(summary.high) || maxBy(candles, "close") : toNumber(yahooIndex?.high) || toNumber(summary.high) || maxBy(candles, "close"),
+    low: useTwseSummary ? toNumber(summary.low) || minBy(candles, "close") : toNumber(yahooIndex?.low) || toNumber(summary.low) || minBy(candles, "close"),
     turnover: toNumber(summary.turnover),
     change,
     changePercent,
-    source: hasYahooIndex ? "Yahoo + TWSE" : twseCandles.length ? "TWSE" : candles.length ? "TWSE + Yahoo" : "TWSE",
-    lastUpdated: hasYahooIndex ? yahooIndex.lastUpdated : summary.lastUpdated || latest?.date || new Date().toISOString(),
+    source,
+    lastUpdated: useTwseSummary ? summary.lastUpdated || latest?.date || new Date().toISOString() : useYahooIndex ? yahooIndex.lastUpdated : summary.lastUpdated || latest?.date || new Date().toISOString(),
     candles,
     groups
   };
+}
+
+function isUsableIntradayIndex(index) {
+  if (!Number.isFinite(toNumber(index?.index))) return false;
+  if (twMarketPhase() !== "intraday") return true;
+  const timestamp = quoteTimestamp(index);
+  if (!Number.isFinite(timestamp)) return false;
+  if (taipeiDateFromTimestamp(timestamp) !== taipeiDate()) return false;
+  return Date.now() - timestamp <= INTRADAY_INDEX_MAX_LAG_MS;
 }
 
 async function fetchTwseIndexGroups(timeoutMs = 5000) {
@@ -1996,11 +2017,19 @@ async function safeFetchFugleActiveRanking() {
 }
 
 async function safeFetchTwseIndex() {
+  const phase = twMarketPhase();
   try {
     const index = await fetchTwseIndex();
-    if (Number.isFinite(toNumber(index?.index))) return index;
+    if (phase === "intraday" ? isUsableIntradayIndex(index) : Number.isFinite(toNumber(index?.index))) return index;
     throw new Error("TWSE index empty");
   } catch {
+    if (phase === "intraday") {
+      try {
+        const index = await fetchFugleIndex();
+        if (isUsableIntradayIndex(index) && !String(index.name || "").includes("報酬")) return index;
+      } catch {}
+      return null;
+    }
     try {
       const index = await fetchYahooIndex("^TWII", "發行量加權股價指數");
       return {

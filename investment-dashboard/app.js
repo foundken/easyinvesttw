@@ -1225,7 +1225,7 @@ function normalizeIndex(payload) {
 
   return {
     name: payload.name || "加權指數",
-    symbol: payload.symbol || "IR0001",
+    symbol: payload.symbol || "IX0001",
     index: close,
     previousClose,
     open: number(payload.open),
@@ -1246,11 +1246,12 @@ function normalizeIndexGroups(groups = {}) {
 }
 
 function isValidMarketIndex(index) {
-  return ["Fugle", "TWSE", "Yahoo", "TWSE + Yahoo", "Yahoo + TWSE"].includes(index?.source) && Number.isFinite(index.index);
+  return ["Fugle", "TWSE", "TWSE MIS", "Yahoo", "TWSE + Yahoo", "Yahoo + TWSE"].includes(index?.source) && Number.isFinite(index.index);
 }
 
 function marketIndexSourceText(source) {
   if (source === "Fugle") return "Fugle 即時指數資料";
+  if (source === "TWSE MIS") return "TWSE MIS 即時指數資料";
   if (source === "TWSE + Yahoo") return "TWSE 即時指數 + Yahoo 盤中線圖";
   if (source === "Yahoo + TWSE") return "Yahoo 盤中指數 + TWSE 分類資料";
   if (source === "Yahoo") return "Yahoo 公開行情";
