@@ -3875,6 +3875,29 @@ function deleteSellRecord(recordId) {
   render();
 }
 
+function editBuyLotCost(item, lotIndex) {
+  const lots = holdingLots(item);
+  const lot = lots[lotIndex];
+  if (!lot) {
+    alert("找不到這筆買進紀錄，請重新整理後再試一次。");
+    return;
+  }
+
+  const priceInput = prompt(`修改 ${stockDisplayName(item)} 這筆買進單價？`, String(lot.cost));
+  if (priceInput === null) return;
+  const newCost = number(priceInput);
+  if (!Number.isFinite(newCost) || newCost <= 0) {
+    alert("請輸入正確的買進單價。");
+    return;
+  }
+
+  lots[lotIndex] = { ...lot, cost: roundPrice(newCost) };
+  item.lots = lots;
+  syncHoldingTotals(item);
+  saveWatchList();
+  render();
+}
+
 function historyStockLabel(item) {
   return item.name ? `${item.name} ${item.code}` : item.code;
 }
@@ -4338,13 +4361,14 @@ function renderHoldings(holdings) {
             <strong>買進紀錄</strong>
             <span>均價 ${cost ? money(cost) : "--"}，總成本 ${costValue === null ? "--" : compactMoney(costValue)}</span>
           </div>
-          ${lots.map((lot) => {
+          ${lots.map((lot, lotIndex) => {
             const lotPnl = stock && Number.isFinite(stock.close) ? (stock.close - lot.cost) * lot.shares : null;
             return `
               <div class="holding-lot-row">
                 <span>${escapeHtml(formatDateOnly(lot.boughtAt))}</span>
                 <strong>${money(lot.shares)} 股 @ ${money(lot.cost)}</strong>
                 <small class="${priceTone(lotPnl)}">${Number.isFinite(lotPnl) ? formatCurrency(lotPnl) : "--"}</small>
+                <button class="lot-edit" type="button" data-lot-index="${lotIndex}">改價</button>
               </div>
             `;
           }).join("")}
@@ -4360,8 +4384,13 @@ function renderHoldings(holdings) {
     card.querySelector(".sell").addEventListener("click", () => {
       sellHolding(item, stock);
     });
+    card.querySelectorAll(".lot-edit").forEach((button) => {
+      button.addEventListener("click", () => {
+        editBuyLotCost(item, number(button.dataset.lotIndex));
+      });
+    });
     card.addEventListener("click", (event) => {
-      if (event.target.closest(".delete") || event.target.closest(".sell")) return;
+      if (event.target.closest(".delete") || event.target.closest(".sell") || event.target.closest(".lot-edit")) return;
       openStockDetail({ item, stock, val, rev, signal });
     });
     els.holdingList.append(card);

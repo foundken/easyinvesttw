@@ -2103,7 +2103,7 @@ label span {
 }
 
 .holding-lot-row {
-  grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1fr) auto auto;
   padding-top: 8px;
   border-top: 1px solid rgba(45, 39, 32, 0.08);
 }
@@ -2116,6 +2116,15 @@ label span {
 
 .holding-lot-row strong {
   font-size: 15px;
+}
+
+.lot-edit {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 13px;
 }
 
 .metric {
