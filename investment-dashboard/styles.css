@@ -2627,6 +2627,30 @@ label span {
   gap: 10px;
 }
 
+.chart-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.chart-mode-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.chart-mode-button.active {
+  background: var(--blue);
+  color: #fff;
+}
+
 .chart-button {
   min-height: 34px;
   padding: 0 12px;
@@ -3026,6 +3050,19 @@ body.chart-expanded .chart-wrap canvas {
 [data-theme="dark"] body.chart-expanded .chart-wrap {
   border-color: var(--line);
   background: var(--card);
+}
+
+[data-theme="dark"] .chart-mode-toggle {
+  background: #272b33;
+}
+
+[data-theme="dark"] .chart-mode-button {
+  color: #f7f2e7;
+}
+
+[data-theme="dark"] .chart-mode-button.active {
+  background: #6aa4db;
+  color: #0f1720;
 }
 
 [data-theme="dark"] .freshness-grid span,

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260529-concept-live-price-v1">
+  <link rel="stylesheet" href="styles.css?v=20260529-detail-candle-v1">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -643,9 +643,13 @@
 
       <div class="chart-wrap">
         <div class="chart-head">
-          <strong>近月價格線圖</strong>
+          <strong id="detailChartTitle">近月價格線圖</strong>
           <div class="chart-tools">
             <span id="detailChartStatus">讀取中</span>
+            <div class="chart-mode-toggle" role="tablist" aria-label="圖表類型">
+              <button id="lineChartModeButton" class="chart-mode-button active" type="button" aria-pressed="true">線圖</button>
+              <button id="candleChartModeButton" class="chart-mode-button" type="button" aria-pressed="false">K線</button>
+            </div>
             <button id="expandChartButton" class="chart-button" type="button">放大</button>
           </div>
         </div>
@@ -691,6 +695,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260529-concept-live-price-v1"></script>
+  <script src="app.js?v=20260529-detail-candle-v1"></script>
 </body>
 </html>

@@ -129,7 +129,10 @@ const els = {
   detailRevenueMom: document.querySelector("#detailRevenueMom"),
   detailRevenue: document.querySelector("#detailRevenue"),
   detailInstitutional: document.querySelector("#detailInstitutional"),
+  detailChartTitle: document.querySelector("#detailChartTitle"),
   detailChartStatus: document.querySelector("#detailChartStatus"),
+  lineChartMode: document.querySelector("#lineChartModeButton"),
+  candleChartMode: document.querySelector("#candleChartModeButton"),
   expandChart: document.querySelector("#expandChartButton"),
   priceChart: document.querySelector("#priceChart"),
   detailPlainText: document.querySelector("#detailPlainText"),
@@ -230,6 +233,7 @@ let market = {
 };
 const historyCache = new Map();
 let activeChartHistory = [];
+let activeChartMode = "line";
 let chartExpanded = false;
 let selectedMarket = "tw";
 let selectedGroup = "listed";
@@ -1548,10 +1552,27 @@ function sampleHistory(code) {
     const close = Math.max(1, base + wave + drift);
     return {
       date: `範例 ${index + 1}`,
+      open: close * (1 + Math.sin(index / 3) * 0.012),
+      high: close * 1.025,
+      low: close * 0.975,
       close,
       volume: Math.round((stock.volume || 1000000) * (0.75 + (index % 7) * 0.08))
     };
-  });
+  }).map(normalizeHistoryCandle);
+}
+
+function normalizeHistoryCandle(item) {
+  const close = number(item.close);
+  const open = Number.isFinite(number(item.open)) ? number(item.open) : close;
+  const highSource = Number.isFinite(number(item.high)) ? number(item.high) : Math.max(open, close);
+  const lowSource = Number.isFinite(number(item.low)) ? number(item.low) : Math.min(open, close);
+  return {
+    ...item,
+    open,
+    high: Math.max(highSource, open, close),
+    low: Math.min(lowSource, open, close),
+    close
+  };
 }
 
 async function fetchHistory(code) {
@@ -1563,9 +1584,12 @@ async function fetchHistory(code) {
     const payload = await response.json();
     const history = (payload.history || []).map((item) => ({
       date: rocDateToText(item.date),
+      open: number(item.open),
+      high: number(item.high),
+      low: number(item.low),
       close: number(item.close),
       volume: number(item.volume)
-    })).filter((item) => Number.isFinite(item.close));
+    })).filter((item) => Number.isFinite(item.close)).map(normalizeHistoryCandle);
     if (!history.length) throw new Error("empty history");
     historyCache.set(code, history);
     return history;
@@ -4640,7 +4664,7 @@ async function openStockDetail(entry) {
   els.detailChartStatus.textContent = history.length ? "近月歷史成交資料" : "歷史資料不足";
   activeChartHistory = history;
   resizeChartCanvas();
-  drawPriceChart(history);
+  setDetailChartMode(activeChartMode);
 }
 
 function renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning }) {
@@ -4900,14 +4924,16 @@ function drawPriceChart(history, hoverIndex = null) {
 
     const tooltip = [
       item.date,
+      `開 ${money(item.open)}`,
+      `高 ${money(item.high)} 低 ${money(item.low)}`,
       `收盤 ${money(item.close)}`,
       `成交量 ${compactMoney(item.volume || 0)}`
     ];
     context.font = "13px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
     const tipWidth = Math.max(...tooltip.map((text) => context.measureText(text).width)) + 22;
-    const tipHeight = 70;
+    const tipHeight = 110;
     const tipX = x + tipWidth + 16 > width ? x - tipWidth - 12 : x + 12;
-    const tipY = Math.max(padding.top + 8, y - tipHeight / 2);
+    const tipY = Math.max(padding.top + 8, Math.min(padding.top + chartHeight - tipHeight - 8, y - tipHeight / 2));
     context.fillStyle = "rgba(36, 36, 35, 0.92)";
     roundedRect(context, tipX, tipY, tipWidth, tipHeight, 8);
     context.fill();
@@ -4916,6 +4942,198 @@ function drawPriceChart(history, hoverIndex = null) {
       context.fillText(text, tipX + 11, tipY + 20 + index * 20);
     });
   }
+}
+
+function drawCandlestickChart(history, hoverIndex = null) {
+  const canvas = els.priceChart;
+  const context = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const padding = { top: 26, right: 78, bottom: 46, left: 68 };
+  if (!history.length) {
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#fffdf8";
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = "#6f6a61";
+    context.font = "18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    context.fillText("目前沒有取得可靠的日 K 歷史資料", padding.left, height / 2);
+    return;
+  }
+
+  const highs = history.map((item) => item.high).filter(Number.isFinite);
+  const lows = history.map((item) => item.low).filter(Number.isFinite);
+  const closes = history.map((item) => item.close).filter(Number.isFinite);
+  const volumes = history.map((item) => item.volume || 0);
+  const maxPrice = Math.max(...highs, ...closes);
+  const minPrice = Math.min(...lows, ...closes);
+  const maxVolume = Math.max(...volumes, 1);
+  const pricePad = (maxPrice - minPrice || maxPrice * 0.04 || 1) * 0.12;
+  const chartMin = minPrice - pricePad;
+  const chartMax = maxPrice + pricePad;
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const volumeHeight = 62;
+  const priceHeight = chartHeight - volumeHeight - 18;
+  const priceRange = chartMax - chartMin || 1;
+  const candleGap = Math.max(2, chartWidth / history.length * 0.24);
+  const candleWidth = Math.max(5, Math.min(18, chartWidth / history.length - candleGap));
+  const pointX = (index) => padding.left + (chartWidth * index) / Math.max(history.length - 1, 1);
+  const pointY = (price) => padding.top + ((chartMax - price) / priceRange) * priceHeight;
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#fffdf8";
+  context.fillRect(0, 0, width, height);
+  context.save();
+  roundedRect(context, padding.left, padding.top, chartWidth, chartHeight, 8);
+  context.clip();
+
+  context.strokeStyle = "#d8dee4";
+  context.lineWidth = 1;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = padding.top + (priceHeight / 4) * i;
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(width - padding.right, y);
+    context.stroke();
+  }
+  for (let i = 0; i <= 5; i += 1) {
+    const x = padding.left + (chartWidth / 5) * i;
+    context.beginPath();
+    context.moveTo(x, padding.top);
+    context.lineTo(x, padding.top + chartHeight);
+    context.stroke();
+  }
+
+  history.forEach((item, index) => {
+    const x = pointX(index);
+    const open = Number.isFinite(item.open) ? item.open : item.close;
+    const close = item.close;
+    const high = Number.isFinite(item.high) ? item.high : Math.max(open, close);
+    const low = Number.isFinite(item.low) ? item.low : Math.min(open, close);
+    const up = close >= open;
+    const color = up ? "#ad3032" : "#176b55";
+    const bodyTop = pointY(Math.max(open, close));
+    const bodyBottom = pointY(Math.min(open, close));
+    const bodyHeight = Math.max(2, bodyBottom - bodyTop);
+    const barHeight = ((item.volume || 0) / maxVolume) * volumeHeight;
+
+    context.strokeStyle = color;
+    context.fillStyle = color;
+    context.lineWidth = Math.max(1.2, Math.min(2.2, candleWidth / 5));
+    context.beginPath();
+    context.moveTo(x, pointY(high));
+    context.lineTo(x, pointY(low));
+    context.stroke();
+    if (up) {
+      context.strokeRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
+      context.fillStyle = "rgba(173, 48, 50, 0.14)";
+      context.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
+    } else {
+      context.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
+    }
+
+    context.fillStyle = up ? "rgba(173, 48, 50, 0.28)" : "rgba(23, 107, 85, 0.28)";
+    context.fillRect(x - candleWidth / 2, padding.top + priceHeight + 18 + (volumeHeight - barHeight), candleWidth, barHeight);
+  });
+
+  context.restore();
+
+  context.strokeStyle = "#cfd7df";
+  context.strokeRect(padding.left, padding.top, chartWidth, chartHeight);
+  context.fillStyle = "#4b5563";
+  context.font = "13px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+  for (let i = 0; i <= 4; i += 1) {
+    const y = padding.top + (priceHeight / 4) * i;
+    const price = chartMax - (priceRange / 4) * i;
+    context.fillText(money(price), width - padding.right + 10, y + 4);
+  }
+
+  const highIndex = history.findIndex((item) => item.high === maxPrice);
+  const lowIndex = history.findIndex((item) => item.low === minPrice);
+  if (highIndex >= 0) drawCanvasPill(context, `高 ${money(maxPrice)}`, pointX(highIndex), pointY(maxPrice) - 18, {
+    background: "#ad3032",
+    align: "center",
+    minX: padding.left,
+    maxX: width - padding.right
+  });
+  if (lowIndex >= 0) drawCanvasPill(context, `低 ${money(minPrice)}`, pointX(lowIndex), pointY(minPrice) + 22, {
+    background: "#176b55",
+    align: "center",
+    minX: padding.left,
+    maxX: width - padding.right
+  });
+
+  const latest = history.at(-1);
+  if (latest) {
+    const latestColor = latest.close >= latest.open ? "#ad3032" : "#176b55";
+    drawCanvasPill(context, `收 ${money(latest.close)}`, width - padding.right + 76, pointY(latest.close), {
+      background: latestColor,
+      align: "right",
+      minX: padding.left,
+      maxX: width - 6
+    });
+  }
+
+  if (history[0]) context.fillText(history[0].date, padding.left, height - 12);
+  if (latest) {
+    const text = latest.date;
+    context.fillText(text, width - padding.right - context.measureText(text).width, height - 12);
+  }
+
+  if (hoverIndex !== null && history[hoverIndex]) {
+    const item = history[hoverIndex];
+    const x = pointX(hoverIndex);
+    const y = pointY(item.close);
+    context.strokeStyle = "rgba(36, 36, 35, 0.38)";
+    context.setLineDash([4, 4]);
+    context.beginPath();
+    context.moveTo(x, padding.top);
+    context.lineTo(x, padding.top + chartHeight);
+    context.moveTo(padding.left, y);
+    context.lineTo(width - padding.right, y);
+    context.stroke();
+    context.setLineDash([]);
+
+    const tooltip = [
+      item.date,
+      `開 ${money(item.open)}`,
+      `高 ${money(item.high)} 低 ${money(item.low)}`,
+      `收 ${money(item.close)}`,
+      `量 ${compactMoney(item.volume || 0)}`
+    ];
+    context.font = "13px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    const tipWidth = Math.max(...tooltip.map((text) => context.measureText(text).width)) + 22;
+    const tipHeight = 110;
+    const tipX = x + tipWidth + 16 > width ? x - tipWidth - 12 : x + 12;
+    const tipY = Math.max(padding.top + 8, Math.min(padding.top + chartHeight - tipHeight - 8, y - tipHeight / 2));
+    context.fillStyle = "rgba(36, 36, 35, 0.92)";
+    roundedRect(context, tipX, tipY, tipWidth, tipHeight, 8);
+    context.fill();
+    context.fillStyle = "#fff";
+    tooltip.forEach((text, index) => {
+      context.fillText(text, tipX + 11, tipY + 20 + index * 20);
+    });
+  }
+}
+
+function drawActiveDetailChart(hoverIndex = null) {
+  if (activeChartMode === "candle") {
+    drawCandlestickChart(activeChartHistory, hoverIndex);
+    return;
+  }
+  drawPriceChart(activeChartHistory, hoverIndex);
+}
+
+function setDetailChartMode(mode) {
+  activeChartMode = mode === "candle" ? "candle" : "line";
+  els.lineChartMode?.classList.toggle("active", activeChartMode === "line");
+  els.candleChartMode?.classList.toggle("active", activeChartMode === "candle");
+  els.lineChartMode?.setAttribute("aria-pressed", activeChartMode === "line" ? "true" : "false");
+  els.candleChartMode?.setAttribute("aria-pressed", activeChartMode === "candle" ? "true" : "false");
+  if (els.detailChartTitle) {
+    els.detailChartTitle.textContent = activeChartMode === "candle" ? "近月日 K 線" : "近月價格線圖";
+  }
+  if (activeChartHistory.length) drawActiveDetailChart();
 }
 
 function updateChartHover(event) {
@@ -4928,14 +5146,14 @@ function updateChartHover(event) {
   const ratio = (x - padding.left) / chartWidth;
   const index = Math.round(ratio * (activeChartHistory.length - 1));
   if (index < 0 || index >= activeChartHistory.length) {
-    drawPriceChart(activeChartHistory);
+    drawActiveDetailChart();
     return;
   }
-  drawPriceChart(activeChartHistory, index);
+  drawActiveDetailChart(index);
 }
 
 function clearChartHover() {
-  if (activeChartHistory.length) drawPriceChart(activeChartHistory);
+  if (activeChartHistory.length) drawActiveDetailChart();
 }
 
 function resizeChartCanvas() {
@@ -4951,7 +5169,7 @@ function resizeChartCanvas() {
 function redrawChart() {
   if (activeChartHistory.length) {
     resizeChartCanvas();
-    drawPriceChart(activeChartHistory);
+    drawActiveDetailChart();
   }
   if (latestTrendItems.length) drawTrendChart(latestTrendItems);
 }
@@ -5390,6 +5608,8 @@ els.sectorModal.addEventListener("click", (event) => {
   openStockDetail({ item, stock, val, rev, signal: scoreStock(stock, val, rev) });
 });
 els.expandChart.addEventListener("click", toggleChartExpanded);
+els.lineChartMode?.addEventListener("click", () => setDetailChartMode("line"));
+els.candleChartMode?.addEventListener("click", () => setDetailChartMode("candle"));
 els.priceChart.addEventListener("mousemove", updateChartHover);
 els.priceChart.addEventListener("pointermove", handleChartPointer);
 els.priceChart.addEventListener("mouseleave", clearChartHover);
