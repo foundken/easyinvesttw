@@ -1520,6 +1520,7 @@ function updateScrollUi() {
   navButtons.forEach((button) => {
     button.classList.toggle("is-active", Boolean(active) && button === active.button);
   });
+  refreshSelectedConceptQuotes();
 }
 
 function getStock(code) {
@@ -2542,17 +2543,19 @@ function renderConceptDetail(group) {
   const leaderText = group.leader ? `${group.leader.stock.code} ${group.leader.stock.name}` : "--";
   const laggardText = group.laggard ? `${group.laggard.stock.code} ${group.laggard.stock.name}` : "--";
   const modeText = selectedConceptMode === "lagging" ? "落後" : "領先";
+  const realtimeCount = group.rows.filter((row) => row.stock.realtime && !isDelayedMarketQuote(row.stock)).length;
 
   els.conceptDetail.innerHTML = `
     <div class="concept-detail-head">
       <div>
         <span>目前主題</span>
         <strong>${escapeHtml(group.name)}</strong>
-        <p>${modeText}排行依今日漲跌幅排序，搭配成交金額看資金是否真的集中。</p>
+        <p>${modeText}排行依盤中即時價重算；若來源暫時未回，該檔會明確標示收盤資料。</p>
       </div>
       <div class="concept-score">
         <span>平均漲跌</span>
         <strong class="${priceTone(group.avgChange)}">${percent(group.avgChange)}</strong>
+        <small>即時 ${realtimeCount} / ${group.count} 檔</small>
       </div>
     </div>
     <div class="concept-stat-grid">
@@ -2565,11 +2568,14 @@ function renderConceptDetail(group) {
       ${rows.map((row, index) => `
         <button type="button" class="concept-rank-row" data-stock-code="${escapeAttribute(row.stock.code)}">
           <span>${index + 1}</span>
-          <div>
+          <div class="concept-rank-main">
             <strong>${escapeHtml(row.stock.name)} ${escapeHtml(row.stock.code)}</strong>
-            <small>現價 ${Number.isFinite(number(row.stock.close)) ? money(row.stock.close) : "--"} ｜ 成交 ${compactMoney(row.value)} ｜ ${stockQuoteStamp(row.stock)}</small>
+            <small>成交 ${compactMoney(row.value)} ｜ ${stockQuoteStamp(row.stock)}</small>
           </div>
-          <em class="${priceTone(row.changePercent)}">${signedMoney(row.change)} / ${percent(row.changePercent)}</em>
+          <div class="concept-rank-price">
+            <strong class="${priceTone(row.changePercent)}">${stockPriceLabel(row.stock)} ${Number.isFinite(number(row.stock.close)) ? money(row.stock.close) : "--"}</strong>
+            <em class="${priceTone(row.changePercent)}">${signedMoney(row.change)} / ${percent(row.changePercent)}</em>
+          </div>
         </button>
       `).join("")}
       ${hiddenCount ? `<p class="concept-rank-note">顯示前 ${rows.length} 檔，共 ${group.count} 檔；其餘依成交金額與漲跌幅排序後納入計算。</p>` : ""}

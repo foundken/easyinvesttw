@@ -607,6 +607,12 @@ button.concept-topic.active strong {
   font-size: 30px;
 }
 
+.concept-score small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
 .concept-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -636,7 +642,7 @@ button.concept-topic.active strong {
 
 button.concept-rank-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) minmax(160px, auto);
+  grid-template-columns: 34px minmax(0, 1fr) minmax(210px, auto);
   gap: 10px;
   align-items: center;
   min-height: 66px;
@@ -670,6 +676,10 @@ button.concept-rank-row strong {
   font-size: 18px;
 }
 
+button.concept-rank-row .concept-rank-main {
+  min-width: 0;
+}
+
 button.concept-rank-row small {
   display: block;
   margin-top: 4px;
@@ -677,7 +687,20 @@ button.concept-rank-row small {
   font-weight: 800;
 }
 
-button.concept-rank-row em {
+.concept-rank-price {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  min-width: 0;
+}
+
+.concept-rank-price strong {
+  font-size: 19px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.concept-rank-price em {
   font-style: normal;
   font-size: 17px;
   font-weight: 950;
@@ -3647,12 +3670,18 @@ body.chart-expanded .chart-wrap canvas {
   }
 
   .trend-quote,
-  button.concept-rank-row em,
+  .concept-rank-price,
+  .concept-rank-price strong,
+  .concept-rank-price em,
   .holding-live-quote,
   .holding-lot-head span,
   .sell-history-profit {
     min-width: 0;
     text-align: left;
+  }
+
+  .concept-rank-price {
+    justify-items: start;
   }
 
   .trade-summary-head {
