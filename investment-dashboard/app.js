@@ -1349,7 +1349,7 @@ async function fetchRealtimeQuotes() {
         market.source = [...new Set(sourceParts.split(" + ").filter(Boolean))].join(" + ");
       }
       render();
-      setStatus("已更新", new Date().toLocaleString("zh-TW"));
+      setStatus("已更新", marketStatusTime());
     }
   } catch {
     // Keep the last known market data on screen; the full refresh will retry later.
@@ -1409,8 +1409,9 @@ async function fetchMarket() {
   }
 
   const hasUsableMarketData = market.daily.length || Number.isFinite(number(market.index?.index));
-  setStatus(market.source === "sample" ? "範例資料" : hasUsableMarketData ? "已更新" : "資料不足", new Date().toLocaleString("zh-TW"));
+  const status = market.source === "sample" ? "範例資料" : hasUsableMarketData ? "已更新" : "資料不足";
   render();
+  setStatus(status, marketStatusTime());
   marketFetchInFlight = false;
   scheduleMarketRefresh();
   scheduleQuoteRefresh();
@@ -1465,6 +1466,10 @@ function setStatus(status, time) {
   if (els.todayPnlUpdatedAt) {
     els.todayPnlUpdatedAt.textContent = `資料更新時間：${time || "尚未同步"}`;
   }
+}
+
+function marketStatusTime() {
+  return market.updatedAt ? formatUpdateTime(market.updatedAt) : new Date().toLocaleString("zh-TW");
 }
 
 function openBriefTarget(card) {
