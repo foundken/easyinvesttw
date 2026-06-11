@@ -1,3 +1,4 @@
+const APP_ASSET_VERSION = "20260612-spacex-v1";
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
 const PORTFOLIO_KEY = "plain-stock-dashboard-portfolios-v1";
@@ -11,6 +12,30 @@ const STOCK_TRANSACTION_TAX_RATE = 0.003;
 const endpoints = {
   bundle: getMarketEndpoint()
 };
+
+ensureFreshAppShell();
+
+function ensureFreshAppShell() {
+  document.documentElement.dataset.appVersion = APP_ASSET_VERSION;
+  const scriptUrl = document.currentScript?.src;
+  if (!scriptUrl) return;
+
+  try {
+    const scriptVersion = new URL(scriptUrl, window.location.href).searchParams.get("v");
+    if (!scriptVersion || scriptVersion === APP_ASSET_VERSION) return;
+
+    const reloadKey = `plain-stock-dashboard-reloaded-${APP_ASSET_VERSION}`;
+    if (sessionStorage.getItem(reloadKey)) return;
+    sessionStorage.setItem(reloadKey, "1");
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("appVersion", APP_ASSET_VERSION);
+    url.searchParams.set("_", String(Date.now()));
+    window.location.replace(url.toString());
+  } catch {
+    // If browser storage or URL parsing is unavailable, continue with the loaded app.
+  }
+}
 
 function getMarketEndpoint() {
   const host = window.location.hostname;
@@ -252,6 +277,7 @@ let latestSmallCapItems = [];
 let selectedSmallCapCode = "";
 let selectedConceptId = "";
 let selectedConceptMode = "leading";
+let activeDetailCode = "";
 let latestImageSearchMatches = [];
 let imagePreviewUrl = "";
 
@@ -267,6 +293,7 @@ const CONCEPT_GROUPS = [
   { id: "thermal", name: "散熱", codes: ["2421", "3017", "3324", "3338", "3653", "6230", "6282", "8996"], pattern: /散熱|奇鋐|雙鴻|健策|超眾|建準|泰碩|康舒|高力/ },
   { id: "pcb", name: "PCB", codes: ["2313", "2355", "2368", "2383", "3037", "3044", "3189", "4958", "5469", "6153", "6191", "6213", "6269", "6274", "6278", "8039", "8046"], pattern: /PCB|銅箔|載板|臻鼎|欣興|景碩|南電|台燿|金像電|聯茂|華通|台光電|健鼎|台郡/ },
   { id: "optical", name: "光通訊", codes: ["2419", "3081", "3163", "3234", "3363", "3450", "4908", "4977", "4979", "5388", "6285", "6442"], pattern: /光通訊|光纖|波若威|聯亞|前鼎|眾達|華星光|光環|上詮|光聖|中磊|啟碁/ },
+  { id: "spacex", name: "SpaceX", codes: ["2313", "2314", "2382", "2383", "2419", "2485", "3017", "3044", "3105", "3138", "3152", "3163", "3227", "3419", "3491", "3596", "4906", "4908", "4977", "5222", "5388", "6153", "6191", "6213", "6269", "6274", "6285", "6442", "8039", "8046", "8086"], pattern: /SpaceX|Starlink|星鏈|星艦|低軌衛星|衛星|太空|航太|昇達科|台揚|耀登|璟德|波若威|眾達|光聖|啟碁|中磊|華通|台光電|聯茂|台燿|南電|穩懋|宏捷科|華星光|原相|譁裕|智易|正文|全訊/ },
   { id: "robotics", name: "機器人", codes: ["1590", "2049", "2308", "2359", "2374", "2395", "2464", "4540", "4566", "4571", "6125", "6166", "6215", "6414"], pattern: /機器人|自動化|上銀|亞德客|台達電|佳能|所羅門|全球傳動|研華|廣明|盟立|凌華|和椿|樺漢/ },
   { id: "apple", name: "蘋概", codes: ["2317", "2354", "2382", "2392", "2474", "3008", "3406", "4938", "4958", "6176", "6269", "6414"], pattern: /蘋概|蘋果|鴻海|可成|大立光|和碩|鴻準|正崴|玉晶光|臻鼎|瑞儀|台郡/ },
   { id: "finance", name: "金融", codes: ["2801", "2809", "2812", "2834", "2880", "2881", "2882", "2883", "2884", "2885", "2886", "2887", "2888", "2889", "2890", "2891", "2892", "2897", "5876", "5880"], pattern: /金融|金控|銀行|保險|富邦|國泰|中信金|玉山|元大金|兆豐|第一金|合庫|彰銀|上海商銀/ },
@@ -1335,14 +1362,42 @@ function scheduleMarketRefresh() {
   refreshTimer = window.setTimeout(fetchMarket, currentRefreshInterval());
 }
 
+function visibleConceptQuoteSymbols() {
+  if (!isConceptPanelNearViewport()) return [];
+  const groups = buildConceptGroups();
+  if (!groups.length) return [];
+  const selected = groups.find((group) => group.id === selectedConceptId) || groups[0];
+  return selected.rows
+    .slice()
+    .sort((a, b) => {
+      if (selectedConceptMode === "lagging") {
+        return (a.changePercent ?? 0) - (b.changePercent ?? 0) || b.value - a.value;
+      }
+      return (b.changePercent ?? 0) - (a.changePercent ?? 0) || b.value - a.value;
+    })
+    .slice(0, 12)
+    .map((row) => row.stock.code);
+}
+
+function activeRealtimeSymbols() {
+  return [...new Set([
+    ...allTrackedSymbols(),
+    ...(activeDetailCode && !els.detailModal?.hidden ? [activeDetailCode] : []),
+    ...visibleConceptQuoteSymbols()
+  ])]
+    .filter((code) => /^\d{4,6}$/.test(String(code || "")))
+    .slice(0, 30);
+}
+
 function scheduleQuoteRefresh() {
   window.clearTimeout(quoteRefreshTimer);
-  if (!isTwMarketOpen() || !allTrackedSymbols().length) return;
+  quoteRefreshTimer = null;
+  if (!isTwMarketOpen() || !activeRealtimeSymbols().length) return;
   quoteRefreshTimer = window.setTimeout(fetchRealtimeQuotes, QUOTE_REFRESH_MS);
 }
 
 async function fetchRealtimeQuotes() {
-  const quoteSymbols = allTrackedSymbols();
+  const quoteSymbols = activeRealtimeSymbols();
   if (document.hidden || quoteFetchInFlight || !quoteSymbols.length) return;
   quoteFetchInFlight = true;
   try {
@@ -1358,6 +1413,7 @@ async function fetchRealtimeQuotes() {
         market.source = [...new Set(sourceParts.split(" + ").filter(Boolean))].join(" + ");
       }
       render();
+      refreshActiveDetailQuote();
       setStatus("已更新", marketStatusTime());
     }
   } catch {
@@ -1516,6 +1572,7 @@ function scrollToDashboardTarget(selector) {
   }
   if (selector === "#conceptPanel") {
     window.setTimeout(refreshSelectedConceptQuotes, 650);
+    window.setTimeout(scheduleQuoteRefresh, 700);
   }
   if (selector === "#imageSearchPanel") {
     window.setTimeout(() => els.stockImageInput?.focus(), 450);
@@ -1546,6 +1603,9 @@ function updateScrollUi() {
     button.classList.toggle("is-active", activeButton || activeMore);
   });
   refreshSelectedConceptQuotes();
+  if (isTwMarketOpen() && isConceptPanelNearViewport() && activeRealtimeSymbols().length && !quoteRefreshTimer) {
+    scheduleQuoteRefresh();
+  }
 }
 
 function getStock(code) {
@@ -2575,6 +2635,7 @@ function selectConceptTopic(conceptId) {
   if (!conceptId || conceptId === selectedConceptId) return;
   selectedConceptId = conceptId;
   renderConceptPanel();
+  scheduleQuoteRefresh();
 }
 
 function renderConceptDetail(group) {
@@ -4646,6 +4707,7 @@ function renderWatchList(tracked) {
 
 async function openStockDetail(entry) {
   const { item, stock, val, rev, signal } = entry;
+  activeDetailCode = item.code;
   const inst = getInstitutional(item.code);
   const cost = number(item.cost);
   const shares = number(item.shares);
@@ -4687,6 +4749,36 @@ async function openStockDetail(entry) {
   activeChartHistory = history;
   resizeChartCanvas();
   setDetailChartMode(activeChartMode);
+}
+
+function refreshActiveDetailQuote() {
+  if (!activeDetailCode || els.detailModal?.hidden) return;
+  const stock = getStock(activeDetailCode);
+  if (!stock) return;
+  const item = watchList.find((entry) => entry.code === activeDetailCode)
+    || { code: activeDetailCode, cost: "", shares: "", type: "watch", name: stock.name };
+  const val = getValuation(activeDetailCode);
+  const rev = getRevenue(activeDetailCode);
+  const inst = getInstitutional(activeDetailCode);
+  const signal = scoreStock(stock, val, rev);
+  const cost = number(item.cost);
+  const shares = number(item.shares);
+  const marketValue = stock && shares ? stock.close * shares : null;
+  const costValue = cost && shares ? cost * shares : null;
+  const pnl = marketValue !== null && costValue ? marketValue - costValue : null;
+  const pnlRate = pnl !== null && costValue ? (pnl / costValue) * 100 : null;
+  const decision = stockDecision(signal, stock, val, rev, inst);
+  const risk = riskLevel(stock, val, rev, inst, pnlRate);
+  const warning = dataWarning(val, rev, inst);
+
+  els.detailTitle.textContent = `${item.code} ${stock.name || val?.name || rev?.name || item.name || ""}`;
+  els.detailPrice.textContent = money(stock.close);
+  els.detailPlainText.textContent = `${decision.label}，風險 ${risk.label}：${decision.text} ${risk.text}。`;
+  els.detailHoldingText.textContent = cost && shares
+    ? `持有 ${money(shares)} 股，投入 ${compactMoney(costValue)}，目前損益 ${pnl === null ? "--" : compactMoney(pnl)}，損益率 ${pnlRate === null ? "--" : percent(pnlRate)}。`
+    : "尚未填入買進價與股數，可以先當作觀察標的。";
+  els.detailAiAdviceText.textContent = `${revenueSummaryText(rev)} ${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
+  renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning });
 }
 
 function renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning }) {
@@ -6307,6 +6399,7 @@ els.sectorThemeCard.addEventListener("keydown", (event) => {
 });
 els.closeDetail.addEventListener("click", () => {
   if (chartExpanded) toggleChartExpanded();
+  activeDetailCode = "";
   els.detailModal.hidden = true;
 });
 els.closeSector.addEventListener("click", () => {
@@ -6315,6 +6408,7 @@ els.closeSector.addEventListener("click", () => {
 els.detailModal.addEventListener("click", (event) => {
   if (event.target === els.detailModal) {
     if (chartExpanded) toggleChartExpanded();
+    activeDetailCode = "";
     els.detailModal.hidden = true;
   }
 });
@@ -6346,6 +6440,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     window.clearTimeout(refreshTimer);
     window.clearTimeout(quoteRefreshTimer);
+    quoteRefreshTimer = null;
     setStatus("暫停更新", "分頁在背景，回到畫面後會自動更新");
     return;
   }
@@ -6357,6 +6452,7 @@ window.addEventListener("keydown", (event) => {
       toggleChartExpanded();
       return;
     }
+    if (!els.detailModal.hidden) activeDetailCode = "";
     els.detailModal.hidden = true;
     els.sectorModal.hidden = true;
   }
