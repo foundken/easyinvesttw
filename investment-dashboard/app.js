@@ -5720,6 +5720,49 @@ async function createRankNameColumnCanvas(file) {
   return canvas;
 }
 
+async function createRankRowCanvases(file) {
+  const bitmap = await createImageBitmap(file);
+  const canvases = [];
+  const scale = 5.2;
+  const cropX = Math.round(bitmap.width * 0.09);
+  const cropWidth = Math.round(bitmap.width * 0.34);
+  const rowHeight = Math.round(bitmap.height * 0.105);
+  const firstRowY = bitmap.height * 0.305;
+  const rowStep = bitmap.height * 0.126;
+
+  for (let row = 0; row < 8; row += 1) {
+    const cropY = Math.round(firstRowY + row * rowStep);
+    if (cropY + rowHeight > bitmap.height) break;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(cropWidth * scale);
+    canvas.height = Math.round(rowHeight * scale);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.imageSmoothingEnabled = false;
+    context.drawImage(bitmap, cropX, cropY, cropWidth, rowHeight, 0, 0, canvas.width, canvas.height);
+
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let index = 0; index < data.length; index += 4) {
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const blueText = b > 120 && g > 60 && r < 150;
+      const grayCode = Math.abs(r - g) < 24 && Math.abs(g - b) < 28 && r > 85 && r < 205;
+      const darkText = r < 125 && g < 125 && b < 125;
+      const keep = blueText || grayCode || darkText;
+      const value = keep ? 0 : 255;
+      data[index] = value;
+      data[index + 1] = value;
+      data[index + 2] = value;
+    }
+    context.putImageData(imageData, 0, 0);
+    canvases.push(canvas);
+  }
+
+  bitmap.close?.();
+  return canvases;
+}
+
 function combinedOcrText(parts) {
   return normalizeImageText(parts.filter(Boolean).join("\n"));
 }
@@ -5781,7 +5824,24 @@ async function handleStockImageUpload(file) {
     if (els.imageOcrText) els.imageOcrText.value = text;
     if (await applyImageMatchesFromText(text, "", false)) return;
 
-    setImageSearchStatus("中文股名未抓到，正在裁切排行榜代號欄...");
+    setImageSearchStatus("中文股名欄未完整命中，正在逐列辨識股名...");
+    const rowCanvases = await createRankRowCanvases(file);
+    for (let index = 0; index < rowCanvases.length; index += 1) {
+      const rowResult = await recognizeImageText(rowCanvases[index], "chi_tra+eng", `正在辨識第 ${index + 1} 列股名`, {
+        tessedit_pageseg_mode: "7"
+      });
+      textParts.push(rowResult?.data?.text || "");
+      text = combinedOcrText(textParts);
+      if (els.imageOcrText) els.imageOcrText.value = text;
+      const matches = await matchStocksFromImageText(text);
+      latestImageSearchMatches = matches;
+      renderImageStockMatches();
+      if (matches.length >= 5) {
+        setImageSearchStatus(`找到 ${matches.length} 檔可能股票，點卡片可查看個股資料。`);
+        return;
+      }
+    }
+    setImageSearchStatus("正在用代號欄補齊漏掉的股票...");
     const codeColumnCanvas = await createRankCodeColumnCanvas(file);
     const codeColumnResult = await recognizeImageText(codeColumnCanvas, "eng", "正在辨識排行榜代號欄", {
       tessedit_char_whitelist: "0123456789.TWtw.",
