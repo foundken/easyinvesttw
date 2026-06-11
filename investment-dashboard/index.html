@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260611-image-search-layout-v1">
+  <link rel="stylesheet" href="styles.css?v=20260611-mobile-ui-v1">
 </head>
 <body data-view-mode="full" data-theme="light">
   <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
@@ -19,17 +19,18 @@
   </div>
 
   <nav class="mobile-section-nav" aria-label="分類快速導覽">
-    <button type="button" data-target="#todayPanel">今日</button>
+    <button type="button" data-target="#todayPanel" data-mobile-primary="true" data-icon="今">今日</button>
     <button type="button" data-target="#portfolioPanel">帳本</button>
     <button type="button" data-target="#managePanel">新增</button>
-    <button type="button" data-target="#imageSearchPanel">圖搜</button>
-    <button type="button" data-target="#holdingsPanel">存股</button>
+    <button type="button" data-target="#imageSearchPanel" data-mobile-primary="true" data-icon="圖">圖搜</button>
+    <button type="button" data-target="#holdingsPanel" data-mobile-primary="true" data-icon="股">存股</button>
     <button type="button" data-target="#historyPanel">紀錄</button>
-    <button type="button" data-target="#marketTape">大盤</button>
+    <button type="button" data-target="#marketTape" data-mobile-primary="true" data-icon="市">市場</button>
     <button type="button" data-target="#conceptPanel">概念</button>
     <button type="button" data-target="#trendPanel">趨勢</button>
     <button type="button" data-target="#watchPanel">觀察</button>
     <button type="button" data-target="#preflightPanel">檢查</button>
+    <button type="button" class="mobile-more-tab" data-target="#managePanel" data-icon="⋯">更多</button>
   </nav>
   <button id="backToTopButton" class="back-to-top" type="button" aria-label="回到最上方">↑</button>
 
@@ -732,6 +733,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260611-image-search-v10"></script>
+  <script src="app.js?v=20260611-mobile-ui-v1"></script>
 </body>
 </html>

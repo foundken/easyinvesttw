@@ -1538,8 +1538,12 @@ function updateScrollUi() {
   const active = visibleTargets
     .filter(({ target }) => target.getBoundingClientRect().top <= 150)
     .at(-1) || visibleTargets[0];
+  const isMobileNav = window.matchMedia?.("(max-width: 880px)")?.matches;
+  const mobileMoreButton = navButtons.find((button) => button.classList.contains("mobile-more-tab"));
   navButtons.forEach((button) => {
-    button.classList.toggle("is-active", Boolean(active) && button === active.button);
+    const activeButton = Boolean(active) && button === active.button;
+    const activeMore = Boolean(active) && isMobileNav && button === mobileMoreButton && !active.button.dataset.mobilePrimary;
+    button.classList.toggle("is-active", activeButton || activeMore);
   });
   refreshSelectedConceptQuotes();
 }
