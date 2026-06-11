@@ -5470,6 +5470,37 @@ const imageStockOcrCorrections = [
   }
 ];
 
+const imageStockNameAliases = {
+  "2483": ["下生", "下 生", "百客", "百谷", "白容", "百蓉", "EX3"],
+  "8150": ["南大", "南犬", "南夭", "南天", "南太", "南大BE", "南茂BE"],
+  "2425": ["承启", "承啓", "承敢", "EEXE", "E EXE"],
+  "2355": ["敬用", "敬朋", "敬鹏", "敬鴻", "品BX", "品 BX"],
+  "6155": ["鈞宝", "鈞寳", "鈞實", "鈞实", "店點", "店点", "BE店點", "BE店点"]
+};
+
+function compactChineseOcrToken(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^\u4e00-\u9fffA-Z0-9]/g, "");
+}
+
+function addImageNameAliasCandidates(candidates, lookup, stocks, normalized, compactText) {
+  const searchable = compactChineseOcrToken(`${normalized}\n${compactText}`);
+  stocks.forEach((stock) => {
+    const name = String(stock.name || stockNameMap[stock.code] || "").trim();
+    const aliases = [name, ...(imageStockNameAliases[stock.code] || [])];
+    aliases.forEach((alias) => {
+      const compactAlias = compactChineseOcrToken(alias);
+      if (compactAlias.length < 2) return;
+      if (searchable.includes(compactAlias)) {
+        const reason = alias === name ? "圖片股名" : "中文OCR校正";
+        addImageCandidate(candidates, lookup, stock.code, reason, alias === name ? 82 : 88, alias);
+      }
+    });
+  });
+}
+
 const imageRankingOcrCorrections = [
   {
     code: "2483",
@@ -5534,6 +5565,8 @@ async function matchStocksFromImageText(text, options = {}) {
       addImageCandidate(candidates, lookup, rule.code, "排行表校正", 92, rule.label);
     });
   }
+
+  addImageNameAliasCandidates(candidates, lookup, stocks, normalized, compactText);
 
   stocks.forEach((stock) => {
     const name = String(stock.name || stockNameMap[stock.code] || "").trim();
