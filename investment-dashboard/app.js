@@ -5393,6 +5393,7 @@ function normalizeImageText(text) {
     .replace(/[０-９]/g, (char) => String(fullWidthNumbers.indexOf(char)))
     .replace(/[Ｏｏ]/g, "0")
     .replace(/[Ｉｌ|]/g, "1")
+    .replace(/(^|[^\dA-Z])S(?=\d{3}\s*\.?\s*TW)/gi, (_match, prefix) => `${prefix}8`)
     .replace(/[Ｓｓ]/g, "5")
     .replace(/[．。·・]/g, ".")
     .replace(/[Ｔｔ]/g, "T")
@@ -5437,11 +5438,40 @@ function addImageCandidate(candidates, lookup, code, reason, score, token = "") 
   candidates.set(cleanCode, current);
 }
 
+const imageStockOcrCorrections = [
+  {
+    code: "8150",
+    label: "南茂",
+    patterns: [/8[1Il|]50\.?TW/i, /S150\.?TW/i, /51[58]0\.?TW/i, /南\s*茂/]
+  },
+  {
+    code: "2355",
+    label: "敬鵬",
+    patterns: [/2355\.?TW/i, /2356\.?TW[\s\S]{0,18}[敬鵬朋用]/i, /敬\s*[鵬朋用]/]
+  },
+  {
+    code: "6155",
+    label: "鈞寶",
+    patterns: [/[68][1Il|]55\.?TW/i, /[G6S5]155\.?TW/i, /鈞\s*[寶宝實实寳]/]
+  },
+  {
+    code: "2483",
+    label: "百容",
+    patterns: [/2483\.?TW/i, /百\s*容/]
+  },
+  {
+    code: "2425",
+    label: "承啟",
+    patterns: [/2425\.?TW/i, /承\s*[啟启]/]
+  }
+];
+
 async function matchStocksFromImageText(text, options = {}) {
   const normalized = normalizeImageText(text);
   const stocks = await getAvailableStocks();
   const lookup = stockLookupFromList(stocks);
   const candidates = new Map();
+  const compactText = normalized.replace(/\s+/g, "");
 
   for (const match of normalized.matchAll(/(^|[^\d])(\d{4,6})\s*(?:[.,]\s*)?(TW|TWO|TPE|OTC)(?=$|[^A-Z0-9])/gi)) {
     addImageCandidate(candidates, lookup, match[2], "代號格式", 95, `${match[2]}.${match[3].toUpperCase()}`);
@@ -5453,7 +5483,12 @@ async function matchStocksFromImageText(text, options = {}) {
     addImageCandidate(candidates, lookup, match[2], "圖片代號", dateLike ? 30 : 58, match[2]);
   }
 
-  const compactText = normalized.replace(/\s+/g, "");
+  imageStockOcrCorrections.forEach((rule) => {
+    const matched = rule.patterns.find((pattern) => pattern.test(normalized) || pattern.test(compactText));
+    if (!matched) return;
+    addImageCandidate(candidates, lookup, rule.code, "OCR校正", 104, rule.label);
+  });
+
   stocks.forEach((stock) => {
     const name = String(stock.name || stockNameMap[stock.code] || "").trim();
     if (name.length < 2) return;
