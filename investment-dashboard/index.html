@@ -22,6 +22,7 @@
     <button type="button" data-target="#todayPanel">今日</button>
     <button type="button" data-target="#portfolioPanel">帳本</button>
     <button type="button" data-target="#managePanel">新增</button>
+    <button type="button" data-target="#imageSearchPanel">圖搜</button>
     <button type="button" data-target="#holdingsPanel">存股</button>
     <button type="button" data-target="#historyPanel">紀錄</button>
     <button type="button" data-target="#marketTape">大盤</button>
@@ -167,6 +168,41 @@
       <div class="actions">
         <button id="refreshButton" type="button">立即更新</button>
         <button id="demoButton" type="button">載入範例</button>
+      </div>
+    </section>
+
+    <section id="imageSearchPanel" class="panel image-search-panel" aria-label="上傳圖片搜尋個股">
+      <div class="panel-head">
+        <h2>圖片搜股</h2>
+        <span>從排行榜、截圖或新聞圖表辨識股票</span>
+      </div>
+      <div class="image-search-body">
+        <div class="image-upload-area">
+          <label class="image-dropzone" for="stockImageInput">
+            <span>上傳圖片</span>
+            <strong>選擇截圖或照片</strong>
+            <small>支援股票代號、股名與 2483.TW 格式</small>
+          </label>
+          <input id="stockImageInput" class="image-file-input" type="file" accept="image/*">
+          <img id="stockImagePreview" class="image-preview" alt="已上傳圖片預覽" hidden>
+          <p id="imageSearchStatus" class="image-search-status">尚未上傳圖片。</p>
+          <details class="ocr-text-wrap">
+            <summary>辨識文字</summary>
+            <textarea id="imageOcrText" readonly placeholder="OCR 結果會顯示在這裡"></textarea>
+          </details>
+        </div>
+        <div class="image-search-results">
+          <form id="imageStockManualForm" class="image-manual-form" autocomplete="off">
+            <label>
+              <span>手動修正</span>
+              <input id="imageStockManualInput" inputmode="search" placeholder="例如：百容、2483、2483.TW">
+            </label>
+            <button id="imageStockManualButton" type="submit">搜尋</button>
+          </form>
+          <div id="imageStockMatches" class="image-match-list">
+            <p class="empty">上傳圖片後，找到的股票會顯示在這裡。</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -694,7 +730,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260529-detail-candle-v1"></script>
+  <script src="app.js?v=20260611-image-search-v2"></script>
 </body>
 </html>

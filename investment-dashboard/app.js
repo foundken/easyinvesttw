@@ -195,6 +195,13 @@ const els = {
   searchResults: document.querySelector("#searchResults"),
   searchResultsList: document.querySelector(".search-results-list"),
   quickAddedStocks: document.querySelector("#quickAddedStocks"),
+  stockImageInput: document.querySelector("#stockImageInput"),
+  stockImagePreview: document.querySelector("#stockImagePreview"),
+  imageSearchStatus: document.querySelector("#imageSearchStatus"),
+  imageOcrText: document.querySelector("#imageOcrText"),
+  imageStockManualForm: document.querySelector("#imageStockManualForm"),
+  imageStockManualInput: document.querySelector("#imageStockManualInput"),
+  imageStockMatches: document.querySelector("#imageStockMatches"),
   portfolioSelect: document.querySelector("#portfolioSelect"),
   portfolioNameInput: document.querySelector("#portfolioNameInput"),
   addPortfolio: document.querySelector("#addPortfolioButton"),
@@ -245,6 +252,8 @@ let latestSmallCapItems = [];
 let selectedSmallCapCode = "";
 let selectedConceptId = "";
 let selectedConceptMode = "leading";
+let latestImageSearchMatches = [];
+let imagePreviewUrl = "";
 
 const TIER_CONFIG = {
   small: { label: "小型股", min: 0, max: 100, listEl: "smallCapList", titleEl: "smallCapAiTitle", textEl: "smallCapAiText", statusEl: "smallCapStatus", emptyText: "百元以下" },
@@ -1508,6 +1517,9 @@ function scrollToDashboardTarget(selector) {
   if (selector === "#conceptPanel") {
     window.setTimeout(refreshSelectedConceptQuotes, 650);
   }
+  if (selector === "#imageSearchPanel") {
+    window.setTimeout(() => els.stockImageInput?.focus(), 450);
+  }
 }
 
 function updateScrollUi() {
@@ -1706,6 +1718,7 @@ function render() {
   renderConceptPanel();
   renderTrendPanel(trendRanking);
   renderSmallCapGuide();
+  renderImageStockMatches();
 }
 
 function renderBeginnerBrief(ranking, tracked) {
@@ -4640,7 +4653,7 @@ async function openStockDetail(entry) {
   const risk = riskLevel(stock, val, rev, inst, pnlRate);
   const warning = dataWarning(val, rev, inst);
 
-  els.detailTitle.textContent = `${item.code} ${stock?.name || val?.name || rev?.name || ""}`;
+  els.detailTitle.textContent = `${item.code} ${stock?.name || val?.name || rev?.name || item?.name || ""}`;
   els.detailPrice.textContent = stock ? money(stock.close) : "--";
   els.detailPe.textContent = val?.pe ?? "--";
   els.detailRevenueMonth.textContent = revenueMonthText(rev);
@@ -5276,16 +5289,38 @@ const stockNameMap = {
   "2027": "三大", "2028": "威健", "2029": "盛智", "2030": "光寶科", "2031": "晶碩",
   "2032": "新麥", "2033": "佳大", "2034": "允德", "2035": "光磊", "2036": "智易",
   "2037": "微星", "2038": "海光", "2039": "欣天然", "2040": "愛德利", "2308": "台達電",
-  "2454": "聯發科", "2881": "富邦金"
+  "2355": "敬鵬", "2425": "承啟", "2483": "百容", "2454": "聯發科", "2881": "富邦金",
+  "6155": "鈞寶", "8150": "南茂"
 };
 
 let allStocksCache = null;
 
 async function getAvailableStocks() {
+  const fromMarket = (market.daily || []).map((stock) => ({
+    code: stock.code,
+    name: stock.name || stockNameMap[stock.code] || "",
+    price: stock.close || stock.price || "--"
+  }));
+  const fallbackStocks = Object.entries(stockNameMap).map(([code, name]) => ({
+    code, name, price: "--"
+  }));
+  if (fromMarket.length) {
+    const merged = new Map(fallbackStocks.map((stock) => [stock.code, stock]));
+    fromMarket.forEach((stock) => merged.set(stock.code, stock));
+    allStocksCache = Array.from(merged.values());
+    return allStocksCache;
+  }
   if (allStocksCache) return allStocksCache;
   try {
-    const response = await fetch(endpoints.bundle);
-    const data = await response.json();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 2500);
+    let data;
+    try {
+      const response = await fetch(endpoints.bundle, { signal: controller.signal });
+      data = await response.json();
+    } finally {
+      window.clearTimeout(timeout);
+    }
     if (data && data.daily && data.daily.length > 0) {
       allStocksCache = data.daily.map(q => ({
         code: q.code,
@@ -5295,11 +5330,10 @@ async function getAvailableStocks() {
       return allStocksCache;
     }
   } catch (err) {
-    console.error("無法載入股票清單:", err);
+    if (err?.name !== "AbortError") console.warn("無法載入股票清單:", err);
   }
-  return Object.entries(stockNameMap).map(([code, name]) => ({
-    code, name, price: "--"
-  }));
+  allStocksCache = fallbackStocks;
+  return allStocksCache;
 }
 
 async function searchStocks(query) {
@@ -5347,6 +5381,263 @@ function renderSearchResults(results) {
   });
 }
 
+function setImageSearchStatus(message, isError = false) {
+  if (!els.imageSearchStatus) return;
+  els.imageSearchStatus.textContent = message;
+  els.imageSearchStatus.classList.toggle("is-error", isError);
+}
+
+function normalizeImageText(text) {
+  return String(text || "")
+    .replace(/[Ｏｏ]/g, "0")
+    .replace(/[Ｉｌ|]/g, "1")
+    .replace(/[Ｓｓ]/g, "5")
+    .replace(/[．]/g, ".")
+    .replace(/\u3000/g, " ")
+    .trim();
+}
+
+function stockLookupFromList(stocks) {
+  const lookup = new Map();
+  stocks.forEach((stock) => {
+    if (!stock?.code) return;
+    lookup.set(stock.code, {
+      code: stock.code,
+      name: stock.name || stockNameMap[stock.code] || "",
+      price: stock.price || "--"
+    });
+  });
+  Object.entries(stockNameMap).forEach(([code, name]) => {
+    if (!lookup.has(code)) lookup.set(code, { code, name, price: "--" });
+  });
+  return lookup;
+}
+
+function addImageCandidate(candidates, lookup, code, reason, score, token = "") {
+  const cleanCode = String(code || "").replace(/\D/g, "");
+  if (!/^\d{4,6}$/.test(cleanCode)) return;
+  const known = lookup.get(cleanCode) || { code: cleanCode, name: stockNameMap[cleanCode] || "", price: "--" };
+  if (!known.name && !getStock(cleanCode) && !getValuation(cleanCode) && !getRevenue(cleanCode)) return;
+  const current = candidates.get(cleanCode) || {
+    code: cleanCode,
+    name: known.name || "",
+    score: 0,
+    reasons: new Set(),
+    tokens: new Set()
+  };
+  current.score += score;
+  current.reasons.add(reason);
+  if (token) current.tokens.add(token);
+  if (known.name && !current.name) current.name = known.name;
+  candidates.set(cleanCode, current);
+}
+
+async function matchStocksFromImageText(text, options = {}) {
+  const normalized = normalizeImageText(text);
+  const stocks = await getAvailableStocks();
+  const lookup = stockLookupFromList(stocks);
+  const candidates = new Map();
+
+  for (const match of normalized.matchAll(/(^|[^\d])(\d{4,6})\s*(?:[.,]\s*)?(TW|TWO|TPE|OTC)(?=$|[^A-Z0-9])/gi)) {
+    addImageCandidate(candidates, lookup, match[2], "代號格式", 95, `${match[2]}.${match[3].toUpperCase()}`);
+  }
+
+  for (const match of normalized.matchAll(/(^|[^\d])(\d{4,6})(?=$|[^\d])/g)) {
+    const context = normalized.slice(Math.max(0, match.index - 5), match.index + 12);
+    const dateLike = /年|月|日|上午|下午|中午|:|\/|-/.test(context);
+    addImageCandidate(candidates, lookup, match[2], "圖片代號", dateLike ? 30 : 58, match[2]);
+  }
+
+  const compactText = normalized.replace(/\s+/g, "");
+  stocks.forEach((stock) => {
+    const name = String(stock.name || stockNameMap[stock.code] || "").trim();
+    if (name.length < 2) return;
+    if (compactText.includes(name)) {
+      addImageCandidate(candidates, lookup, stock.code, "圖片股名", 82, name);
+    }
+  });
+
+  const chineseChunks = compactText.match(/[\u4e00-\u9fff]{2,10}/g) || [];
+  chineseChunks.forEach((chunk) => {
+    stocks.forEach((stock) => {
+      const name = String(stock.name || stockNameMap[stock.code] || "").trim();
+      if (name.length < 2 || chunk === name) return;
+      if (chunk.includes(name) || name.includes(chunk)) {
+        addImageCandidate(candidates, lookup, stock.code, "相近股名", 44, chunk);
+      }
+    });
+  });
+
+  if (options.manual) {
+    const manualTokens = normalized
+      .split(/[\s,，、;；/]+/)
+      .map((token) => token.replace(/\.(TW|TWO|TPE|OTC)$/i, "").trim())
+      .filter(Boolean);
+    if (manualTokens.length === 0 && normalized) manualTokens.push(normalized);
+    for (const token of manualTokens) {
+      const resolved = await resolveStockInput(token);
+      if (resolved) addImageCandidate(candidates, lookup, resolved.code, "手動修正", 120, token);
+    }
+  }
+
+  return Array.from(candidates.values())
+    .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))
+    .slice(0, 18)
+    .map((item) => ({
+      ...item,
+      reasons: Array.from(item.reasons),
+      tokens: Array.from(item.tokens)
+    }));
+}
+
+function imageMatchEntry(code) {
+  const stock = getStock(code);
+  const val = getValuation(code);
+  const rev = getRevenue(code);
+  const fallback = latestImageSearchMatches.find((item) => item.code === code);
+  const item = watchList.find((entry) => entry.code === code) || {
+    code,
+    name: stock?.name || val?.name || rev?.name || fallback?.name || "",
+    cost: "",
+    shares: "",
+    type: "watch"
+  };
+  return { item, stock, val, rev, signal: scoreStock(stock, val, rev) };
+}
+
+function imageMatchMeta(match) {
+  const stock = getStock(match.code);
+  const val = getValuation(match.code);
+  const rev = getRevenue(match.code);
+  const inst = getInstitutional(match.code);
+  const signal = scoreStock(stock, val, rev);
+  const risk = riskLevel(stock, val, rev, inst);
+  const change = stockTodayChange(stock);
+  const changePercent = stockTodayChangePercent(stock);
+  return {
+    name: stock?.name || val?.name || rev?.name || match.name || "",
+    price: stock ? money(stock.close) : "--",
+    changeText: Number.isFinite(change) ? `${signedMoney(change)} / ${percent(changePercent)}` : "--",
+    changeTone: priceTone(change),
+    valueText: stock?.value ? compactMoney(stock.value) : "--",
+    signal,
+    risk
+  };
+}
+
+function renderImageStockMatches() {
+  if (!els.imageStockMatches) return;
+  if (!latestImageSearchMatches.length) {
+    els.imageStockMatches.innerHTML = '<p class="empty">上傳圖片後，找到的股票會顯示在這裡。</p>';
+    return;
+  }
+
+  els.imageStockMatches.innerHTML = "";
+  latestImageSearchMatches.forEach((match) => {
+    const meta = imageMatchMeta(match);
+    const card = document.createElement("article");
+    card.className = "image-match-card";
+    card.innerHTML = `
+      <button class="image-match-main" type="button">
+        <span>${escapeHtml(match.reasons.join(" / "))}</span>
+        <strong>${escapeHtml(match.code)} ${escapeHtml(meta.name)}</strong>
+        <small>股價 ${escapeHtml(meta.price)} ｜ 漲跌 ${escapeHtml(meta.changeText)} ｜ 成交 ${escapeHtml(meta.valueText)}</small>
+        <small>${escapeHtml(meta.signal.level)} ｜ 風險 ${escapeHtml(meta.risk.label)}${match.tokens.length ? ` ｜ 擷取：${escapeHtml(match.tokens.slice(0, 3).join("、"))}` : ""}</small>
+      </button>
+      <div class="image-match-actions">
+        <button type="button" class="secondary image-detail-action">詳細</button>
+        <button type="button" class="image-watch-action">加入觀察</button>
+      </div>
+    `;
+    card.querySelector(".image-match-main").classList.toggle("has-change", Boolean(meta.changeTone));
+    card.querySelector(".image-match-main strong").className = meta.changeTone;
+    card.querySelector(".image-match-main").addEventListener("click", () => openImageMatchDetail(match.code));
+    card.querySelector(".image-detail-action").addEventListener("click", () => openImageMatchDetail(match.code));
+    card.querySelector(".image-watch-action").addEventListener("click", () => addImageMatchToWatch(match.code));
+    els.imageStockMatches.append(card);
+  });
+}
+
+function openImageMatchDetail(code) {
+  openStockDetail(imageMatchEntry(code));
+}
+
+async function addImageMatchToWatch(code) {
+  if (cloudEnabled && !currentUser) {
+    setAuthStatus("請先登入，觀察名單才會同步到你的雲端帳號。", true);
+    setImageSearchStatus("請先登入，再把圖片辨識到的股票加入觀察。", true);
+    return;
+  }
+  const entry = imageMatchEntry(code);
+  upsertWatchItem({
+    code: entry.item.code,
+    name: entry.item.name,
+    cost: "",
+    shares: "",
+    type: "watch"
+  });
+  await saveWatchList();
+  render();
+  setImageSearchStatus(`已加入觀察：${entry.item.code} ${entry.item.name || ""}`);
+}
+
+async function runImageStockSearch(text, options = {}) {
+  const matches = await matchStocksFromImageText(text, options);
+  latestImageSearchMatches = matches;
+  renderImageStockMatches();
+  if (!matches.length) {
+    setImageSearchStatus("沒有找到可對應的股票，請用手動修正輸入股名或代號。", true);
+    return;
+  }
+  setImageSearchStatus(`找到 ${matches.length} 檔可能股票，點卡片可查看個股資料。`);
+}
+
+async function handleStockImageUpload(file) {
+  if (!file) return;
+  if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+  imagePreviewUrl = URL.createObjectURL(file);
+  if (els.stockImagePreview) {
+    els.stockImagePreview.src = imagePreviewUrl;
+    els.stockImagePreview.hidden = false;
+  }
+  latestImageSearchMatches = [];
+  renderImageStockMatches();
+  setImageSearchStatus("正在辨識圖片文字...");
+  if (els.imageOcrText) els.imageOcrText.value = "";
+
+  if (!window.Tesseract?.recognize) {
+    setImageSearchStatus("OCR 套件尚未載入，請先用手動修正輸入股名或代號。", true);
+    return;
+  }
+
+  try {
+    let result;
+    try {
+      result = await window.Tesseract.recognize(file, "chi_tra+eng", {
+        logger(message) {
+          if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+            setImageSearchStatus(`正在辨識圖片文字 ${Math.round(message.progress * 100)}%...`);
+          }
+        }
+      });
+    } catch {
+      setImageSearchStatus("繁中辨識未完成，改用代號模式重新辨識...");
+      result = await window.Tesseract.recognize(file, "eng", {
+        logger(message) {
+          if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+            setImageSearchStatus(`正在辨識股票代號 ${Math.round(message.progress * 100)}%...`);
+          }
+        }
+      });
+    }
+    const text = normalizeImageText(result?.data?.text || "");
+    if (els.imageOcrText) els.imageOcrText.value = text;
+    await runImageStockSearch(text);
+  } catch (error) {
+    setImageSearchStatus(`圖片辨識失敗：${error.message || "請改用手動修正。"}`, true);
+  }
+}
+
 if (els.quickSymbolInput && els.searchResults) {
   els.quickSymbolInput.addEventListener("input", async (e) => {
     const query = e.target.value.trim();
@@ -5369,6 +5660,26 @@ document.addEventListener("click", (e) => {
     els.searchResults.hidden = true;
   }
 });
+
+if (els.stockImageInput) {
+  els.stockImageInput.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    handleStockImageUpload(file);
+  });
+}
+
+if (els.imageStockManualForm) {
+  els.imageStockManualForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const query = els.imageStockManualInput?.value.trim();
+    if (!query) {
+      setImageSearchStatus("請輸入股名或代號。", true);
+      return;
+    }
+    setImageSearchStatus("正在搜尋手動輸入的股票...");
+    await runImageStockSearch(query, { manual: true });
+  });
+}
 
 function renderQuickAddedStocks() {
   const container = els.quickAddedStocks;
