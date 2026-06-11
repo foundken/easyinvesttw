@@ -1693,6 +1693,11 @@ label span {
   min-width: 0;
 }
 
+.image-search-results {
+  display: grid;
+  align-content: start;
+}
+
 .image-dropzone {
   display: grid;
   min-height: 178px;
@@ -1790,13 +1795,7 @@ label span {
 .image-match-list {
   display: grid;
   gap: 10px;
-  max-height: clamp(320px, 48vh, 620px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   padding-top: 14px;
-  padding-right: 6px;
-  scrollbar-gutter: stable;
-  -webkit-overflow-scrolling: touch;
 }
 
 .image-match-card {
@@ -1817,6 +1816,7 @@ label span {
 
 .image-match-main {
   display: grid;
+  min-width: 0;
   min-height: 0;
   justify-items: start;
   gap: 4px;
@@ -1824,6 +1824,7 @@ label span {
   background: transparent;
   color: inherit;
   text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .image-match-main span {
@@ -1843,6 +1844,7 @@ label span {
 
 .image-match-actions {
   display: flex;
+  min-width: max-content;
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -1922,8 +1924,7 @@ label span {
 .insight-list,
 .news-list,
 .quality-list,
-.health-list,
-.image-match-list {
+.health-list {
   display: grid;
   gap: 10px;
   max-height: clamp(300px, 42vh, 520px);
@@ -2017,8 +2018,7 @@ label span {
 .insight-list::-webkit-scrollbar,
 .news-list::-webkit-scrollbar,
 .quality-list::-webkit-scrollbar,
-.health-list::-webkit-scrollbar,
-.image-match-list::-webkit-scrollbar {
+.health-list::-webkit-scrollbar {
   width: 9px;
 }
 
@@ -2030,8 +2030,7 @@ label span {
 .insight-list::-webkit-scrollbar-track,
 .news-list::-webkit-scrollbar-track,
 .quality-list::-webkit-scrollbar-track,
-.health-list::-webkit-scrollbar-track,
-.image-match-list::-webkit-scrollbar-track {
+.health-list::-webkit-scrollbar-track {
   background: #f4eee4;
   border-radius: 999px;
 }
@@ -2044,8 +2043,7 @@ label span {
 .insight-list::-webkit-scrollbar-thumb,
 .news-list::-webkit-scrollbar-thumb,
 .quality-list::-webkit-scrollbar-thumb,
-.health-list::-webkit-scrollbar-thumb,
-.image-match-list::-webkit-scrollbar-thumb {
+.health-list::-webkit-scrollbar-thumb {
   background: #d2c7b7;
   border-radius: 999px;
 }

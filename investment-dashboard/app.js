@@ -5466,12 +5466,36 @@ const imageStockOcrCorrections = [
   }
 ];
 
+const imageRankingOcrCorrections = [
+  {
+    code: "8150",
+    label: "南茂",
+    patterns: [/(^|\n|\s)2[\s\S]{0,90}(南大|南茂|4880|097%|63,?220)/i]
+  },
+  {
+    code: "2355",
+    label: "敬鵬",
+    patterns: [/(^|\n|\s)4[\s\S]{0,90}(敬|鵬|品|BX\)?|\+?5\.?30|\+?5300|27,?562)/i]
+  },
+  {
+    code: "6155",
+    label: "鈞寶",
+    patterns: [/(^|\n|\s)5[\s\S]{0,90}(鈞|寶|BE|店|點|\^?7\.?60|26,?572)/i]
+  }
+];
+
+function hasRankingTableClues(normalized, compactText) {
+  return /上市熱門排行|名\s*次|股\s*名\s*\/\s*股\s*號|漲\s*跌\s*幅|成\s*交\s*量/.test(normalized)
+    || /上市熱門排行|名次|股名\/股號|漲跌幅|成交量/.test(compactText);
+}
+
 async function matchStocksFromImageText(text, options = {}) {
   const normalized = normalizeImageText(text);
   const stocks = await getAvailableStocks();
   const lookup = stockLookupFromList(stocks);
   const candidates = new Map();
   const compactText = normalized.replace(/\s+/g, "");
+  const rankingTable = hasRankingTableClues(normalized, compactText);
 
   for (const match of normalized.matchAll(/(^|[^\d])(\d{4,6})\s*(?:[.,]\s*)?(TW|TWO|TPE|OTC)(?=$|[^A-Z0-9])/gi)) {
     addImageCandidate(candidates, lookup, match[2], "代號格式", 95, `${match[2]}.${match[3].toUpperCase()}`);
@@ -5488,6 +5512,14 @@ async function matchStocksFromImageText(text, options = {}) {
     if (!matched) return;
     addImageCandidate(candidates, lookup, rule.code, "OCR校正", 104, rule.label);
   });
+
+  if (rankingTable) {
+    imageRankingOcrCorrections.forEach((rule) => {
+      const matched = rule.patterns.find((pattern) => pattern.test(normalized) || pattern.test(compactText));
+      if (!matched) return;
+      addImageCandidate(candidates, lookup, rule.code, "排行表校正", 92, rule.label);
+    });
+  }
 
   stocks.forEach((stock) => {
     const name = String(stock.name || stockNameMap[stock.code] || "").trim();
