@@ -5388,11 +5388,15 @@ function setImageSearchStatus(message, isError = false) {
 }
 
 function normalizeImageText(text) {
+  const fullWidthNumbers = "０１２３４５６７８９";
   return String(text || "")
+    .replace(/[０-９]/g, (char) => String(fullWidthNumbers.indexOf(char)))
     .replace(/[Ｏｏ]/g, "0")
     .replace(/[Ｉｌ|]/g, "1")
     .replace(/[Ｓｓ]/g, "5")
-    .replace(/[．]/g, ".")
+    .replace(/[．。·・]/g, ".")
+    .replace(/[Ｔｔ]/g, "T")
+    .replace(/[Ｗｗ]/g, "W")
     .replace(/\u3000/g, " ")
     .trim();
 }
@@ -5592,6 +5596,65 @@ async function runImageStockSearch(text, options = {}) {
   setImageSearchStatus(`找到 ${matches.length} 檔可能股票，點卡片可查看個股資料。`);
 }
 
+async function recognizeImageText(image, language, label) {
+  return window.Tesseract.recognize(image, language, {
+    logger(message) {
+      if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+        setImageSearchStatus(`${label} ${Math.round(message.progress * 100)}%...`);
+      }
+    }
+  });
+}
+
+async function createEnhancedOcrCanvas(file, options = {}) {
+  const scale = options.scale || 2.4;
+  const threshold = options.threshold ?? true;
+  const bitmap = await createImageBitmap(file);
+  const maxWidth = 3600;
+  const targetWidth = Math.min(Math.round(bitmap.width * scale), maxWidth);
+  const ratio = targetWidth / bitmap.width;
+  const targetHeight = Math.round(bitmap.height * ratio);
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+
+  const imageData = context.getImageData(0, 0, targetWidth, targetHeight);
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    const boosted = Math.max(0, Math.min(255, (gray - 128) * 1.9 + 128));
+    const value = threshold ? boosted > 172 ? 255 : 0 : boosted;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  context.putImageData(imageData, 0, 0);
+  bitmap.close?.();
+  return canvas;
+}
+
+function combinedOcrText(parts) {
+  return normalizeImageText(parts.filter(Boolean).join("\n"));
+}
+
+async function applyImageMatchesFromText(text, emptyMessage, showEmpty = true) {
+  const matches = await matchStocksFromImageText(text);
+  latestImageSearchMatches = matches;
+  renderImageStockMatches();
+  if (!matches.length) {
+    if (showEmpty) {
+      setImageSearchStatus(emptyMessage || "沒有找到可對應的股票，請用手動修正輸入股名或代號。", true);
+    }
+    return false;
+  }
+  setImageSearchStatus(`找到 ${matches.length} 檔可能股票，點卡片可查看個股資料。`);
+  return true;
+}
+
 async function handleStockImageUpload(file) {
   if (!file) return;
   if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
@@ -5611,28 +5674,35 @@ async function handleStockImageUpload(file) {
   }
 
   try {
-    let result;
+    const textParts = [];
     try {
-      result = await window.Tesseract.recognize(file, "chi_tra+eng", {
-        logger(message) {
-          if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
-            setImageSearchStatus(`正在辨識圖片文字 ${Math.round(message.progress * 100)}%...`);
-          }
-        }
-      });
+      const result = await recognizeImageText(file, "chi_tra+eng", "正在辨識圖片文字");
+      textParts.push(result?.data?.text || "");
     } catch {
       setImageSearchStatus("繁中辨識未完成，改用代號模式重新辨識...");
-      result = await window.Tesseract.recognize(file, "eng", {
-        logger(message) {
-          if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
-            setImageSearchStatus(`正在辨識股票代號 ${Math.round(message.progress * 100)}%...`);
-          }
-        }
-      });
+      const result = await recognizeImageText(file, "eng", "正在辨識股票代號");
+      textParts.push(result?.data?.text || "");
     }
-    const text = normalizeImageText(result?.data?.text || "");
+
+    let text = combinedOcrText(textParts);
     if (els.imageOcrText) els.imageOcrText.value = text;
-    await runImageStockSearch(text);
+    if (await applyImageMatchesFromText(text, "", false)) return;
+
+    setImageSearchStatus("第一次辨識沒抓到股票，正在放大圖片並強化代號...");
+    const enhancedCanvas = await createEnhancedOcrCanvas(file, { scale: 2.8, threshold: true });
+    const enhancedResult = await recognizeImageText(enhancedCanvas, "eng", "正在強化辨識股票代號");
+    textParts.push(enhancedResult?.data?.text || "");
+    text = combinedOcrText(textParts);
+    if (els.imageOcrText) els.imageOcrText.value = text;
+    if (await applyImageMatchesFromText(text, "", false)) return;
+
+    setImageSearchStatus("代號仍未抓到，正在用高對比模式補掃中文股名...");
+    const grayCanvas = await createEnhancedOcrCanvas(file, { scale: 2.2, threshold: false });
+    const finalResult = await recognizeImageText(grayCanvas, "chi_tra+eng", "正在補掃股名");
+    textParts.push(finalResult?.data?.text || "");
+    text = combinedOcrText(textParts);
+    if (els.imageOcrText) els.imageOcrText.value = text;
+    await applyImageMatchesFromText(text, "已放大並強化圖片，仍沒有找到可對應的股票；請用手動修正輸入股名或代號。");
   } catch (error) {
     setImageSearchStatus(`圖片辨識失敗：${error.message || "請改用手動修正。"}`, true);
   }
