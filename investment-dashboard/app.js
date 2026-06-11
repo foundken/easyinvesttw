@@ -5398,6 +5398,7 @@ function normalizeImageText(text) {
     .replace(/[Ｔｔ]/g, "T")
     .replace(/[Ｗｗ]/g, "W")
     .replace(/\u3000/g, " ")
+    .replace(/(\d{4,6})\s*T\s*W/gi, "$1.TW")
     .trim();
 }
 
@@ -5470,6 +5471,19 @@ async function matchStocksFromImageText(text, options = {}) {
         addImageCandidate(candidates, lookup, stock.code, "相近股名", 44, chunk);
       }
     });
+  });
+
+  stocks.forEach((stock) => {
+    const name = String(stock.name || stockNameMap[stock.code] || "").trim();
+    if (name.length < 2 || name.length > 4) return;
+    const chars = [...name];
+    const first = compactText.indexOf(chars[0]);
+    if (first < 0) return;
+    const nearby = compactText.slice(first, first + 8);
+    const matchedChars = chars.filter((char) => nearby.includes(char)).length;
+    if (matchedChars >= Math.min(2, chars.length)) {
+      addImageCandidate(candidates, lookup, stock.code, "中文股名接近", 38, nearby);
+    }
   });
 
   if (options.manual) {
@@ -5596,13 +5610,14 @@ async function runImageStockSearch(text, options = {}) {
   setImageSearchStatus(`找到 ${matches.length} 檔可能股票，點卡片可查看個股資料。`);
 }
 
-async function recognizeImageText(image, language, label) {
+async function recognizeImageText(image, language, label, parameters = {}) {
   return window.Tesseract.recognize(image, language, {
     logger(message) {
       if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
         setImageSearchStatus(`${label} ${Math.round(message.progress * 100)}%...`);
       }
-    }
+    },
+    ...parameters
   });
 }
 
@@ -5628,6 +5643,74 @@ async function createEnhancedOcrCanvas(file, options = {}) {
     const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
     const boosted = Math.max(0, Math.min(255, (gray - 128) * 1.9 + 128));
     const value = threshold ? boosted > 172 ? 255 : 0 : boosted;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  context.putImageData(imageData, 0, 0);
+  bitmap.close?.();
+  return canvas;
+}
+
+async function createRankCodeColumnCanvas(file) {
+  const bitmap = await createImageBitmap(file);
+  const cropX = Math.round(bitmap.width * 0.08);
+  const cropY = Math.round(bitmap.height * 0.18);
+  const cropWidth = Math.round(bitmap.width * 0.44);
+  const cropHeight = Math.round(bitmap.height * 0.72);
+  const scale = 4.2;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(cropWidth * scale);
+  canvas.height = Math.round(cropHeight * scale);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = false;
+  context.drawImage(bitmap, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    const blueOrGrayText = b > 115 && r < 185 || Math.abs(r - g) < 18 && Math.abs(g - b) < 22 && r < 190;
+    const redText = r > 180 && g < 100 && b < 120;
+    const darkText = r < 120 && g < 120 && b < 120;
+    const value = blueOrGrayText || redText || darkText ? 0 : 255;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  context.putImageData(imageData, 0, 0);
+  bitmap.close?.();
+  return canvas;
+}
+
+async function createRankNameColumnCanvas(file) {
+  const bitmap = await createImageBitmap(file);
+  const cropX = Math.round(bitmap.width * 0.08);
+  const cropY = Math.round(bitmap.height * 0.18);
+  const cropWidth = Math.round(bitmap.width * 0.48);
+  const cropHeight = Math.round(bitmap.height * 0.72);
+  const scale = 3.8;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(cropWidth * scale);
+  canvas.height = Math.round(cropHeight * scale);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = false;
+  context.drawImage(bitmap, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    const blueText = b > 135 && g > 70 && r < 130;
+    const purpleRank = b > 130 && r > 70 && g < 90;
+    const grayCode = Math.abs(r - g) < 20 && Math.abs(g - b) < 24 && r > 90 && r < 190;
+    const darkText = r < 110 && g < 110 && b < 110;
+    const keep = blueText || purpleRank || grayCode || darkText;
+    const value = keep ? 0 : 255;
     data[index] = value;
     data[index + 1] = value;
     data[index + 2] = value;
@@ -5688,9 +5771,33 @@ async function handleStockImageUpload(file) {
     if (els.imageOcrText) els.imageOcrText.value = text;
     if (await applyImageMatchesFromText(text, "", false)) return;
 
-    setImageSearchStatus("第一次辨識沒抓到股票，正在放大圖片並強化代號...");
+    setImageSearchStatus("第一次辨識沒抓到股票，正在裁切排行榜中文股名欄...");
+    const nameColumnCanvas = await createRankNameColumnCanvas(file);
+    const nameColumnResult = await recognizeImageText(nameColumnCanvas, "chi_tra+eng", "正在辨識中文股名欄", {
+      tessedit_pageseg_mode: "6"
+    });
+    textParts.push(nameColumnResult?.data?.text || "");
+    text = combinedOcrText(textParts);
+    if (els.imageOcrText) els.imageOcrText.value = text;
+    if (await applyImageMatchesFromText(text, "", false)) return;
+
+    setImageSearchStatus("中文股名未抓到，正在裁切排行榜代號欄...");
+    const codeColumnCanvas = await createRankCodeColumnCanvas(file);
+    const codeColumnResult = await recognizeImageText(codeColumnCanvas, "eng", "正在辨識排行榜代號欄", {
+      tessedit_char_whitelist: "0123456789.TWtw.",
+      tessedit_pageseg_mode: "6"
+    });
+    textParts.push(codeColumnResult?.data?.text || "");
+    text = combinedOcrText(textParts);
+    if (els.imageOcrText) els.imageOcrText.value = text;
+    if (await applyImageMatchesFromText(text, "", false)) return;
+
+    setImageSearchStatus("代號欄未抓到，正在放大整張圖並強化代號...");
     const enhancedCanvas = await createEnhancedOcrCanvas(file, { scale: 2.8, threshold: true });
-    const enhancedResult = await recognizeImageText(enhancedCanvas, "eng", "正在強化辨識股票代號");
+    const enhancedResult = await recognizeImageText(enhancedCanvas, "eng", "正在強化辨識股票代號", {
+      tessedit_char_whitelist: "0123456789.TWtw.",
+      tessedit_pageseg_mode: "6"
+    });
     textParts.push(enhancedResult?.data?.text || "");
     text = combinedOcrText(textParts);
     if (els.imageOcrText) els.imageOcrText.value = text;
