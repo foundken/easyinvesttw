@@ -5763,6 +5763,47 @@ async function createRankRowCanvases(file) {
   return canvases;
 }
 
+async function createRankNameRowCanvases(file) {
+  const bitmap = await createImageBitmap(file);
+  const canvases = [];
+  const scale = 7;
+  const cropX = Math.round(bitmap.width * 0.155);
+  const cropWidth = Math.round(bitmap.width * 0.22);
+  const rowHeight = Math.round(bitmap.height * 0.078);
+  const firstRowY = bitmap.height * 0.315;
+  const rowStep = bitmap.height * 0.126;
+
+  for (let row = 0; row < 8; row += 1) {
+    const cropY = Math.round(firstRowY + row * rowStep);
+    if (cropY + rowHeight > bitmap.height) break;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(cropWidth * scale);
+    canvas.height = Math.round(rowHeight * scale);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.imageSmoothingEnabled = false;
+    context.drawImage(bitmap, cropX, cropY, cropWidth, rowHeight, 0, 0, canvas.width, canvas.height);
+
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let index = 0; index < data.length; index += 4) {
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const blueName = b > 135 && g > 75 && r < 135;
+      const darkName = r < 95 && g < 115 && b < 150;
+      const value = blueName || darkName ? 0 : 255;
+      data[index] = value;
+      data[index + 1] = value;
+      data[index + 2] = value;
+    }
+    context.putImageData(imageData, 0, 0);
+    canvases.push(canvas);
+  }
+
+  bitmap.close?.();
+  return canvases;
+}
+
 function combinedOcrText(parts) {
   return normalizeImageText(parts.filter(Boolean).join("\n"));
 }
@@ -5823,6 +5864,24 @@ async function handleStockImageUpload(file) {
     text = combinedOcrText(textParts);
     if (els.imageOcrText) els.imageOcrText.value = text;
     if (await applyImageMatchesFromText(text, "", false)) return;
+
+    setImageSearchStatus("正在逐列辨識中文股名...");
+    const nameRowCanvases = await createRankNameRowCanvases(file);
+    for (let index = 0; index < nameRowCanvases.length; index += 1) {
+      const rowResult = await recognizeImageText(nameRowCanvases[index], "chi_tra", `正在辨識第 ${index + 1} 列中文股名`, {
+        tessedit_pageseg_mode: "7"
+      });
+      textParts.push(rowResult?.data?.text || "");
+      text = combinedOcrText(textParts);
+      if (els.imageOcrText) els.imageOcrText.value = text;
+      const matches = await matchStocksFromImageText(text);
+      latestImageSearchMatches = matches;
+      renderImageStockMatches();
+      if (matches.length >= 5) {
+        setImageSearchStatus(`找到 ${matches.length} 檔可能股票，點卡片可查看個股資料。`);
+        return;
+      }
+    }
 
     setImageSearchStatus("中文股名欄未完整命中，正在逐列辨識股名...");
     const rowCanvases = await createRankRowCanvases(file);
