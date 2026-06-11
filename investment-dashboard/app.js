@@ -5468,9 +5468,19 @@ const imageStockOcrCorrections = [
 
 const imageRankingOcrCorrections = [
   {
+    code: "2483",
+    label: "百容",
+    patterns: [/(^|\n|\s)1[\s\S]{0,90}(百容|2483|下\s*生|EX3|-?3\.?15|10\.?00%|3,?987)/i]
+  },
+  {
     code: "8150",
     label: "南茂",
     patterns: [/(^|\n|\s)2[\s\S]{0,90}(南大|南茂|4880|097%|63,?220)/i]
+  },
+  {
+    code: "2425",
+    label: "承啟",
+    patterns: [/(^|\n|\s)3[\s\S]{0,90}(承啟|2425|E\s*EXE|-?3\.?30|-?3300|9\.?95%|0\.?95%|1,?378)/i]
   },
   {
     code: "2355",
