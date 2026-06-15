@@ -659,11 +659,11 @@ function portfolioMetrics(portfolio) {
     const stock = getStock(item.code);
     const shares = holdingShares(item);
     const costValue = holdingCostValue(item);
-    const todayChange = stockTodayChange(stock);
+    const todayMetrics = holdingTodayPnlMetrics(item, stock);
     if (shares > 0) result.holdings += 1;
     if (stock && Number.isFinite(shares) && shares > 0) {
       result.marketValue += stock.close * shares;
-      if (Number.isFinite(todayChange)) result.todayPnl += todayChange * shares;
+      if (Number.isFinite(todayMetrics.todayPnl)) result.todayPnl += todayMetrics.todayPnl;
     }
     if (Number.isFinite(costValue)) result.costValue += costValue;
     return result;
@@ -1010,7 +1010,7 @@ function normalizeLot(lot, fallback = {}) {
     id: lot?.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     cost,
     shares,
-    boughtAt: lot?.boughtAt || fallback.boughtAt || new Date().toISOString()
+    boughtAt: lot?.boughtAt ?? fallback.boughtAt ?? null
   };
 }
 
@@ -1041,6 +1041,56 @@ function averageHoldingCost(item) {
   const shares = holdingShares(item);
   const costValue = holdingCostValue(item);
   return Number.isFinite(shares) && shares > 0 && Number.isFinite(costValue) ? costValue / shares : number(item?.cost);
+}
+
+function holdingTodayPnlMetrics(item, stock) {
+  const currentPrice = number(stock?.close);
+  const todayChange = stockTodayChange(stock);
+  const quoteDateKey = marketDateKey(stock?.quoteTime || stock?.lastUpdated || stock?.closeTime || market.updatedAt || Date.now());
+  const lots = holdingLots(item);
+  const fallbackShares = number(item?.shares);
+  const candidateLots = lots.length
+    ? lots
+    : (Number.isFinite(fallbackShares) && fallbackShares > 0
+      ? [{
+          cost: number(item?.cost),
+          shares: fallbackShares,
+          boughtAt: item?.boughtAt || item?.buyAt || item?.buyDate || item?.updatedAt || item?.createdAt || null
+        }]
+      : []);
+
+  let todayPnl = null;
+  let baselineValue = 0;
+  let hasBaseline = false;
+
+  candidateLots.forEach((lot) => {
+    const shares = number(lot?.shares);
+    if (!Number.isFinite(shares) || shares <= 0) return;
+
+    const boughtToday = Boolean(quoteDateKey) && marketDateKey(lot?.boughtAt) === quoteDateKey;
+    if (boughtToday) {
+      const cost = number(lot?.cost);
+      if (!Number.isFinite(cost) || cost <= 0 || !Number.isFinite(currentPrice)) return;
+      todayPnl = (todayPnl || 0) + (currentPrice - cost) * shares;
+      baselineValue += cost * shares;
+      hasBaseline = true;
+      return;
+    }
+
+    if (!Number.isFinite(todayChange)) return;
+    todayPnl = (todayPnl || 0) + todayChange * shares;
+
+    if (!Number.isFinite(currentPrice)) return;
+    const baselinePrice = currentPrice - todayChange;
+    if (!Number.isFinite(baselinePrice)) return;
+    baselineValue += baselinePrice * shares;
+    hasBaseline = true;
+  });
+
+  return {
+    todayPnl,
+    baselineValue: hasBaseline ? baselineValue : null
+  };
 }
 
 function soldRecordBuyLots(item) {
@@ -1106,12 +1156,12 @@ function syncHoldingTotals(item) {
   return item;
 }
 
-function createBuyLot(cost, shares) {
+function createBuyLot(cost, shares, boughtAt = new Date().toISOString()) {
   return normalizeLot({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     cost,
     shares,
-    boughtAt: new Date().toISOString()
+    boughtAt
   });
 }
 
@@ -1141,7 +1191,7 @@ function upsertWatchItem({ code, name, cost, shares, type }) {
 
   const item = { code, name: name || "", cost, shares, type: cleanType };
   if (canCreateLot) {
-    item.lots = [createBuyLot(buyCost, buyShares)];
+    item.lots = [createBuyLot(buyCost, buyShares, item.boughtAt || item.buyAt || item.buyDate || null)];
     syncHoldingTotals(item);
   }
   watchList.push(item);
@@ -2189,7 +2239,7 @@ function holdingMetrics(entry) {
   const net = netTradeMetrics({ buyValue: costValue, sellValue: marketValue, grossProfit: pnl });
   const todayChange = stockTodayChange(stock);
   const todayChangePercent = stockTodayChangePercent(stock);
-  const todayPnl = Number.isFinite(todayChange) && Number.isFinite(shares) && shares > 0 ? todayChange * shares : null;
+  const todayMetrics = holdingTodayPnlMetrics(item, stock);
   const yearlyDividend = val?.yieldRate && marketValue ? marketValue * (val.yieldRate / 100) : null;
   return {
     cost,
@@ -2203,7 +2253,8 @@ function holdingMetrics(entry) {
     tradingCost: net.total,
     todayChange,
     todayChangePercent,
-    todayPnl,
+    todayPnl: todayMetrics.todayPnl,
+    todayBaselineValue: todayMetrics.baselineValue,
     yearlyDividend
   };
 }
@@ -2215,31 +2266,29 @@ function renderTodayPnl(holdings) {
     .map((entry) => ({ entry, m: holdingMetrics(entry) }))
     .filter(({ entry, m }) => entry.stock && Number.isFinite(m.shares) && m.shares > 0);
 
-  // 今日波動 = sum((即時價 - 昨收) × shares)，和持股卡片共用同一組欄位。
+  // 昨天就持有的部位用「現價 - 昨收」，今天才買進的部位改用「現價 - 買進成本」。
   let todayPnl = null;
-  let priorMarketValue = 0;
+  let baselineValue = 0;
   let totalMarketValue = 0;
   let cumulativePnl = 0;
-  let hasPriorPrice = false;
+  let hasBaseline = false;
 
   valid.forEach(({ entry, m }) => {
     const shares = m.shares;
     const close = entry.stock.close;
-    const change = m.todayChange;
     if (Number.isFinite(close)) totalMarketValue += close * shares;
-    if (Number.isFinite(change)) {
+    if (Number.isFinite(m.todayPnl)) {
       todayPnl = (todayPnl || 0) + m.todayPnl;
-      const prior = (close - change) * shares;
-      if (Number.isFinite(prior)) {
-        priorMarketValue += prior;
-        hasPriorPrice = true;
-      }
+    }
+    if (Number.isFinite(m.todayBaselineValue)) {
+      baselineValue += m.todayBaselineValue;
+      hasBaseline = true;
     }
     if (Number.isFinite(m.pnl)) cumulativePnl += m.pnl;
   });
 
-  const todayPct = (todayPnl !== null && hasPriorPrice && priorMarketValue > 0)
-    ? (todayPnl / priorMarketValue) * 100
+  const todayPct = (todayPnl !== null && hasBaseline && baselineValue > 0)
+    ? (todayPnl / baselineValue) * 100
     : null;
 
   // 顯示金額
