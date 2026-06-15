@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260612-spacex-v1";
+const APP_ASSET_VERSION = "20260615-refresh-guard-v1";
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
 const PORTFOLIO_KEY = "plain-stock-dashboard-portfolios-v1";
@@ -234,6 +234,8 @@ const els = {
   portfolioCountLabel: document.querySelector("#portfolioCountLabel"),
   portfolioCompareList: document.querySelector("#portfolioCompareList")
 };
+
+showRefreshingSnapshot("正在同步最新資料");
 
 const VIEW_MODE_KEY = "easyinvest-view-mode";
 const THEME_KEY = "easyinvest-theme";
@@ -602,6 +604,35 @@ function setAuthStatus(message, isError = false) {
   if (!els.authStatus) return;
   els.authStatus.textContent = message;
   els.authStatus.className = isError ? "auth-error" : "";
+}
+
+function showRefreshingSnapshot(message = "正在同步最新資料") {
+  if (els.todayPnlAmount) {
+    els.todayPnlAmount.textContent = "同步中...";
+    els.todayPnlAmount.className = "today-pnl-amount";
+  }
+  if (els.todayPnlPercent) {
+    els.todayPnlPercent.textContent = "";
+    els.todayPnlPercent.className = "today-pnl-percent";
+  }
+  if (els.todayPnlUpdatedAt) els.todayPnlUpdatedAt.textContent = "資料更新時間：重新同步中";
+  if (els.todayPnlCount) els.todayPnlCount.textContent = "--";
+  if (els.todayPnlMarketValue) els.todayPnlMarketValue.textContent = "--";
+  if (els.todayPnlAccumulated) {
+    els.todayPnlAccumulated.textContent = "--";
+    els.todayPnlAccumulated.className = "";
+  }
+  if (els.todayPnlNote) els.todayPnlNote.textContent = message;
+  if (els.todayPnlCard) els.todayPnlCard.removeAttribute("data-pnl");
+
+  if (els.watchCount) els.watchCount.textContent = "--";
+  if (els.holdingValue) els.holdingValue.textContent = "--";
+  if (els.topHotStock) els.topHotStock.textContent = "--";
+  if (els.riskCount) els.riskCount.textContent = "--";
+  if (els.dataStatus) els.dataStatus.textContent = "重新同步中";
+  if (els.updatedAt) els.updatedAt.textContent = message;
+  if (els.portfolioSummary) els.portfolioSummary.textContent = "正在讀取最新帳本資料。";
+  if (els.portfolioCountLabel) els.portfolioCountLabel.textContent = "同步中";
 }
 
 function updateAuthUi() {
@@ -6492,6 +6523,26 @@ document.addEventListener("visibilitychange", () => {
     quoteRefreshTimer = null;
     setStatus("暫停更新", "分頁在背景，回到畫面後會自動更新");
     return;
+  }
+  fetchMarket();
+});
+window.addEventListener("pagehide", (event) => {
+  if (!event.persisted) return;
+  showRefreshingSnapshot("返回畫面後會重新同步最新資料。");
+});
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  window.clearTimeout(refreshTimer);
+  window.clearTimeout(quoteRefreshTimer);
+  quoteRefreshTimer = null;
+  loadingCloudData = false;
+  marketFetchInFlight = false;
+  quoteFetchInFlight = false;
+  showRefreshingSnapshot("正在重新同步最新資料");
+  if (cloudEnabled && currentUser) loadCloudWatchList();
+  else {
+    applyPortfolioState(loadPortfolioState());
+    render();
   }
   fetchMarket();
 });
