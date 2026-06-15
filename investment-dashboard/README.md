@@ -49,23 +49,37 @@ window.EASYINVEST_FIREBASE_CONFIG = {
 
 本工具只做資料整理與教育用途，不構成投資建議。
 
-## 部署到 Netlify
-
-把整個 `investment-dashboard` 資料夾部署到 Netlify。Netlify 會自動使用 `netlify/functions/market.js` 抓取證交所資料。
-
 ## 部署到 Firebase Hosting
 
 本專案已加入 Firebase Hosting 設定，會把 `investment-dashboard` 資料夾發布成網站。
 
 ```bash
 firebase login
-firebase deploy --only hosting
+firebase deploy --only hosting,functions
 ```
 
-注意：Firebase Hosting 是靜態網站服務，市場資料 API 已改成 Firebase Functions，正式部署請使用：
+注意：Firebase Hosting 是靜態網站服務，市場資料 API 透過 Firebase Functions 提供，所以正式部署請一起發布 `hosting` 和 `functions`。
+
+### GitHub push 自動部署
+
+Repo 已加入 GitHub Actions workflow：
+
+- 檔案位置：`.github/workflows/firebase-deploy.yml`
+- 觸發條件：push 到 `main`
+- 部署內容：`firebase deploy --only hosting,functions --project easyinvesttw --non-interactive`
+
+第一次啟用前，請先在 GitHub repository secrets 新增：
 
 ```bash
-firebase deploy --only hosting,functions
+FIREBASE_SERVICE_ACCOUNT_EASYINVESTTW
+```
+
+這個 secret 內容要放 Firebase / Google Cloud service account 的 JSON 金鑰，並授權它可以部署 Hosting 與 Functions。
+
+如果你想用 Firebase CLI 自動幫你建立 GitHub 部署基礎設定，也可以在 repo root 執行：
+
+```bash
+firebase init hosting:github
 ```
 
 若只部署 Hosting，登入與 Firestore 持股同步可以使用，但市場資料會缺少後端代理，可能退回範例資料。Firebase Functions 呼叫外部市場資料來源通常需要 Firebase Blaze 方案。
@@ -73,8 +87,8 @@ firebase deploy --only hosting,functions
 ## 串接 Fugle 富果即時行情
 
 1. 到 Fugle Developer 申請行情 API Key。
-2. 到 Netlify 專案設定。
-3. 開啟 Environment variables。
+2. 到 Firebase Functions 的執行環境設定對應變數。
+3. 開啟環境變數設定。
 4. 新增變數：
 
 ```text
