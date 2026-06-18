@@ -477,6 +477,81 @@ function loadSellHistory() {
   }
 }
 
+const KNOWN_MISSING_BUY_DATE_REPAIRS = [
+  { code: "8043", cost: 224.5, boughtAt: "2026-06-18T12:00:00+08:00" },
+  { code: "2382", cost: 370, boughtAt: "2026-06-17T12:00:00+08:00" },
+  { code: "2303", cost: 140, boughtAt: "2026-06-17T12:00:00+08:00" }
+];
+
+function knownMissingBuyDate(code, cost) {
+  const normalizedCost = number(cost);
+  if (!code || !Number.isFinite(normalizedCost)) return null;
+  const match = KNOWN_MISSING_BUY_DATE_REPAIRS.find((entry) => (
+    entry.code === String(code) && Math.abs(entry.cost - normalizedCost) < 0.0001
+  ));
+  return match?.boughtAt || null;
+}
+
+function repairKnownMissingTradeDates(portfolios = []) {
+  let changed = false;
+
+  const repairLots = (lots, code) => {
+    if (!Array.isArray(lots)) return lots;
+    return lots.map((lot) => {
+      if (!lot || lot.boughtAt) return lot;
+      const repairedBoughtAt = knownMissingBuyDate(code, lot.cost);
+      if (!repairedBoughtAt) return lot;
+      changed = true;
+      return { ...lot, boughtAt: repairedBoughtAt };
+    });
+  };
+
+  const repairedPortfolios = portfolios.map((portfolio) => ({
+    ...portfolio,
+    items: Array.isArray(portfolio.items)
+      ? portfolio.items.map((item) => {
+        if (!item || typeof item !== "object") return item;
+        const repairedLots = repairLots(item.lots, item.code);
+        const repairedBoughtAt = item.boughtAt || knownMissingBuyDate(item.code, item.cost);
+        if (repairedBoughtAt && !item.boughtAt) changed = true;
+        return {
+          ...item,
+          ...(repairedBoughtAt ? { boughtAt: repairedBoughtAt } : {}),
+          lots: repairedLots
+        };
+      })
+      : [],
+    sellHistory: Array.isArray(portfolio.sellHistory)
+      ? portfolio.sellHistory.map((history) => {
+        if (!history || typeof history !== "object") return history;
+        const repairedBuyLots = repairLots(history.buyLots, history.code);
+        const repairedLots = repairLots(history.lots, history.code);
+        const repairedBoughtAt = history.boughtAt || knownMissingBuyDate(history.code, history.buyCost);
+        if (repairedBoughtAt && !history.boughtAt) changed = true;
+        return {
+          ...history,
+          ...(repairedBoughtAt ? { boughtAt: repairedBoughtAt } : {}),
+          buyLots: repairedBuyLots,
+          lots: repairedLots
+        };
+      })
+      : []
+  }));
+
+  return { portfolios: repairedPortfolios, changed };
+}
+
+function persistPortfolioStateLocal(state) {
+  const payload = {
+    activePortfolioId: state.activePortfolioId,
+    portfolios: state.portfolios
+  };
+  localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(payload));
+  const activePortfolio = state.portfolios.find((item) => item.id === state.activePortfolioId) || state.portfolios[0];
+  localStorage.setItem(WATCH_KEY, JSON.stringify(activePortfolio?.items || []));
+  localStorage.setItem(SELL_HISTORY_KEY, JSON.stringify(activePortfolio?.sellHistory || []));
+}
+
 function createDefaultPortfolio(items = [], history = []) {
   return {
     id: DEFAULT_PORTFOLIO_ID,
@@ -507,24 +582,32 @@ function normalizePortfolioState(raw) {
     || Object.prototype.hasOwnProperty.call(source, "sellHistory");
   const legacyItems = hasLegacyPayload ? source.items : loadWatchList();
   const legacySellHistory = hasLegacyPayload ? source.sellHistory : loadSellHistory();
-  const portfoliosList = list.length
+  const basePortfoliosList = list.length
     ? list
     : [createDefaultPortfolio(legacyItems, legacySellHistory)];
+  const repaired = repairKnownMissingTradeDates(basePortfoliosList);
+  const portfoliosList = repaired.portfolios;
   const activeId = portfoliosList.some((item) => item.id === source.activePortfolioId)
     ? source.activePortfolioId
     : portfoliosList[0].id;
-  return { activePortfolioId: activeId, portfolios: portfoliosList };
+  return { activePortfolioId: activeId, portfolios: portfoliosList, needsSave: repaired.changed };
 }
 
 function loadPortfolioState() {
   try {
     const raw = JSON.parse(localStorage.getItem(PORTFOLIO_KEY));
-    if (raw?.portfolios) return normalizePortfolioState(raw);
+    if (raw?.portfolios) {
+      const normalized = normalizePortfolioState(raw);
+      if (normalized.needsSave) persistPortfolioStateLocal(normalized);
+      return normalized;
+    }
   } catch {}
-  return normalizePortfolioState({
+  const normalized = normalizePortfolioState({
     activePortfolioId: DEFAULT_PORTFOLIO_ID,
     portfolios: [createDefaultPortfolio(loadWatchList(), loadSellHistory())]
   });
+  if (normalized.needsSave) persistPortfolioStateLocal(normalized);
+  return normalized;
 }
 
 function currentPortfolio() {
@@ -779,8 +862,9 @@ async function loadCloudWatchList() {
     const snapshot = await cloudDb.collection("watchlists").doc(currentUser.uid).get();
     const data = snapshot.data();
     if (snapshot.exists) {
-      applyPortfolioState(normalizePortfolioState(data));
-      if (!Array.isArray(data?.portfolios)) await saveWatchList();
+      const normalized = normalizePortfolioState(data);
+      applyPortfolioState(normalized);
+      if (normalized.needsSave || !Array.isArray(data?.portfolios)) await saveWatchList();
     } else {
       applyPortfolioState(loadPortfolioState());
       await saveWatchList();
@@ -1046,11 +1130,12 @@ function normalizeLot(lot, fallback = {}) {
 }
 
 function holdingLots(item) {
+  const legacyBoughtAt = item?.boughtAt || item?.buyAt || item?.buyDate || item?.updatedAt || item?.createdAt || null;
   const storedLots = Array.isArray(item?.lots)
-    ? item.lots.map((lot) => normalizeLot(lot)).filter(Boolean)
+    ? item.lots.map((lot) => normalizeLot(lot, { boughtAt: legacyBoughtAt })).filter(Boolean)
     : [];
   if (storedLots.length) return storedLots;
-  const legacyLot = normalizeLot(item, { boughtAt: item?.boughtAt || item?.updatedAt || item?.createdAt });
+  const legacyLot = normalizeLot(item, { boughtAt: legacyBoughtAt });
   return legacyLot ? [legacyLot] : [];
 }
 
@@ -1192,7 +1277,7 @@ function createBuyLot(cost, shares, boughtAt = new Date().toISOString()) {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     cost,
     shares,
-    boughtAt
+    boughtAt: boughtAt ?? new Date().toISOString()
   });
 }
 
@@ -1206,6 +1291,7 @@ function upsertWatchItem({ code, name, cost, shares, type }) {
     && Number.isFinite(buyShares) && buyShares > 0;
 
   if (existing) {
+    existing.updatedAt = new Date().toISOString();
     existing.type = cleanType;
     if (name) existing.name = name;
     if (canCreateLot) {
@@ -1220,9 +1306,10 @@ function upsertWatchItem({ code, name, cost, shares, type }) {
     return existing;
   }
 
-  const item = { code, name: name || "", cost, shares, type: cleanType };
+  const createdAt = new Date().toISOString();
+  const item = { code, name: name || "", cost, shares, type: cleanType, createdAt, updatedAt: createdAt };
   if (canCreateLot) {
-    item.lots = [createBuyLot(buyCost, buyShares, item.boughtAt || item.buyAt || item.buyDate || null)];
+    item.lots = [createBuyLot(buyCost, buyShares, item.boughtAt || item.buyAt || item.buyDate || item.createdAt)];
     syncHoldingTotals(item);
   }
   watchList.push(item);
