@@ -2675,13 +2675,10 @@ function renderHoldingOverview(holdings) {
         : "整體仍在可控範圍，持續追蹤營收、法人與族群集中度。";
 
   const currentHoldingCards = [
-    ["總市值", totalMarketValue ? compactMoney(totalMarketValue) : "--", ""],
-    ["目前投入成本", totalCost ? compactMoney(totalCost) : "--", ""],
-    ["目前持股帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down"],
-    ["總損益率", totalPnlRate === null ? "--" : percent(totalPnlRate), totalPnlRate >= 0 ? "price-up" : "price-down"],
-    ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
-    ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
-    ["目前持股賺 / 賠", `${profitable.length} / ${losing.length} 檔`, ""],
+    ["總市值", totalMarketValue ? compactMoney(totalMarketValue) : "--", "", totalCost ? `投入成本 ${compactMoney(totalCost)}` : ""],
+    ["目前持股帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down", totalPnlRate === null ? "" : `總損益率 ${percent(totalPnlRate)}`],
+    ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", "", averageYield === null ? "" : `平均殖利率 ${percent(averageYield)}`],
+    ["目前持股賺 / 賠", `${profitable.length} / ${losing.length} 檔`, "", "賺錢 / 虧損檔數"],
     ["最大獲利股", best ? holdingSummaryLabel(best) : "--", "price-up"],
     ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
   ];

@@ -1948,7 +1948,7 @@ label span {
 }
 
 .holding-overview-section {
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--card-soft);
@@ -1959,7 +1959,7 @@ label span {
   align-items: end;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .holding-overview-section-head strong {
@@ -1974,12 +1974,12 @@ label span {
 
 .holding-overview-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
 }
 
 .holding-overview-grid article {
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--card);
@@ -1988,21 +1988,22 @@ label span {
 .holding-overview-grid span {
   display: block;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 900;
 }
 
 .holding-overview-grid strong {
   display: block;
-  margin-top: 6px;
-  font-size: 22px;
+  margin-top: 4px;
+  font-size: 18px;
+  line-height: 1.2;
 }
 
 .holding-overview-grid small {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.35;
 }
