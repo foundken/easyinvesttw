@@ -254,6 +254,8 @@ let cloudDb = null;
 let currentUser = null;
 let cloudEnabled = false;
 let loadingCloudData = false;
+let cloudWatchUnsubscribe = null;
+let cloudWatchUid = null;
 let market = {
   daily: [],
   valuation: [],
@@ -766,6 +768,55 @@ async function saveWatchList() {
   }
 }
 
+function stopCloudWatchSubscription() {
+  if (typeof cloudWatchUnsubscribe === "function") cloudWatchUnsubscribe();
+  cloudWatchUnsubscribe = null;
+  cloudWatchUid = null;
+}
+
+function startCloudWatchSubscription() {
+  if (!cloudEnabled || !currentUser || !cloudDb) return;
+  if (cloudWatchUid === currentUser.uid && cloudWatchUnsubscribe) return;
+  stopCloudWatchSubscription();
+  cloudWatchUid = currentUser.uid;
+  cloudWatchUnsubscribe = cloudDb
+    .collection("watchlists")
+    .doc(currentUser.uid)
+    .onSnapshot(async (snapshot) => {
+      if (!currentUser || currentUser.uid !== cloudWatchUid) return;
+      if (snapshot.metadata?.hasPendingWrites) return;
+
+      try {
+        const localState = chooseNewerPortfolioState(loadPortfolioState(), currentSessionPortfolioState()).state;
+        if (!snapshot.exists) {
+          if (localState) {
+            applyPortfolioState(localState);
+            render();
+            await saveWatchList();
+          }
+          return;
+        }
+
+        const cloudState = normalizePortfolioState(snapshot.data());
+        const winner = chooseNewerPortfolioState(localState, cloudState);
+        if (winner.source === "secondary") {
+          applyPortfolioState(cloudState);
+          render();
+          setAuthStatus(`已登入：${currentUser.email}，已即時同步 ${currentPortfolio().name}。`);
+          return;
+        }
+        if (cloudState.needsSave || !Array.isArray(snapshot.data()?.portfolios)) {
+          await saveWatchList();
+        }
+      } catch (error) {
+        setAuthStatus(`即時同步失敗：${error.message}`, true);
+      }
+    }, (error) => {
+      setAuthStatus(`即時同步失敗：${error.message}`, true);
+      stopCloudWatchSubscription();
+    });
+}
+
 function currentSessionPortfolioState() {
   if (!portfolios.length && !watchList.length && !sellHistory.length) return null;
   syncCurrentPortfolio();
@@ -953,6 +1004,7 @@ async function addPortfolio() {
 
 async function loadCloudWatchList() {
   if (!cloudEnabled || !currentUser) {
+    stopCloudWatchSubscription();
     applyPortfolioState(loadPortfolioState());
     render();
     return;
@@ -972,8 +1024,10 @@ async function loadCloudWatchList() {
       await saveWatchList();
     }
     setAuthStatus(`已登入：${currentUser.email}，已讀取 ${currentPortfolio().name}。`);
+    startCloudWatchSubscription();
   } catch (error) {
     setAuthStatus(`讀取雲端資料失敗：${error.message}`, true);
+    stopCloudWatchSubscription();
     applyPortfolioState({ portfolios: [createDefaultPortfolio()], activePortfolioId: DEFAULT_PORTFOLIO_ID });
   }
   loadingCloudData = false;
@@ -1001,6 +1055,7 @@ async function initCloudAuth() {
   await new Promise((resolve) => {
     let firstRun = true;
     cloudAuth.onAuthStateChanged(async (user) => {
+      if (!user) stopCloudWatchSubscription();
       currentUser = user || null;
       updateAuthUi();
       if (!loadingCloudData) await loadCloudWatchList();
