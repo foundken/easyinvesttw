@@ -3895,19 +3895,29 @@ body.chart-expanded .chart-wrap canvas {
 
   .holding-overview-grid,
   .realized-overview-grid {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scroll-snap-type: x proximity;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
+    min-width: 0;
+    padding-bottom: 0;
   }
 
+  .holding-overview-section,
+  .holding-overview-section-head,
   .holding-overview-grid article,
   .realized-overview-grid article {
-    flex: 0 0 calc((100% - 10px) / 2);
     min-width: 0;
-    scroll-snap-align: start;
+  }
+
+  .holding-overview-section-head {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+  }
+
+  .holding-overview-section-head span {
+    width: 100%;
   }
 
   .metric-grid {
@@ -4280,6 +4290,16 @@ body.chart-expanded .chart-wrap canvas {
 
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .holding-overview-grid,
+  .realized-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .holding-overview-grid strong,
+  .realized-overview-grid strong {
+    font-size: 17px;
   }
 
   .group-card {
