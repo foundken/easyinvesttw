@@ -1,7 +1,8 @@
-const APP_ASSET_VERSION = "20260615-refresh-guard-v1";
+const APP_ASSET_VERSION = "20260618-cloud-sync-fix-v1";
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
 const PORTFOLIO_KEY = "plain-stock-dashboard-portfolios-v1";
+const PORTFOLIO_SYNC_META_KEY = "plain-stock-dashboard-portfolio-sync-meta-v1";
 const DEFAULT_PORTFOLIO_ID = "main";
 const MARKET_REFRESH_FAST_MS = 5000;
 const MARKET_REFRESH_SLOW_MS = 10 * 60000;
@@ -638,6 +639,52 @@ function sanitizeFirestoreValue(value) {
   return value;
 }
 
+function loadPortfolioSyncMeta() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PORTFOLIO_SYNC_META_KEY));
+    return {
+      pending: Boolean(raw?.pending),
+      lastCloudUpdatedAt: serializeStateTimestamp(raw?.lastCloudUpdatedAt),
+      lastCloudClientUpdatedAt: serializeStateTimestamp(raw?.lastCloudClientUpdatedAt)
+    };
+  } catch {}
+  return {
+    pending: false,
+    lastCloudUpdatedAt: null,
+    lastCloudClientUpdatedAt: null
+  };
+}
+
+let portfolioSyncMeta = loadPortfolioSyncMeta();
+
+function persistPortfolioSyncMeta(meta = portfolioSyncMeta) {
+  portfolioSyncMeta = {
+    pending: Boolean(meta?.pending),
+    lastCloudUpdatedAt: serializeStateTimestamp(meta?.lastCloudUpdatedAt),
+    lastCloudClientUpdatedAt: serializeStateTimestamp(meta?.lastCloudClientUpdatedAt)
+  };
+  localStorage.setItem(PORTFOLIO_SYNC_META_KEY, JSON.stringify(portfolioSyncMeta));
+}
+
+function markPortfolioSyncPending(pending, extra = {}) {
+  persistPortfolioSyncMeta({
+    ...portfolioSyncMeta,
+    ...extra,
+    pending
+  });
+}
+
+function hasPendingCloudSync() {
+  return Boolean(portfolioSyncMeta?.pending);
+}
+
+function rememberCloudState(state) {
+  markPortfolioSyncPending(false, {
+    lastCloudUpdatedAt: state?.updatedAt || null,
+    lastCloudClientUpdatedAt: state?.clientUpdatedAt || null
+  });
+}
+
 function persistPortfolioStateLocal(state) {
   const payload = {
     activePortfolioId: state.activePortfolioId,
@@ -735,7 +782,7 @@ function syncCurrentPortfolio() {
   return portfolio;
 }
 
-function applyPortfolioState(state) {
+function applyPortfolioState(state, options = {}) {
   const normalized = normalizePortfolioState(state);
   portfolios = normalized.portfolios;
   activePortfolioId = normalized.activePortfolioId;
@@ -744,6 +791,7 @@ function applyPortfolioState(state) {
   watchList = portfolio.items;
   sellHistory = portfolio.sellHistory;
   persistPortfolioStateLocal(normalized);
+  if (options.source === "cloud") rememberCloudState(normalized);
   renderPortfolioSwitcher();
 }
 
@@ -767,6 +815,7 @@ async function saveWatchList() {
   const payload = portfolioPayload(savedAt);
   persistPortfolioStateLocal(payload);
   if (cloudEnabled && currentUser) {
+    markPortfolioSyncPending(true);
     try {
       const firestorePayload = sanitizeFirestoreValue({
         email: currentUser.email || null,
@@ -781,6 +830,9 @@ async function saveWatchList() {
         .collection("watchlists")
         .doc(currentUser.uid)
         .set(firestorePayload, { merge: true });
+      markPortfolioSyncPending(false, {
+        lastCloudClientUpdatedAt: payload.clientUpdatedAt || savedAt
+      });
       setAuthStatus(`已登入：${currentUser.email}，${currentPortfolio().name} 已同步 Firebase。`);
     } catch (error) {
       setAuthStatus(`雲端同步失敗：${error.message}`, true);
@@ -819,9 +871,11 @@ function startCloudWatchSubscription() {
         }
 
         const cloudState = normalizePortfolioState(snapshot.data());
-        const winner = chooseNewerPortfolioState(localState, cloudState);
+        const winner = hasPendingCloudSync()
+          ? chooseNewerPortfolioState(localState, cloudState)
+          : { state: cloudState, source: "secondary" };
         if (winner.source === "secondary") {
-          applyPortfolioState(cloudState);
+          applyPortfolioState(cloudState, { source: "cloud" });
           render();
           setAuthStatus(`已登入：${currentUser.email}，已即時同步 ${currentPortfolio().name}。`);
           return;
@@ -1037,8 +1091,12 @@ async function loadCloudWatchList() {
     const data = snapshot.data();
     if (snapshot.exists) {
       const cloudState = normalizePortfolioState(data);
-      const winner = chooseNewerPortfolioState(localState, cloudState);
-      applyPortfolioState(winner.state);
+      const winner = hasPendingCloudSync()
+        ? chooseNewerPortfolioState(localState, cloudState)
+        : { state: cloudState, source: "secondary" };
+      applyPortfolioState(winner.state, {
+        source: winner.source === "secondary" ? "cloud" : "local"
+      });
       if (winner.source === "primary" || cloudState.needsSave || !Array.isArray(data?.portfolios)) await saveWatchList();
     } else {
       applyPortfolioState(localState || loadPortfolioState());
