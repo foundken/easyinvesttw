@@ -618,6 +618,26 @@ function chooseNewerPortfolioState(primary, secondary) {
     : { state: secondary, source: "secondary" };
 }
 
+function sanitizeFirestoreValue(value) {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeFirestoreValue(item))
+      .filter((item) => item !== undefined);
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    const sanitized = {};
+    Object.entries(value).forEach(([key, entryValue]) => {
+      const normalized = sanitizeFirestoreValue(entryValue);
+      if (normalized !== undefined) sanitized[key] = normalized;
+    });
+    return sanitized;
+  }
+  return value;
+}
+
 function persistPortfolioStateLocal(state) {
   const payload = {
     activePortfolioId: state.activePortfolioId,
@@ -748,18 +768,19 @@ async function saveWatchList() {
   persistPortfolioStateLocal(payload);
   if (cloudEnabled && currentUser) {
     try {
+      const firestorePayload = sanitizeFirestoreValue({
+        email: currentUser.email || null,
+        clientUpdatedAt: payload.clientUpdatedAt || savedAt,
+        activePortfolioId: payload.activePortfolioId || DEFAULT_PORTFOLIO_ID,
+        portfolios: payload.portfolios,
+        items: watchList,
+        sellHistory
+      });
+      firestorePayload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
       await cloudDb
         .collection("watchlists")
         .doc(currentUser.uid)
-        .set({
-          email: currentUser.email,
-          clientUpdatedAt: payload.clientUpdatedAt,
-          activePortfolioId: payload.activePortfolioId,
-          portfolios: payload.portfolios,
-          items: watchList,
-          sellHistory,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        .set(firestorePayload, { merge: true });
       setAuthStatus(`已登入：${currentUser.email}，${currentPortfolio().name} 已同步 Firebase。`);
     } catch (error) {
       setAuthStatus(`雲端同步失敗：${error.message}`, true);
