@@ -541,10 +541,86 @@ function repairKnownMissingTradeDates(portfolios = []) {
   return { portfolios: repairedPortfolios, changed };
 }
 
+function stateTimestampMs(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") {
+    const date = value.toDate();
+    return Number.isFinite(date?.getTime?.()) ? date.getTime() : null;
+  }
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+  if (typeof value === "object" && Number.isFinite(value.seconds)) {
+    const seconds = value.seconds * 1000;
+    const nanos = Number.isFinite(value.nanoseconds) ? value.nanoseconds / 1000000 : 0;
+    return seconds + nanos;
+  }
+  if (typeof value === "number") return value > 1000000000000 ? value : value * 1000;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function serializeStateTimestamp(value) {
+  const ms = stateTimestampMs(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function portfolioDataTimestampMs(portfolios = []) {
+  let latest = null;
+  const register = (value) => {
+    const ms = stateTimestampMs(value);
+    if (!Number.isFinite(ms)) return;
+    latest = latest === null ? ms : Math.max(latest, ms);
+  };
+
+  portfolios.forEach((portfolio) => {
+    register(portfolio?.updatedAt);
+    register(portfolio?.createdAt);
+    (portfolio?.items || []).forEach((item) => {
+      register(item?.updatedAt);
+      register(item?.createdAt);
+    });
+    (portfolio?.sellHistory || []).forEach((history) => {
+      register(history?.updatedAt);
+      register(history?.createdAt);
+      register(history?.soldAt);
+    });
+  });
+
+  return latest;
+}
+
+function portfolioStateTimestampMs(state) {
+  return stateTimestampMs(state?.clientUpdatedAt)
+    ?? stateTimestampMs(state?.updatedAt)
+    ?? portfolioDataTimestampMs(state?.portfolios || []);
+}
+
+function chooseNewerPortfolioState(primary, secondary) {
+  if (!primary) return { state: secondary, source: "secondary" };
+  if (!secondary) return { state: primary, source: "primary" };
+
+  const primaryMs = portfolioStateTimestampMs(primary);
+  const secondaryMs = portfolioStateTimestampMs(secondary);
+
+  if (Number.isFinite(primaryMs) && Number.isFinite(secondaryMs) && primaryMs !== secondaryMs) {
+    return primaryMs > secondaryMs
+      ? { state: primary, source: "primary" }
+      : { state: secondary, source: "secondary" };
+  }
+  if (Number.isFinite(primaryMs) && !Number.isFinite(secondaryMs)) return { state: primary, source: "primary" };
+  if (!Number.isFinite(primaryMs) && Number.isFinite(secondaryMs)) return { state: secondary, source: "secondary" };
+
+  const primarySize = JSON.stringify(primary?.portfolios || []).length;
+  const secondarySize = JSON.stringify(secondary?.portfolios || []).length;
+  return primarySize >= secondarySize
+    ? { state: primary, source: "primary" }
+    : { state: secondary, source: "secondary" };
+}
+
 function persistPortfolioStateLocal(state) {
   const payload = {
     activePortfolioId: state.activePortfolioId,
-    portfolios: state.portfolios
+    portfolios: state.portfolios,
+    clientUpdatedAt: state.clientUpdatedAt || null
   };
   localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(payload));
   const activePortfolio = state.portfolios.find((item) => item.id === state.activePortfolioId) || state.portfolios[0];
@@ -590,7 +666,15 @@ function normalizePortfolioState(raw) {
   const activeId = portfoliosList.some((item) => item.id === source.activePortfolioId)
     ? source.activePortfolioId
     : portfoliosList[0].id;
-  return { activePortfolioId: activeId, portfolios: portfoliosList, needsSave: repaired.changed };
+  const derivedUpdatedAt = serializeStateTimestamp(source.clientUpdatedAt || source.updatedAt || portfolioDataTimestampMs(portfoliosList));
+  const needsTimestampSave = !source.clientUpdatedAt && Boolean(derivedUpdatedAt);
+  return {
+    activePortfolioId: activeId,
+    portfolios: portfoliosList,
+    clientUpdatedAt: derivedUpdatedAt,
+    updatedAt: serializeStateTimestamp(source.updatedAt),
+    needsSave: repaired.changed || needsTimestampSave
+  };
 }
 
 function loadPortfolioState() {
@@ -620,6 +704,8 @@ function currentPortfolio() {
   return portfolio;
 }
 
+let portfolioStateUpdatedAt = null;
+
 function syncCurrentPortfolio() {
   const portfolio = currentPortfolio();
   portfolio.items = watchList;
@@ -631,16 +717,20 @@ function applyPortfolioState(state) {
   const normalized = normalizePortfolioState(state);
   portfolios = normalized.portfolios;
   activePortfolioId = normalized.activePortfolioId;
+  portfolioStateUpdatedAt = normalized.clientUpdatedAt || normalized.updatedAt || serializeStateTimestamp(portfolioDataTimestampMs(normalized.portfolios));
   const portfolio = currentPortfolio();
   watchList = portfolio.items;
   sellHistory = portfolio.sellHistory;
+  persistPortfolioStateLocal(normalized);
   renderPortfolioSwitcher();
 }
 
-function portfolioPayload() {
+function portfolioPayload(savedAt = new Date().toISOString()) {
   syncCurrentPortfolio();
+  portfolioStateUpdatedAt = savedAt;
   return {
     activePortfolioId,
+    clientUpdatedAt: savedAt,
     portfolios: portfolios.map((portfolio) => ({
       id: portfolio.id,
       name: portfolio.name,
@@ -651,7 +741,9 @@ function portfolioPayload() {
 }
 
 async function saveWatchList() {
-  const payload = portfolioPayload();
+  const savedAt = new Date().toISOString();
+  const payload = portfolioPayload(savedAt);
+  persistPortfolioStateLocal(payload);
   if (cloudEnabled && currentUser) {
     try {
       await cloudDb
@@ -659,6 +751,7 @@ async function saveWatchList() {
         .doc(currentUser.uid)
         .set({
           email: currentUser.email,
+          clientUpdatedAt: payload.clientUpdatedAt,
           activePortfolioId: payload.activePortfolioId,
           portfolios: payload.portfolios,
           items: watchList,
@@ -671,9 +764,16 @@ async function saveWatchList() {
     }
     return;
   }
-  localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(payload));
-  localStorage.setItem(WATCH_KEY, JSON.stringify(watchList));
-  localStorage.setItem(SELL_HISTORY_KEY, JSON.stringify(sellHistory));
+}
+
+function currentSessionPortfolioState() {
+  if (!portfolios.length && !watchList.length && !sellHistory.length) return null;
+  syncCurrentPortfolio();
+  return normalizePortfolioState({
+    activePortfolioId,
+    portfolios,
+    clientUpdatedAt: portfolioStateUpdatedAt
+  });
 }
 
 function getCloudConfig() {
@@ -859,14 +959,16 @@ async function loadCloudWatchList() {
   }
   loadingCloudData = true;
   try {
+    const localState = chooseNewerPortfolioState(loadPortfolioState(), currentSessionPortfolioState()).state;
     const snapshot = await cloudDb.collection("watchlists").doc(currentUser.uid).get();
     const data = snapshot.data();
     if (snapshot.exists) {
-      const normalized = normalizePortfolioState(data);
-      applyPortfolioState(normalized);
-      if (normalized.needsSave || !Array.isArray(data?.portfolios)) await saveWatchList();
+      const cloudState = normalizePortfolioState(data);
+      const winner = chooseNewerPortfolioState(localState, cloudState);
+      applyPortfolioState(winner.state);
+      if (winner.source === "primary" || cloudState.needsSave || !Array.isArray(data?.portfolios)) await saveWatchList();
     } else {
-      applyPortfolioState(loadPortfolioState());
+      applyPortfolioState(localState || loadPortfolioState());
       await saveWatchList();
     }
     setAuthStatus(`已登入：${currentUser.email}，已讀取 ${currentPortfolio().name}。`);
