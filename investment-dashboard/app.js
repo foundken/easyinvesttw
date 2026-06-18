@@ -2603,8 +2603,8 @@ function renderHoldingOverview(holdings) {
   const averageYield = totalMarketValue ? (totalDividend / totalMarketValue) * 100 : null;
   const profitable = rows.filter((row) => row.metrics.pnl > 0);
   const losing = rows.filter((row) => row.metrics.pnl < 0);
-  const best = rows.filter((row) => row.metrics.pnl !== null).sort((a, b) => b.metrics.pnl - a.metrics.pnl)[0];
-  const worst = rows.filter((row) => row.metrics.pnl !== null).sort((a, b) => a.metrics.pnl - b.metrics.pnl)[0];
+  const best = profitable.sort((a, b) => b.metrics.pnl - a.metrics.pnl)[0] || null;
+  const worst = losing.sort((a, b) => a.metrics.pnl - b.metrics.pnl)[0] || null;
   const holdingSummaryLabel = (row) => {
     if (!row) return "--";
     const name = row.stock?.name || getStock(row.item.code)?.name || "";
@@ -2619,35 +2619,52 @@ function renderHoldingOverview(holdings) {
         ? "整體虧損偏大，先檢查弱勢股原因，不建議盲目攤平。"
         : "整體仍在可控範圍，持續追蹤營收、法人與族群集中度。";
 
-  const cards = [
+  const currentHoldingCards = [
     ["總市值", totalMarketValue ? compactMoney(totalMarketValue) : "--", ""],
     ["目前投入成本", totalCost ? compactMoney(totalCost) : "--", ""],
-    ["已回收本金", recoveredPrincipal ? compactMoney(recoveredPrincipal) : "--", ""],
-    ["累計投入本金", lifetimeInvested ? compactMoney(lifetimeInvested) : "--", ""],
-    ["已賣出金額", totalSoldValue ? compactMoney(totalSoldValue) : "--", ""],
-    ["總帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down"],
+    ["目前持股帳面損益", totalPnl === null ? "--" : compactMoney(totalPnl), totalPnl >= 0 ? "price-up" : "price-down"],
     ["總損益率", totalPnlRate === null ? "--" : percent(totalPnlRate), totalPnlRate >= 0 ? "price-up" : "price-down"],
-    ["估計交易成本", totalTradingCost ? compactMoney(totalTradingCost) : "--", ""],
-    ["扣費後總盈虧", hasNetPnl ? formatCurrency(totalNetPnl) : "--", priceTone(totalNetPnl), "目前持股估算賣出 + 已賣出扣費後"],
     ["預估年股息", totalDividend ? compactMoney(totalDividend) : "--", ""],
     ["平均殖利率", averageYield === null ? "--" : percent(averageYield), ""],
-    ["獲利 / 虧損", `${profitable.length} / ${losing.length} 檔`, ""],
+    ["目前持股賺 / 賠", `${profitable.length} / ${losing.length} 檔`, ""],
     ["最大獲利股", best ? holdingSummaryLabel(best) : "--", "price-up"],
-    ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""],
-    ["已賣出毛損益", sellHistory.length ? formatCurrency(realizedPnl) : "--", priceTone(realizedPnl), "賣出金額 - 當初買進成本"],
-    ["已賣出扣費後", sellHistory.length ? formatCurrency(realizedNetPnl) : "--", priceTone(realizedNetPnl), "毛損益 - 手續費 - 證交稅"],
-    ["累積總獲利", totalPnl === null && !sellHistory.length ? "--" : formatCurrency(cumulativePnl), priceTone(cumulativePnl)]
+    ["最大虧損股", worst ? holdingSummaryLabel(worst) : "--", worst?.metrics.pnl < 0 ? "price-down" : ""]
   ];
+  const soldCards = [
+    ["已回收本金", recoveredPrincipal ? compactMoney(recoveredPrincipal) : "--", ""],
+    ["已賣出金額", totalSoldValue ? compactMoney(totalSoldValue) : "--", ""],
+    ["已賣出毛損益（未扣費）", sellHistory.length ? formatCurrency(realizedPnl) : "--", priceTone(realizedPnl), "已賣出金額 - 當初買進成本，還沒扣交易費用"],
+    ["已賣出扣費後損益", sellHistory.length ? formatCurrency(realizedNetPnl) : "--", priceTone(realizedNetPnl), "已賣出的毛損益，再扣手續費和證交稅"]
+  ];
+  const summaryCards = [
+    ["累計投入本金", lifetimeInvested ? compactMoney(lifetimeInvested) : "--", ""],
+    ["估計交易成本", totalTradingCost ? compactMoney(totalTradingCost) : "--", ""],
+    ["全部毛損益合計", totalPnl === null && !sellHistory.length ? "--" : formatCurrency(cumulativePnl), priceTone(cumulativePnl), "目前持股帳面損益 + 已賣出毛損益，這一格還沒扣交易費用"],
+    ["全部扣費後總盈虧", hasNetPnl ? formatCurrency(totalNetPnl) : "--", priceTone(totalNetPnl), "目前持股若現在賣出 + 已賣出，全部扣掉手續費和證交稅"]
+  ];
+  const renderCardGroup = (title, subtitle, cards) => `
+    <section class="holding-overview-section" aria-label="${escapeHtml(title)}">
+      <div class="holding-overview-section-head">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(subtitle)}</span>
+      </div>
+      <div class="holding-overview-grid">
+        ${cards.map(([label, value, tone, helper]) => `
+          <article>
+            <span>${escapeHtml(label)}</span>
+            <strong class="${escapeHtml(tone)}">${value}</strong>
+            ${helper ? `<small>${escapeHtml(helper)}</small>` : ""}
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
 
   els.holdingOverview.innerHTML = `
-    <div class="holding-overview-grid">
-      ${cards.map(([label, value, tone, helper]) => `
-        <article>
-          <span>${escapeHtml(label)}</span>
-          <strong class="${escapeHtml(tone)}">${value}</strong>
-          ${helper ? `<small>${escapeHtml(helper)}</small>` : ""}
-        </article>
-      `).join("")}
+    <div class="holding-overview-sections">
+      ${renderCardGroup("目前持股", "你現在手上還持有的部位", currentHoldingCards)}
+      ${renderCardGroup("已賣出", "已經完成賣出的交易結果", soldCards)}
+      ${renderCardGroup("全部合計", "把目前持股和已賣出一起看", summaryCards)}
     </div>
     <p class="holding-overview-note">${escapeHtml(aiTone)} ${escapeHtml(tradingCostNote())}</p>
   `;
@@ -3951,6 +3968,22 @@ function marketAxisStep(range) {
   return multiplier * magnitude;
 }
 
+function drawSmoothCanvasLine(context, points) {
+  if (!points.length) return;
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+  if (points.length === 1) return;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const midpointX = (current.x + next.x) / 2;
+    const midpointY = (current.y + next.y) / 2;
+    context.quadraticCurveTo(current.x, current.y, midpointX, midpointY);
+  }
+  const last = points.at(-1);
+  context.lineTo(last.x, last.y);
+}
+
 function drawMarketBoardChart(points, index, isUp) {
   const canvas = els.marketIndexChart;
   const context = canvas.getContext("2d");
@@ -3971,7 +4004,17 @@ function drawMarketBoardChart(points, index, isUp) {
 
   const width = canvas.width;
   const height = canvas.height;
-  const padding = { top: 16 * ratio, right: 118 * ratio, bottom: 48 * ratio, left: 20 * ratio };
+  const styles = getComputedStyle(document.documentElement);
+  const surface = styles.getPropertyValue("--panel").trim() || "#fffdf8";
+  const surfaceSoft = styles.getPropertyValue("--card-soft").trim() || "#fbf8f2";
+  const gridColor = styles.getPropertyValue("--line").trim() || "#ded7cc";
+  const gridSoft = styles.getPropertyValue("--line-subtle").trim() || "rgba(45, 39, 32, 0.08)";
+  const ink = styles.getPropertyValue("--ink").trim() || "#242423";
+  const muted = styles.getPropertyValue("--muted").trim() || "#5a554d";
+  const blue = styles.getPropertyValue("--blue").trim() || "#2f5f8f";
+  const red = styles.getPropertyValue("--red").trim() || "#c2272a";
+  const green = styles.getPropertyValue("--green").trim() || "#117a55";
+  const padding = { top: 22 * ratio, right: 126 * ratio, bottom: 48 * ratio, left: 24 * ratio };
   const values = chartPoints.map((item) => item.close).filter(Number.isFinite);
   if (Number.isFinite(index.previousClose)) values.push(index.previousClose);
   const rawMin = Math.min(...values);
@@ -3983,104 +4026,176 @@ function drawMarketBoardChart(points, index, isUp) {
   const range = max - min || 1;
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const color = isUp ? "#ad3032" : "#176b55";
+  const plotHeight = chartHeight - 54 * ratio;
+  const volumeHeight = chartHeight - plotHeight - 12 * ratio;
+  const plotBottom = padding.top + plotHeight;
+  const chartLeft = padding.left;
+  const chartRight = width - padding.right;
+  const chartBottom = height - padding.bottom;
+  const color = isUp ? red : green;
+  const accentFillTop = isUp ? "rgba(194, 39, 42, 0.22)" : "rgba(17, 122, 85, 0.22)";
+  const accentFillBottom = isUp ? "rgba(194, 39, 42, 0.02)" : "rgba(17, 122, 85, 0.03)";
 
   context.clearRect(0, 0, width, height);
-  context.fillStyle = "#fff";
+  context.fillStyle = surface;
   context.fillRect(0, 0, width, height);
-  context.strokeStyle = "#cfd6dc";
-  context.lineWidth = 1 * ratio;
+
+  const chartBackground = context.createLinearGradient(0, padding.top, 0, chartBottom);
+  chartBackground.addColorStop(0, surfaceSoft);
+  chartBackground.addColorStop(1, surface);
+  context.fillStyle = chartBackground;
+  roundedRect(context, chartLeft, padding.top, chartWidth, chartHeight, 18 * ratio);
+  context.fill();
+
+  context.save();
+  roundedRect(context, chartLeft, padding.top, chartWidth, chartHeight, 18 * ratio);
+  context.clip();
+
+  context.fillStyle = isUp ? "rgba(194, 39, 42, 0.045)" : "rgba(17, 122, 85, 0.05)";
+  context.fillRect(chartLeft, padding.top, chartWidth, plotHeight);
+
+  const latestPoint = chartPoints.at(-1);
+  const latestMinutes = clampMarketMinute(
+    Number.isFinite(latestPoint?.sessionMinutes) ? latestPoint.sessionMinutes : taipeiMinutes(latestPoint?.date),
+    9 * 60
+  );
+
   const axisValues = [];
   for (let value = min; value <= max + step * 0.1; value += step) {
     axisValues.push(value);
   }
-  axisValues.forEach((value) => {
-    const y = padding.top + ((max - value) / range) * chartHeight;
-    context.beginPath();
-    context.moveTo(padding.left, y);
-    context.lineTo(width - padding.right + 4 * ratio, y);
-    context.stroke();
-  });
-
   const timeTicks = [9 * 60, 10 * 60, 11 * 60, 12 * 60, 13 * 60, 13 * 60 + 30];
-  const minuteX = (minutes) => padding.left + chartWidth * marketMinuteRatio(minutes);
-  const pointX = (point, index) => padding.left + chartWidth * marketPointRatio(point, index, chartPoints.length);
-  const pointY = (value) => padding.top + ((max - value) / range) * chartHeight;
-  timeTicks.forEach((minutes) => {
+  const minuteX = (minutes) => chartLeft + chartWidth * marketMinuteRatio(minutes);
+  const pointX = (point, index) => chartLeft + chartWidth * marketPointRatio(point, index, chartPoints.length);
+  const pointY = (value) => padding.top + ((max - value) / range) * plotHeight;
+  const renderedPoints = chartPoints.map((point, pointIndex) => ({
+    point,
+    x: pointX(point, pointIndex),
+    y: pointY(point.close)
+  }));
+
+  const latestX = renderedPoints.at(-1)?.x ?? minuteX(latestMinutes);
+  const futureStart = Math.min(chartRight, latestX + 8 * ratio);
+  if (futureStart < chartRight - 2 * ratio) {
+    context.fillStyle = "rgba(99, 108, 121, 0.06)";
+    context.fillRect(futureStart, padding.top, chartRight - futureStart, plotHeight);
+    context.strokeStyle = "rgba(99, 108, 121, 0.14)";
+    context.lineWidth = 1 * ratio;
+    for (let offset = -plotHeight; offset < chartRight - futureStart + plotHeight; offset += 16 * ratio) {
+      context.beginPath();
+      context.moveTo(futureStart + offset, plotBottom);
+      context.lineTo(futureStart + offset + plotHeight, padding.top);
+      context.stroke();
+    }
+  }
+
+  timeTicks.forEach((minutes, tickIndex) => {
     const x = minuteX(minutes);
+    context.strokeStyle = tickIndex === timeTicks.length - 1 ? "rgba(47, 95, 143, 0.18)" : gridSoft;
+    context.lineWidth = 1 * ratio;
     context.beginPath();
     context.moveTo(x, padding.top);
-    context.lineTo(x, height - padding.bottom);
+    context.lineTo(x, plotBottom);
+    context.stroke();
+  });
+  axisValues.forEach((value, axisIndex) => {
+    const y = pointY(value);
+    context.strokeStyle = axisIndex === axisValues.length - 1 ? gridColor : gridSoft;
+    context.lineWidth = axisIndex % 2 === 0 ? 1 * ratio : 0.8 * ratio;
+    context.beginPath();
+    context.moveTo(chartLeft, y);
+    context.lineTo(chartRight, y);
     context.stroke();
   });
 
   if (Number.isFinite(index.previousClose)) {
     const previousY = pointY(index.previousClose);
-    context.strokeStyle = "rgba(36, 36, 35, 0.55)";
+    context.strokeStyle = `${blue}88`;
     context.setLineDash([5 * ratio, 5 * ratio]);
     context.beginPath();
-    context.moveTo(padding.left, previousY);
-    context.lineTo(width - padding.right, previousY);
+    context.moveTo(chartLeft, previousY);
+    context.lineTo(chartRight, previousY);
     context.stroke();
     context.setLineDash([]);
   }
 
-  const fillGradient = context.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-  fillGradient.addColorStop(0, isUp ? "rgba(173, 48, 50, 0.16)" : "rgba(23, 107, 85, 0.18)");
-  fillGradient.addColorStop(1, isUp ? "rgba(173, 48, 50, 0.03)" : "rgba(23, 107, 85, 0.03)");
+  const fillGradient = context.createLinearGradient(0, padding.top, 0, plotBottom);
+  fillGradient.addColorStop(0, accentFillTop);
+  fillGradient.addColorStop(1, accentFillBottom);
   context.fillStyle = fillGradient;
   context.beginPath();
-  chartPoints.forEach((point, index) => {
-    const x = pointX(point, index);
-    const y = pointY(point.close);
-    if (index === 0) context.moveTo(x, y);
-    else context.lineTo(x, y);
+  renderedPoints.forEach((point, pointIndex) => {
+    if (pointIndex === 0) context.moveTo(point.x, point.y);
+    else context.lineTo(point.x, point.y);
   });
-  context.lineTo(pointX(chartPoints.at(-1), chartPoints.length - 1), height - padding.bottom);
-  context.lineTo(pointX(chartPoints[0], 0), height - padding.bottom);
+  context.lineTo(renderedPoints.at(-1).x, plotBottom);
+  context.lineTo(renderedPoints[0].x, plotBottom);
   context.closePath();
   context.fill();
 
+  context.shadowColor = isUp ? "rgba(194, 39, 42, 0.18)" : "rgba(17, 122, 85, 0.18)";
+  context.shadowBlur = 16 * ratio;
+  context.shadowOffsetY = 8 * ratio;
   context.strokeStyle = color;
-  context.lineWidth = 3 * ratio;
+  context.lineWidth = 3.5 * ratio;
   context.lineJoin = "round";
   context.lineCap = "round";
-  context.beginPath();
-  chartPoints.forEach((point, index) => {
-    const x = pointX(point, index);
-    const y = pointY(point.close);
-    if (index === 0) context.moveTo(x, y);
-    else context.lineTo(x, y);
-  });
+  drawSmoothCanvasLine(context, renderedPoints);
   context.stroke();
+  context.shadowColor = "transparent";
+  context.shadowBlur = 0;
+  context.shadowOffsetY = 0;
   context.lineCap = "butt";
 
-  const volumeBase = height - padding.bottom;
   const maxVolume = Math.max(...chartPoints.map((point) => point.volume || 0), 0);
   if (maxVolume > 0) {
-    chartPoints.forEach((point, index) => {
-      const barHeight = ((point.volume || 0) / maxVolume) * Math.min(44 * ratio, chartHeight * 0.16);
-      context.fillStyle = "rgba(47, 111, 211, 0.52)";
-      context.fillRect(pointX(point, index) - 2 * ratio, volumeBase - barHeight, 3 * ratio, barHeight);
+    renderedPoints.forEach(({ point, x }) => {
+      const barHeight = ((point.volume || 0) / maxVolume) * Math.min(34 * ratio, volumeHeight * 0.9);
+      context.fillStyle = "rgba(47, 95, 143, 0.36)";
+      roundedRect(context, x - 2 * ratio, chartBottom - barHeight, 4 * ratio, barHeight, 2 * ratio);
+      context.fill();
     });
   }
 
-  const latest = chartPoints.at(-1);
-  const latestY = latest ? pointY(latest.close) : null;
+  context.restore();
+
+  context.strokeStyle = gridColor;
+  context.lineWidth = 1 * ratio;
+  roundedRect(context, chartLeft, padding.top, chartWidth, chartHeight, 18 * ratio);
+  context.stroke();
+
+  const latest = renderedPoints.at(-1);
+  const latestY = latest?.y ?? null;
   const previousY = Number.isFinite(index.previousClose) ? pointY(index.previousClose) : null;
   const floatingLabelYs = [];
-  const rightLabelX = width - padding.right + 14 * ratio;
+  const rightLabelX = chartRight + 16 * ratio;
   if (latest) {
-    const x = pointX(latest, chartPoints.length - 1);
+    context.strokeStyle = `${color}55`;
+    context.lineWidth = 1 * ratio;
+    context.setLineDash([4 * ratio, 4 * ratio]);
+    context.beginPath();
+    context.moveTo(latest.x, padding.top);
+    context.lineTo(latest.x, plotBottom);
+    context.stroke();
+    context.setLineDash([]);
+
     context.fillStyle = color;
     context.beginPath();
-    context.arc(x, latestY, 5 * ratio, 0, Math.PI * 2);
+    context.arc(latest.x, latestY, 6 * ratio, 0, Math.PI * 2);
     context.fill();
+    context.strokeStyle = surface;
+    context.lineWidth = 3 * ratio;
+    context.stroke();
+    context.fillStyle = `${color}22`;
+    context.beginPath();
+    context.arc(latest.x, latestY, 12 * ratio, 0, Math.PI * 2);
+    context.fill();
+
     const latestLabelY = previousY !== null && Math.abs(previousY - latestY) < 34 * ratio
-      ? latestY + (latestY < chartHeight / 2 ? -14 * ratio : 14 * ratio)
+      ? latestY + (latestY < plotHeight / 2 ? -14 * ratio : 14 * ratio)
       : latestY;
     floatingLabelYs.push(latestLabelY);
-    drawCanvasPill(context, money(latest.close), rightLabelX, latestLabelY, {
+    drawCanvasPill(context, money(latest.point.close), rightLabelX, latestLabelY, {
       ratio,
       align: "left",
       background: color,
@@ -4094,7 +4209,7 @@ function drawMarketBoardChart(points, index, isUp) {
 
   if (previousY !== null) {
     const previousLabelY = latestY !== null && Math.abs(previousY - latestY) < 34 * ratio
-      ? previousY + (previousY < chartHeight / 2 ? 18 * ratio : -18 * ratio)
+      ? previousY + (previousY < plotHeight / 2 ? 18 * ratio : -18 * ratio)
       : previousY;
     floatingLabelYs.push(previousLabelY);
     drawCanvasPill(context, money(index.previousClose), rightLabelX, previousLabelY, {
@@ -4109,7 +4224,47 @@ function drawMarketBoardChart(points, index, isUp) {
     });
   }
 
-  context.fillStyle = "#4d5661";
+  const highestPoint = renderedPoints.reduce((best, current) => current.point.close > best.point.close ? current : best, renderedPoints[0]);
+  const lowestPoint = renderedPoints.reduce((best, current) => current.point.close < best.point.close ? current : best, renderedPoints[0]);
+  drawCanvasPill(context, `高 ${money(highestPoint.point.close)}`, highestPoint.x, highestPoint.y - 18 * ratio, {
+    ratio,
+    align: "center",
+    background: color,
+    fontSize: 12,
+    height: 24,
+    minX: chartLeft + 8 * ratio,
+    maxX: chartRight - 8 * ratio,
+    minY: padding.top + 4 * ratio,
+    maxY: plotBottom - 28 * ratio
+  });
+  drawCanvasPill(context, `低 ${money(lowestPoint.point.close)}`, lowestPoint.x, lowestPoint.y + 20 * ratio, {
+    ratio,
+    align: "center",
+    background: "#3b4653",
+    fontSize: 12,
+    height: 24,
+    minX: chartLeft + 8 * ratio,
+    maxX: chartRight - 8 * ratio,
+    minY: padding.top + 4 * ratio,
+    maxY: plotBottom - 8 * ratio
+  });
+
+  if (Number.isFinite(index.open)) {
+    const openPoint = renderedPoints[0];
+    drawCanvasPill(context, `開 ${money(index.open)}`, openPoint.x, Math.min(plotBottom - 16 * ratio, openPoint.y + 28 * ratio), {
+      ratio,
+      align: "center",
+      background: "#2f5f8f",
+      fontSize: 12,
+      height: 24,
+      minX: chartLeft + 8 * ratio,
+      maxX: chartRight - 8 * ratio,
+      minY: padding.top + 4 * ratio,
+      maxY: chartBottom - 8 * ratio
+    });
+  }
+
+  context.fillStyle = muted;
   context.font = `${13 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
   axisValues.slice().reverse().forEach((value) => {
     const y = pointY(value);
@@ -4120,9 +4275,30 @@ function drawMarketBoardChart(points, index, isUp) {
   timeTicks.forEach((minutes, labelIndex) => {
     const label = formatMarketMinute(minutes);
     const x = minuteX(minutes);
+    context.fillStyle = labelIndex === timeTicks.length - 1 ? ink : muted;
     context.textAlign = labelIndex === timeTicks.length - 1 ? "right" : labelIndex === 0 ? "left" : "center";
     context.fillText(label, x, height - 14 * ratio);
   });
+
+  context.textAlign = "left";
+  context.fillStyle = ink;
+  context.font = `${12 * ratio}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
+  context.fillText("盤中走勢", chartLeft, padding.top - 6 * ratio);
+  context.strokeStyle = color;
+  context.lineWidth = 2.5 * ratio;
+  context.beginPath();
+  context.moveTo(chartLeft + 56 * ratio, padding.top - 11 * ratio);
+  context.lineTo(chartLeft + 82 * ratio, padding.top - 11 * ratio);
+  context.stroke();
+  context.fillStyle = muted;
+  context.fillText("昨收基準", chartLeft + 94 * ratio, padding.top - 6 * ratio);
+  context.strokeStyle = `${blue}88`;
+  context.setLineDash([4 * ratio, 4 * ratio]);
+  context.beginPath();
+  context.moveTo(chartLeft + 154 * ratio, padding.top - 11 * ratio);
+  context.lineTo(chartLeft + 182 * ratio, padding.top - 11 * ratio);
+  context.stroke();
+  context.setLineDash([]);
   context.textAlign = "left";
 }
 
