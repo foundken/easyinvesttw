@@ -1,0 +1,77 @@
+{
+  "collections": {
+    "etfs": [
+      "etfId",
+      "etfName",
+      "marketType",
+      "issuer",
+      "category",
+      "isActiveEtf",
+      "listingDate",
+      "trackingIndex",
+      "officialHoldingUrl",
+      "officialPcFUrl",
+      "isActive"
+    ],
+    "daily_etf_trading": [
+      "date",
+      "etfId",
+      "etfName",
+      "close",
+      "changePercent",
+      "volume",
+      "tradingValue",
+      "premiumDiscountPercent",
+      "nav",
+      "foreignNetBuy",
+      "investmentTrustNetBuy",
+      "dealerNetBuy",
+      "totalInstitutionalNetBuy"
+    ],
+    "daily_etf_holdings": [
+      "date",
+      "etfId",
+      "etfName",
+      "stockId",
+      "stockName",
+      "shares",
+      "weightPercent",
+      "marketValue",
+      "marketType",
+      "industry"
+    ],
+    "daily_etf_holding_changes": [
+      "date",
+      "etfId",
+      "etfName",
+      "stockId",
+      "stockName",
+      "previousShares",
+      "currentShares",
+      "shareChange",
+      "previousWeightPercent",
+      "currentWeightPercent",
+      "weightChange",
+      "estimatedValueChange",
+      "changeType"
+    ],
+    "daily_stock_etf_flow_summary": [
+      "date",
+      "stockId",
+      "stockName",
+      "addedByEtfCount",
+      "increasedByEtfCount",
+      "decreasedByEtfCount",
+      "removedByEtfCount",
+      "totalEstimatedEtfBuyValue",
+      "totalEstimatedEtfSellValue",
+      "netEstimatedEtfFlowValue",
+      "relatedEtfs",
+      "activeEtfBuyCount",
+      "activeEtfSellCount",
+      "etfFlowScore",
+      "tags",
+      "riskFlags"
+    ]
+  }
+}

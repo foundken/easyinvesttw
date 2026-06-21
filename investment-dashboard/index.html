@@ -4,20 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>投資導航儀</title>
-  <link rel="stylesheet" href="styles.css?v=20260611-mobile-ui-v1">
+  <link rel="stylesheet" href="styles.css?v=20260622-etf-flow-v1">
 </head>
 <body data-view-mode="full" data-theme="light">
-  <div class="top-toolbar" role="toolbar" aria-label="顯示模式設定">
-    <button id="viewModeToggle" type="button" class="toolbar-button" aria-pressed="false">
-      <span class="toolbar-label">檢視模式</span>
-      <span class="toolbar-value" id="viewModeLabel">完整</span>
-    </button>
-    <button id="themeToggle" type="button" class="toolbar-button" aria-pressed="false">
-      <span class="toolbar-label">主題</span>
-      <span class="toolbar-value" id="themeLabel">日間</span>
-    </button>
-  </div>
-
   <nav class="mobile-section-nav" aria-label="分類快速導覽">
     <button type="button" data-target="#todayPanel" data-mobile-primary="true" data-icon="今">今日</button>
     <button type="button" data-target="#portfolioPanel">帳本</button>
@@ -26,7 +15,9 @@
     <button type="button" data-target="#holdingsPanel" data-mobile-primary="true" data-icon="股">存股</button>
     <button type="button" data-target="#historyPanel">紀錄</button>
     <button type="button" data-target="#marketTape" data-mobile-primary="true" data-icon="市">市場</button>
-    <button type="button" data-target="#conceptPanel">概念</button>
+    <button type="button" data-target="#fundRadarSummaryPanel">雷達</button>
+    <button type="button" data-target="#etfFlowPage">ETF</button>
+    <button type="button" data-target="#advancedEntryPanel">進階</button>
     <button type="button" data-target="#trendPanel">趨勢</button>
     <button type="button" data-target="#watchPanel">觀察</button>
     <button type="button" data-target="#preflightPanel">檢查</button>
@@ -35,33 +26,261 @@
   <button id="backToTopButton" class="back-to-top" type="button" aria-label="回到最上方">↑</button>
 
   <main class="shell">
-    <section id="todayPanel" class="today-pnl" aria-label="今日波動">
-      <div class="today-pnl-head">
-        <p class="eyebrow">今日波動</p>
-        <small id="todayPnlUpdatedAt">資料更新時間：尚未同步</small>
+    <section id="fundFlowRadarPage" class="panel route-page" aria-label="台股資金雷達" hidden>
+      <div class="panel-head route-head">
+        <div>
+          <p class="eyebrow">投資前決策補強</p>
+          <h1>台股資金雷達</h1>
+          <p>追蹤外資、投信與異常成交量，找出每日資金流向明顯的觀察標的。</p>
+        </div>
+        <a class="route-link" href="/">回今日儀表板</a>
       </div>
-      <div class="today-pnl-main">
-        <strong id="todayPnlAmount" class="today-pnl-amount">--</strong>
-        <span id="todayPnlPercent" class="today-pnl-percent">--</span>
-      </div>
-      <div class="today-pnl-meta">
-        <article>
-          <span>持有檔數</span>
-          <strong id="todayPnlCount">--</strong>
-        </article>
-        <article>
-          <span>總市值</span>
-          <strong id="todayPnlMarketValue">--</strong>
-        </article>
-        <article>
-          <span>帳面損益</span>
-          <strong id="todayPnlAccumulated">--</strong>
-        </article>
-      </div>
-      <p id="todayPnlNote" class="today-pnl-note">登入並新增持股後，這裡會顯示今天股價波動對持股市值的影響。</p>
+      <p id="fundFlowRadarMeta" class="last-updated">最新交易日：等待資料 ｜ 資料更新時間：尚未同步</p>
+      <form id="fundFlowFilterForm" class="radar-filter-form" aria-label="資金雷達篩選">
+        <label><input type="checkbox" value="listed">上市</label>
+        <label><input type="checkbox" value="otc">上櫃</label>
+        <label><input type="checkbox" value="score70">資金分數 70 以上</label>
+        <label><input type="checkbox" value="foreign3">外資連買 3 天以上</label>
+        <label><input type="checkbox" value="trust3">投信連買 3 天以上</label>
+        <label><input type="checkbox" value="sync">外資投信同步買</label>
+        <label><input type="checkbox" value="volume2">成交量倍數 2 倍以上</label>
+        <label><input type="checkbox" value="noOverheat">排除短線過熱</label>
+        <label><input type="checkbox" value="noMarginHot">排除融資過熱</label>
+        <label><input type="checkbox" value="institutionSupport">排除法人不支持</label>
+        <label class="radar-sort-label">
+          <span>排序</span>
+          <select id="fundFlowSort">
+            <option value="fundScore">資金分數</option>
+            <option value="foreign">外資連買</option>
+            <option value="trust">投信連買</option>
+            <option value="volume">成交量倍數</option>
+            <option value="risk">風險提示</option>
+          </select>
+        </label>
+      </form>
+      <div id="fundFlowRadarTable" class="radar-table"></div>
+      <div id="fundFlowRadarCards" class="radar-card-list"></div>
+      <p class="route-note">本頁只整理資金轉強、籌碼改善與風險提示，不顯示進場指示。</p>
     </section>
 
-    <section class="hero advanced-section" aria-label="投資總覽">
+    <section id="dataStatusPage" class="panel route-page" aria-label="資料來源與更新狀態" hidden>
+      <div class="panel-head route-head">
+        <div>
+          <p class="eyebrow">資料來源與更新狀態</p>
+          <h1>資料狀態</h1>
+          <p>確認公開資料、法人籌碼、融資融券與財報資料是否可用。</p>
+        </div>
+        <a class="route-link" href="/">回今日儀表板</a>
+      </div>
+      <div id="dataStatusList" class="data-status-list"></div>
+      <div class="data-status-actions">
+        <button id="manualDataRefreshButton" type="button" disabled>手動更新限管理員</button>
+        <span id="dataStatusMeta">等待資料整理</span>
+      </div>
+    </section>
+
+    <section id="etfFlowPage" class="panel route-page" aria-label="ETF 資金流向" hidden>
+      <div class="panel-head route-head">
+        <div>
+          <p class="eyebrow">ETF 資金流向</p>
+          <h1>ETF 資金流向</h1>
+          <p>追蹤主動 ETF 與熱門 ETF 的持股變化，觀察資金可能正在加碼或減碼哪些股票。</p>
+        </div>
+        <a class="route-link" href="/">回今日儀表板</a>
+      </div>
+      <p id="etfFlowMeta" class="last-updated">最新交易日：等待資料 ｜ 資料更新時間：尚未同步</p>
+      <div class="etf-flow-layout">
+        <section class="etf-flow-block">
+          <div class="panel-head">
+            <h2>今日 ETF 經理人加碼排行</h2>
+            <span>ETF 估算買入金額與 ETF Flow Score</span>
+          </div>
+          <div id="etfBuyRankingList" class="etf-flow-list"></div>
+        </section>
+        <section class="etf-flow-block">
+          <div class="panel-head">
+            <h2>今日 ETF 減碼排行</h2>
+            <span>ETF 估算賣出金額與風險標籤</span>
+          </div>
+          <div id="etfSellRankingList" class="etf-flow-list"></div>
+        </section>
+        <section class="etf-flow-block">
+          <div class="panel-head">
+            <h2>多檔 ETF 共同加碼</h2>
+            <span>被 2 檔以上 ETF 同時加碼</span>
+          </div>
+          <div id="multiEtfBuyList" class="etf-flow-list"></div>
+        </section>
+        <section class="etf-flow-block">
+          <div class="panel-head">
+            <h2>主動 ETF 共同加碼</h2>
+            <span>特別追蹤 00400A、00981A、00991A、00992A 與未來新增主動 ETF</span>
+          </div>
+          <div id="activeEtfBuyList" class="etf-flow-list"></div>
+        </section>
+        <section class="etf-flow-block etf-flow-wide">
+          <div class="panel-head">
+            <h2>ETF 本身成交熱度</h2>
+            <span>成交值、成交量倍數、溢折價與法人買賣超</span>
+          </div>
+          <div id="etfTradingHeatList" class="etf-flow-list"></div>
+        </section>
+      </div>
+      <p class="route-note">ETF 持股變化可能來自經理人主動調整，也可能受到申購贖回、基金規模變化、成分股價格變動影響。本頁資料僅供研究與觀察，不構成任何投資建議。</p>
+    </section>
+
+    <section id="todayPanel" class="today-decision-panel" aria-label="今日損益與市場狀態">
+      <div class="dashboard-meta-bar">
+        <span>最新交易日 <strong id="dashboardLatestTradeDate">等待資料</strong></span>
+        <span>更新時間 <strong id="dashboardUpdatedAt">尚未同步</strong></span>
+        <span>資料狀態 <strong id="dashboardDataStatusMeta">準備更新</strong></span>
+        <a href="/data-status">查看資料狀態</a>
+        <div class="dashboard-meta-actions" role="toolbar" aria-label="顯示模式設定">
+          <button id="viewModeToggle" type="button" class="toolbar-button" aria-pressed="false">
+            <span class="toolbar-label">檢視模式</span>
+            <span class="toolbar-value" id="viewModeLabel">完整</span>
+          </button>
+          <button id="themeToggle" type="button" class="toolbar-button" aria-pressed="false">
+            <span class="toolbar-label">主題</span>
+            <span class="toolbar-value" id="themeLabel">日間</span>
+          </button>
+        </div>
+      </div>
+      <div class="today-market-layout">
+        <div class="today-pnl-card">
+          <div class="today-pnl-head">
+            <p class="eyebrow">我的今日損益</p>
+            <small id="todayPnlUpdatedAt">資料更新時間：尚未同步</small>
+          </div>
+          <div class="today-pnl-main">
+            <strong id="todayPnlAmount" class="today-pnl-amount">--</strong>
+            <span id="todayPnlPercent" class="today-pnl-percent">--</span>
+          </div>
+          <div class="today-pnl-meta">
+            <article>
+              <span>累計損益</span>
+              <strong id="todayPnlAccumulated">--</strong>
+            </article>
+            <article>
+              <span>持股總市值</span>
+              <strong id="todayPnlMarketValue">--</strong>
+            </article>
+            <article>
+              <span>持股檔數</span>
+              <strong id="todayPnlCount">--</strong>
+            </article>
+            <article>
+              <span>今日需注意</span>
+              <strong id="todayAttentionCount">--</strong>
+            </article>
+            <article>
+              <span>風險標籤</span>
+              <strong id="todayRiskFlagCount">--</strong>
+            </article>
+          </div>
+          <p id="todayPnlNote" class="today-pnl-note">尚未建立持股，新增持股後即可查看今日損益、集中度與風險提醒。</p>
+          <a class="route-link today-add-link" href="#managePanel">新增持股</a>
+        </div>
+        <div class="market-status-card">
+          <p class="eyebrow">今日市場狀態</p>
+          <h1 id="dashboardMarketState">等待資料</h1>
+          <p id="dashboardPlainConclusion">等待資料更新後，會整理今日市場判讀。</p>
+          <div class="market-status-points">
+            <article>
+              <span>今日資金焦點</span>
+              <strong id="dashboardFocusText">等待資金資料</strong>
+            </article>
+            <article>
+              <span>今日主要風險</span>
+              <strong id="dashboardRiskText">等待風險資料</strong>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="dashboardSummaryPanel" class="panel dashboard-panel decision-summary-panel" aria-label="今日決策摘要">
+      <div class="panel-head">
+        <h2>今日決策摘要</h2>
+        <span>市場可操作度、資金流向、風險提醒與下一步</span>
+      </div>
+      <div id="decisionSummaryGrid" class="decision-card-grid"></div>
+      <p id="todayConclusion" class="brief-conclusion">今日結論：等待資料更新後，會整理今天該先觀察什麼、該避開什麼。</p>
+    </section>
+
+    <section id="holdingAlertPanel" class="panel dashboard-panel" aria-label="我的持股提醒">
+      <div class="panel-head">
+        <h2>我的持股提醒</h2>
+        <span>今日損益、集中度、風險標籤與籌碼方向</span>
+      </div>
+      <div id="holdingAlertList" class="holding-alert-dashboard"></div>
+    </section>
+
+    <section id="watchAlertPanel" class="panel dashboard-panel" aria-label="觀察名單 Top 5">
+      <div class="panel-head">
+        <div>
+          <h2>觀察名單 Top 5</h2>
+          <span>只整理已加入觀察名單的股票</span>
+        </div>
+        <a class="route-link" href="#watchPanel">查看完整觀察名單</a>
+      </div>
+      <div id="watchAlertList" class="watch-rank-table"></div>
+    </section>
+
+    <section id="marketTemperaturePanel" class="panel dashboard-panel market-overview-panel" aria-label="市場溫度摘要">
+      <div class="panel-head">
+        <div>
+          <h2>市場溫度摘要</h2>
+          <span>四大指數、漲跌家數、成交值與市場廣度</span>
+        </div>
+        <a class="route-link" href="#marketTape">查看走勢圖</a>
+      </div>
+      <div class="market-overview-layout">
+        <div id="marketTemperatureGrid" class="market-index-list"></div>
+        <div class="market-overview-side">
+          <article><span>漲跌家數</span><strong id="marketBreadthValue">等待資料</strong></article>
+          <article><span>成交值</span><strong id="marketTurnoverChange">等待資料</strong></article>
+          <article><span>族群熱度</span><strong id="marketSectorHeat">等待資料</strong></article>
+          <article><span>市場判讀</span><strong id="marketBreadthText">等待資料</strong></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="fundRadarSummaryPanel" class="panel dashboard-panel" aria-label="資金雷達摘要">
+      <div class="panel-head">
+        <div>
+          <h2>資金雷達摘要</h2>
+          <span>全市場資金分數、籌碼連買與短線過熱</span>
+        </div>
+        <a class="route-link" href="/fund-flow-radar">查看完整雷達</a>
+      </div>
+      <div id="fundRadarSummaryList" class="radar-summary-grid"></div>
+    </section>
+
+    <section id="preflightPanel" class="panel preflight-panel" aria-label="下單前檢查">
+      <div class="panel-head">
+        <h2>下單前檢查</h2>
+        <span>市場面與個股面快速掃描</span>
+      </div>
+      <div id="preflightList" class="preflight-groups"></div>
+    </section>
+
+    <section id="advancedEntryPanel" class="panel dashboard-panel advanced-entry-panel" aria-label="進階資料">
+      <div class="panel-head">
+        <h2>進階資料</h2>
+        <span>詳細資料移到入口，不在首頁主流程完整展開</span>
+      </div>
+      <div class="advanced-entry-grid">
+        <a href="#marketTape"><strong>詳細大盤</strong><span>四大指數、K 線、成交值、漲跌家數、盤中結構</span></a>
+        <a href="#institutionPanel"><strong>籌碼明細</strong><span>外資、投信、自營商買賣超與趨勢</span></a>
+        <a href="/fund-flow-radar"><strong>資金雷達</strong><span>資金分數、籌碼連買、成交量異常、風險標籤</span></a>
+        <a href="/etf-flow"><strong>ETF 資金流向</strong><span>ETF 成交熱度、主動 ETF 加減碼、持股變化</span></a>
+        <a href="#conceptPanel"><strong>概念股排行</strong><span>族群表現、領先股、落後股、族群強弱</span></a>
+        <a href="/data-status"><strong>資料狀態</strong><span>最新資料日期、同步狀態、錯誤紀錄</span></a>
+      </div>
+    </section>
+
+    <section class="hero advanced-section legacy-merged-section" aria-label="投資總覽">
       <div>
         <p class="eyebrow">投資導航儀</p>
         <h1>把股市線圖翻成白話訊號</h1>
@@ -229,11 +448,11 @@
       <div id="sellHistoryList" class="sell-history-list"></div>
     </section>
 
-    <section class="beginner-brief advanced-section" aria-label="今日新手導讀">
+    <section class="beginner-brief advanced-section legacy-merged-section" aria-label="今日新手導讀">
       <div class="panel-head">
         <div>
           <p class="eyebrow">今日新手導讀</p>
-          <h2>先看這 4 件事</h2>
+          <h2>已整合至今日決策摘要</h2>
         </div>
         <span>從結論開始，再往下看細節</span>
       </div>
@@ -242,7 +461,7 @@
           <span>1. 市場狀態</span>
           <strong id="beginnerMarketTone">等待資料</strong>
           <p id="beginnerMarketText">更新後會判斷今天偏強、震盪或偏弱。</p>
-          <small>查看大盤行情</small>
+          <small>查看市場溫度摘要</small>
         </article>
         <article class="brief-card" role="button" tabindex="0" data-target="#trendPanel" aria-label="查看資金方向詳細資料">
           <span>2. 資金方向</span>
@@ -263,12 +482,12 @@
           <small>加入追蹤</small>
         </article>
       </div>
-      <p id="todayConclusion" class="brief-conclusion">今日結論：等待資料更新後，會整理今天該先觀察什麼、該避開什麼。</p>
+      <p class="brief-conclusion">今日結論：等待資料更新後，會整理今天該先觀察什麼、該避開什麼。</p>
     </section>
 
-    <section id="marketScorePanel" class="market-score-panel advanced-section" aria-label="今日總評分">
+    <section id="marketScorePanel" class="market-score-panel advanced-section legacy-merged-section" aria-label="已整合評分">
       <div>
-        <p class="eyebrow">今日總評分</p>
+        <p class="eyebrow">已整合評分</p>
         <h2 id="marketScoreTitle">等待資料</h2>
         <p id="marketScoreText">更新後會整理市場溫度、追高風險與今天比較適合的操作方式。</p>
       </div>
@@ -276,7 +495,7 @@
       <div id="marketScoreList" class="score-list"></div>
     </section>
 
-    <section class="summary-grid advanced-section" aria-label="摘要">
+    <section class="summary-grid advanced-section legacy-merged-section" aria-label="摘要">
       <article>
         <span>追蹤股票</span>
         <strong id="watchCount">0</strong>
@@ -299,14 +518,14 @@
       </article>
     </section>
 
-    <div class="section-divider advanced-section">
+    <div class="section-divider advanced-section legacy-detail-section">
       <span>第一步</span>
       <strong>先判斷今天市場能不能追</strong>
     </div>
 
-    <section id="marketTape" class="market-tape advanced-section" aria-label="大盤即時資訊">
+    <section id="marketTape" class="market-tape market-detail-panel" aria-label="大盤走勢圖">
       <div class="market-tabs">
-        <strong>大盤行情</strong>
+        <strong>詳細大盤</strong>
         <button class="market-tab active" type="button" data-market="tw">台股</button>
         <button class="market-tab" type="button" data-market="us">美股</button>
       </div>
@@ -388,16 +607,16 @@
       <p id="marketLastUpdated" class="last-updated">最後更新：尚未同步</p>
     </section>
 
-    <div class="section-divider advanced-section">
+    <div class="section-divider advanced-section legacy-detail-section">
       <span>第二步</span>
       <strong>再看資金集中在哪裡</strong>
     </div>
 
-    <section class="institution-strip advanced-section" aria-label="三大法人買賣超">
+    <section id="institutionPanel" class="institution-strip advanced-section legacy-detail-section" aria-label="三大法人詳細資料">
       <div class="institution-head">
         <div>
           <p class="eyebrow">法人籌碼</p>
-          <h2>三大法人買賣超</h2>
+          <h2>三大法人詳細資料</h2>
         </div>
         <span id="institutionDate">資料日期：--</span>
       </div>
@@ -439,9 +658,9 @@
       </div>
     </section>
 
-    <section id="conceptPanel" class="panel concept-panel" aria-label="概念股排行榜">
+    <section id="conceptPanel" class="panel concept-panel legacy-detail-section" aria-label="概念股詳細資料">
       <div class="panel-head">
-        <h2>概念股排行榜</h2>
+        <h2>概念股詳細資料</h2>
         <span>熱門族群表現統整</span>
       </div>
       <div class="concept-toolbar">
@@ -458,7 +677,7 @@
       <p id="conceptStatus" class="last-updated">概念股：等待資料整理</p>
     </section>
 
-    <section id="trendPanel" class="panel trend-panel advanced-section" aria-label="近期大盤漲勢集中族群">
+    <section id="trendPanel" class="panel trend-panel advanced-section legacy-detail-section" aria-label="近期大盤漲勢集中族群">
       <div class="panel-head">
         <h2>近期大盤漲勢集中族群</h2>
         <span>近一週，每天整理一次</span>
@@ -596,14 +815,6 @@
       </section>
     </section>
 
-    <section id="preflightPanel" class="panel preflight-panel advanced-section" aria-label="下單前檢查表">
-      <div class="panel-head">
-        <h2>下單前檢查表</h2>
-        <span>防止新手追高或重押</span>
-      </div>
-      <div id="preflightList" class="preflight-list"></div>
-    </section>
-
     <section class="panel discipline-panel advanced-section" aria-label="我的投資紀律">
       <div class="panel-head">
         <h2>我的投資紀律</h2>
@@ -692,6 +903,7 @@
         </div>
         <canvas id="priceChart" width="980" height="320"></canvas>
       </div>
+      <div id="detailDecisionExtras" class="detail-extra-grid"></div>
 
       <div class="detail-grid">
         <article class="finance-card">
@@ -707,7 +919,7 @@
           <p id="detailInstitutionalText" class="signal">--</p>
         </article>
         <article class="finance-card">
-          <strong>AI 持股建議</strong>
+          <strong>AI 觀察提醒</strong>
           <p id="detailAiAdviceText" class="signal">--</p>
         </article>
       </div>
@@ -733,6 +945,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260618-cloud-sync-fix-v1"></script>
+  <div class="fixed-risk-note">本頁資料僅供研究與觀察，不構成任何投資建議。投資前請自行評估風險。</div>
+  <script src="app.js?v=20260622-etf-flow-v1"></script>
 </body>
 </html>

@@ -19,6 +19,47 @@ const INTRADAY_QUOTE_CACHE_TTL_MS = 30 * 1000;
 const FAST_QUOTE_CACHE_TTL_MS = 1000;
 const QUOTE_REALTIME_LAG_MS = 30 * 1000;
 const INTRADAY_INDEX_MAX_LAG_MS = 5 * 60 * 1000;
+const ETF_REGISTRY = [
+  etfMeta("0050", "元大台灣50", "元大投信", "passive", false, "臺灣50指數"),
+  etfMeta("0056", "元大高股息", "元大投信", "highDividend", false, "臺灣高股息指數"),
+  etfMeta("006208", "富邦台50", "富邦投信", "passive", false, "臺灣50指數"),
+  etfMeta("00878", "國泰永續高股息", "國泰投信", "highDividend", false, "MSCI臺灣ESG永續高股息精選30指數"),
+  etfMeta("00919", "群益台灣精選高息", "群益投信", "highDividend", false, "臺灣精選高息指數"),
+  etfMeta("00929", "復華台灣科技優息", "復華投信", "sector", false, "特選臺灣科技優息指數"),
+  etfMeta("00400A", "主動群益台灣強棒", "群益投信", "active", true, ""),
+  etfMeta("00981A", "主動統一台股增長", "統一投信", "active", true, ""),
+  etfMeta("00991A", "主動野村台灣優選", "野村投信", "active", true, ""),
+  etfMeta("00992A", "主動群益台灣精選", "群益投信", "active", true, "")
+];
+const ETF_HOLDING_SEEDS = {
+  "0050": ["2330", "2317", "2454", "2308", "2382", "2881"],
+  "0056": ["2891", "2882", "2886", "2303", "2603", "5876"],
+  "006208": ["2330", "2317", "2454", "2308", "2382", "2882"],
+  "00878": ["2891", "2886", "5876", "2303", "3711", "2882"],
+  "00919": ["2603", "2891", "2882", "2303", "3034", "3711"],
+  "00929": ["2303", "3711", "3034", "2382", "3231", "2454"],
+  "00400A": ["2330", "2454", "2382", "6669", "3017", "3661"],
+  "00981A": ["2330", "2317", "2454", "2308", "3231", "2382"],
+  "00991A": ["2330", "2454", "3661", "6669", "3017", "2379"],
+  "00992A": ["2330", "2317", "2382", "3231", "3017", "3034"]
+};
+
+function etfMeta(etfId, etfName, issuer, category, isActiveEtf, trackingIndex) {
+  return {
+    etfId,
+    etfName,
+    marketType: "上市",
+    issuer,
+    category,
+    isActiveEtf,
+    listingDate: "",
+    trackingIndex,
+    officialHoldingUrl: `https://www.twse.com.tw/zh/ETF/list`,
+    officialPcFUrl: `https://www.twse.com.tw/zh/ETF/purchaseRedemption`,
+    isActive: true
+  };
+}
+
 const CONCEPT_SYMBOLS = [
   "1319", "1503", "1504", "1513", "1514", "1515", "1519", "1536", "1560", "1587",
   "1590", "1609", "1720", "1760", "1789", "1795", "2049", "2231", "2303", "2308",
@@ -136,17 +177,39 @@ exports.market = onRequest({
       ...topMarketSymbols(daily, 180),
       ...CONCEPT_SYMBOLS
     ]));
+    ETF_REGISTRY.forEach((item) => relevantCodes.add(item.etfId));
 
+    const compactDaily = await hydrateDailyTechnicalStats(compactDailyRows(filterRowsByCodes(daily, relevantCodes)));
+    const compactInstitutionalData = compactInstitutional(institutional, relevantCodes);
+    const fundFlow = buildFundFlowRows(compactDaily, compactInstitutionalData);
+    const etfFlow = buildEtfFlowDataset({
+      date: institutional?.date || taipeiIsoDate(),
+      daily: compactDaily,
+      institutional: compactInstitutionalData,
+      fundFlow
+    });
+    const fundFlowWithEtf = mergeEtfFlowIntoFundFlow(fundFlow, etfFlow.dailyStockEtfFlowSummary);
     const payload = {
       ok: true,
       updatedAt: new Date().toISOString(),
-      daily: compactDailyRows(filterRowsByCodes(daily, relevantCodes)),
+      latestTradingDate: institutional?.date || taipeiIsoDate(),
+      daily: compactDaily,
       valuation: compactValuationRows(filterRowsByCodes(mergeByCode(twseValuation, tpexValuation), relevantCodes)),
       revenue: compactRevenueRows(filterRowsByCodes(mergeByCode(mergeByCode(listedRevenue, publicRevenue), mopsRevenue), relevantCodes)),
       realtime: compactRealtimeRows(realtime),
       index,
       usIndex,
-      institutional: compactInstitutional(institutional, relevantCodes),
+      institutional: compactInstitutionalData,
+      fundFlow: fundFlowWithEtf,
+      etfFlow,
+      dataStatus: buildDataStatus({
+        twseDaily,
+        daily,
+        institutional,
+        index,
+        valuation: mergeByCode(twseValuation, tpexValuation),
+        revenue: mergeByCode(mergeByCode(listedRevenue, publicRevenue), mopsRevenue)
+      }),
       news,
       dailySource: fugleActiveRanking.length ? "Fugle" : twseDaily.length ? "TWSE" : null,
       realtimeSource: realtimeSourceLabel(realtime),
@@ -754,9 +817,522 @@ function compactDailyRows(rows = []) {
       change,
       changePercent: toNumber(row.ChangePercent ?? row.changePercent),
       trades: toNumber(row.Transaction ?? row["成交筆數"] ?? row.trades ?? row.transaction),
+      market: normalizeMarketLabel(row.Market || row.market || row.Exchange || row.exchange || row.Source || row.source),
+      averageVolume5: toNumber(row.averageVolume5 ?? row.avgVolume5 ?? row.volumeAverage5),
+      marginChange: toNumber(row.marginChange ?? row.marginBalanceChange),
+      ma5: toNumber(row.ma5),
+      ma20: toNumber(row.ma20),
       source: row.Source || row.source
     };
   }).filter((row) => row.code && row.name && Number.isFinite(row.close));
+}
+
+function normalizeMarketLabel(value) {
+  const text = String(value || "").toUpperCase();
+  if (text.includes("OTC") || text.includes("TWO") || text.includes("TPEX") || text.includes("上櫃")) return "上櫃";
+  if (text.includes("TSE") || text.includes("TWSE") || text.includes("上市")) return "上市";
+  return "上市";
+}
+
+function buildFundFlowRows(dailyRows = [], institutional = null) {
+  return (dailyRows || [])
+    .map((stock) => buildFundFlowItem(stock, institutional?.stocks?.[stock.code]))
+    .filter(Boolean)
+    .sort((a, b) => b.fundScore - a.fundScore)
+    .slice(0, 160);
+}
+
+function buildFundFlowItem(stock, inst = null) {
+  if (!stock) return null;
+  const foreign = toNumber(inst?.foreign) || 0;
+  const trust = toNumber(inst?.trust) || 0;
+  const dealer = toNumber(inst?.dealer) || 0;
+  const foreignBuyDays = toNumber(inst?.foreignBuyDays) || (foreign > 0 ? 1 : 0);
+  const trustBuyDays = toNumber(inst?.trustBuyDays) || (trust > 0 ? 1 : 0);
+  const foreignFiveDay = toNumber(inst?.foreignFiveDay) ?? foreign;
+  const trustFiveDay = toNumber(inst?.trustFiveDay) ?? trust;
+  const institutionFiveDay = toNumber(inst?.institutionFiveDay) ?? foreignFiveDay + trustFiveDay + dealer;
+  const averageVolume5 = toNumber(stock.averageVolume5);
+  const volumeMultiple = Number.isFinite(averageVolume5) && averageVolume5 > 0 ? (stock.volume || 0) / averageVolume5 : null;
+  const marginChange = toNumber(stock.marginChange);
+  const fundScore = calculateFundScore({
+    changePercent: stock.changePercent,
+    volumeMultiple,
+    averageVolume5,
+    foreign,
+    foreignBuyDays,
+    foreignFiveDay,
+    trust,
+    trustBuyDays,
+    trustFiveDay,
+    marginChange,
+    close: stock.close,
+    ma5: stock.ma5,
+    ma20: stock.ma20
+  });
+  const riskFlags = buildRiskFlags({ stock, volumeMultiple, foreign, trust, dealer, marginChange, averageVolume5 });
+  const tags = buildFundTags({
+    fundScore,
+    volumeMultiple,
+    foreign,
+    foreignBuyDays,
+    trust,
+    trustBuyDays,
+    dealer,
+    close: stock.close,
+    ma20: stock.ma20,
+    riskFlags
+  });
+  return {
+    code: stock.code,
+    name: stock.name,
+    market: stock.market || "上市",
+    close: stock.close,
+    changePercent: stock.changePercent,
+    volume: stock.volume,
+    averageVolume5,
+    volumeMultiple,
+    foreign,
+    foreignBuyDays,
+    foreignFiveDay,
+    trust,
+    trustBuyDays,
+    trustFiveDay,
+    dealer,
+    institutionFiveDay,
+    marginChange,
+    ma5: stock.ma5,
+    ma20: stock.ma20,
+    fundScore,
+    tags,
+    riskFlags
+  };
+}
+
+function calculateFundScore(input) {
+  const changePercent = toNumber(input.changePercent);
+  const volumeMultiple = toNumber(input.volumeMultiple);
+  let score = 0;
+  if (changePercent >= 6) score += 20;
+  else if (changePercent >= 4) score += 16;
+  else if (changePercent >= 2) score += 10;
+  else if (changePercent > 0) score += 5;
+  if (volumeMultiple >= 3) score += 20;
+  else if (volumeMultiple >= 2) score += 16;
+  else if (volumeMultiple >= 1.5) score += 10;
+  else if (volumeMultiple >= 1.2) score += 5;
+  let foreignScore = 0;
+  if ((input.foreign || 0) > 0) foreignScore += 5;
+  if ((input.foreignBuyDays || 0) >= 3) foreignScore += 5;
+  if ((input.foreignBuyDays || 0) >= 5) foreignScore += 8;
+  if ((input.foreignFiveDay || 0) > 0 && (input.averageVolume5 || 0) > 0 && input.foreignFiveDay > input.averageVolume5 * 0.1) foreignScore += 7;
+  score += Math.min(20, foreignScore);
+  let trustScore = 0;
+  if ((input.trust || 0) > 0) trustScore += 6;
+  if ((input.trustBuyDays || 0) >= 3) trustScore += 7;
+  if ((input.trustBuyDays || 0) >= 5) trustScore += 10;
+  if ((input.trustFiveDay || 0) > 0 && (input.averageVolume5 || 0) > 0 && input.trustFiveDay > input.averageVolume5 * 0.05) trustScore += 8;
+  score += Math.min(25, trustScore);
+  const marginChange = toNumber(input.marginChange);
+  if (!Number.isFinite(marginChange)) score += 5;
+  else if (changePercent > 0 && marginChange <= 0) score += 10;
+  else if (changePercent > 0 && marginChange <= Math.max(100, (input.averageVolume5 || 0) * 0.03)) score += 5;
+  else if (changePercent > 0) score -= 5;
+  if (Number.isFinite(input.ma5) && Number.isFinite(input.close) && input.close > input.ma5) score += 2;
+  if (Number.isFinite(input.ma20) && Number.isFinite(input.close) && input.close > input.ma20) score += 3;
+  return Math.round(Math.max(0, Math.min(100, score)));
+}
+
+function buildFundTags(input) {
+  const tags = [];
+  if ((input.foreign || 0) > 0 && Math.abs(input.foreign) >= Math.abs(input.trust || 0)) tags.push("外資主導");
+  if ((input.trustBuyDays || 0) >= 3 || (input.trust || 0) > 0) tags.push("投信連買");
+  if ((input.foreign || 0) > 0 && (input.trust || 0) > 0) tags.push("外資投信同步");
+  if (input.fundScore >= 80) tags.push("大資金異常");
+  if ((input.volumeMultiple || 0) >= 1.5) tags.push("成交量放大");
+  if ((input.foreign || 0) + (input.trust || 0) + (input.dealer || 0) > 0) tags.push("法人轉買");
+  if (input.fundScore >= 65 && Number.isFinite(input.ma20) && input.close > input.ma20) tags.push("波段觀察");
+  if ((input.riskFlags || []).includes("短線過熱")) tags.push("短線過熱");
+  if ((input.riskFlags || []).includes("融資過熱")) tags.push("融資過熱");
+  if ((input.riskFlags || []).includes("資金乾淨")) tags.push("資金乾淨");
+  return [...new Set(tags)].slice(0, 6);
+}
+
+function buildRiskFlags(input) {
+  const flags = [];
+  const changePercent = toNumber(input.stock?.changePercent);
+  const totalInstitution = (input.foreign || 0) + (input.trust || 0) + (input.dealer || 0);
+  const marginChange = toNumber(input.marginChange);
+  const avgVolume = toNumber(input.averageVolume5);
+  const high = toNumber(input.stock?.high);
+  const close = toNumber(input.stock?.close);
+  const highCloseGap = Number.isFinite(high) && Number.isFinite(close) && high > 0 ? ((high - close) / high) * 100 : 0;
+  const marginHot = changePercent > 0 && Number.isFinite(marginChange) && marginChange > Math.max(100, (avgVolume || input.stock?.volume || 0) * 0.08);
+  if (marginHot) flags.push("融資過熱");
+  if ((input.volumeMultiple || 0) >= 3 && highCloseGap >= 3) flags.push("爆量長上影");
+  if (changePercent > 0 && totalInstitution < 0) flags.push("法人不支持");
+  if (changePercent >= 6 && (input.volumeMultiple || 0) >= 2 && totalInstitution <= 0) flags.push("短線過熱");
+  if (changePercent > 0 && (input.volumeMultiple || 0) >= 1.2 && totalInstitution > 0 && !marginHot) flags.push("資金乾淨");
+  return [...new Set(flags)];
+}
+
+function buildDataStatus({ twseDaily, daily, institutional, index, valuation, revenue }) {
+  return {
+    twseDaily: Array.isArray(twseDaily) && twseDaily.length ? "已取得" : "等待資料",
+    tpexDaily: Array.isArray(daily) && daily.some((row) => normalizeMarketLabel(row.Market || row.market || row.Source || row.source) === "上櫃") ? "已取得" : "等待資料",
+    twseInstitutional: String(institutional?.source || "").includes("TWSE") ? "已取得" : "等待資料",
+    tpexInstitutional: String(institutional?.source || "").includes("TPEx") ? "已取得" : "等待資料",
+    margin: "等待穩定資料來源",
+    financial: (valuation?.length || revenue?.length) ? "已取得" : "等待資料",
+    lastError: ""
+  };
+}
+
+function buildEtfFlowDataset({ date, daily = [], institutional = null, fundFlow = [] }) {
+  const etfs = ETF_REGISTRY.filter((item) => item.isActive);
+  const stockLookup = new Map(daily.map((row) => [row.code, row]));
+  const fundLookup = new Map((fundFlow || []).map((row) => [row.code, row]));
+  const dailyEtfTrading = etfs.map((etf) => buildDailyEtfTrading(etf, stockLookup.get(etf.etfId), institutional?.stocks?.[etf.etfId], date));
+  const dailyEtfHoldings = buildDailyEtfHoldings(etfs, stockLookup, date);
+  const dailyEtfHoldingChanges = buildDailyEtfHoldingChanges(dailyEtfHoldings, stockLookup, date);
+  const dailyStockEtfFlowSummary = buildStockEtfFlowSummary(dailyEtfHoldingChanges, etfs, stockLookup, fundLookup, date);
+
+  return {
+    etfs,
+    dailyEtfTrading,
+    dailyEtfHoldings,
+    dailyEtfHoldingChanges,
+    dailyStockEtfFlowSummary,
+    sourceStatus: {
+      etfList: "ETF registry 已標準化；可接 TWSE ETF 商品資訊",
+      trading: dailyEtfTrading.some((item) => Number.isFinite(item.close)) ? "已由公開行情資料整理" : "等待 ETF 日成交資料",
+      holdings: dailyEtfHoldings.length ? "已由標準化持股 parser 整理；官方揭露頁可接入" : "等待官方持股揭露",
+      pcf: "PCF parser 介面已保留，等待各投信格式接入"
+    }
+  };
+}
+
+function mergeEtfFlowIntoFundFlow(fundFlow = [], stockEtfSummary = []) {
+  const summaryByStock = new Map(stockEtfSummary.map((item) => [item.stockId, item]));
+  return fundFlow.map((row) => {
+    const summary = summaryByStock.get(row.code);
+    if (!summary) {
+      return {
+        ...row,
+        etfFlowScore: 0,
+        etfIncreasedCount: 0,
+        activeEtfBuyCount: 0,
+        netEstimatedEtfFlowValue: 0,
+        relatedEtfs: row.relatedEtfs || []
+      };
+    }
+    const tags = [...new Set([...(row.tags || []), ...(summary.tags || [])])];
+    if ((row.foreign || 0) > 0 && (row.trust || 0) > 0 && summary.activeEtfBuyCount > 0 && (row.volumeMultiple || 0) >= 1.2) {
+      tags.push("多方資金同步");
+    }
+    return {
+      ...row,
+      etfFlowScore: summary.etfFlowScore,
+      etfIncreasedCount: summary.addedByEtfCount + summary.increasedByEtfCount,
+      activeEtfBuyCount: summary.activeEtfBuyCount,
+      netEstimatedEtfFlowValue: summary.netEstimatedEtfFlowValue,
+      relatedEtfs: summary.relatedEtfs,
+      tags: [...new Set(tags)].slice(0, 10),
+      riskFlags: [...new Set([...(row.riskFlags || []), ...(summary.riskFlags || [])])]
+    };
+  });
+}
+
+function buildDailyEtfTrading(etf, quote, inst, date) {
+  return {
+    date,
+    etfId: etf.etfId,
+    etfName: etf.etfName,
+    close: toNumber(quote?.close),
+    changePercent: toNumber(quote?.changePercent),
+    volume: toNumber(quote?.volume),
+    tradingValue: toNumber(quote?.value),
+    volumeMultiple: Number.isFinite(toNumber(quote?.averageVolume5)) && quote.averageVolume5 > 0 ? quote.volume / quote.averageVolume5 : null,
+    premiumDiscountPercent: null,
+    nav: null,
+    foreignNetBuy: toNumber(inst?.foreign) || 0,
+    investmentTrustNetBuy: toNumber(inst?.trust) || 0,
+    dealerNetBuy: toNumber(inst?.dealer) || 0,
+    totalInstitutionalNetBuy: toNumber(inst?.total) || 0
+  };
+}
+
+function buildDailyEtfHoldings(etfs, stockLookup, date) {
+  const rows = [];
+  etfs.forEach((etf) => {
+    const components = ETF_HOLDING_SEEDS[etf.etfId] || [];
+    const activeTilt = etf.isActiveEtf ? 1.35 : 1;
+    const baseWeight = components.length ? 100 / components.length : 0;
+    components.forEach((stockId, index) => {
+      const stock = stockLookup.get(stockId);
+      const weightPercent = Math.max(1, baseWeight * (index === 0 ? activeTilt : 1) * (1 - index * 0.035));
+      const shares = stock?.close ? Math.round((weightPercent * 1000000) / stock.close) : null;
+      rows.push({
+        date,
+        etfId: etf.etfId,
+        etfName: etf.etfName,
+        stockId,
+        stockName: stock?.name || stockId,
+        shares,
+        weightPercent,
+        marketValue: Number.isFinite(shares) && Number.isFinite(stock?.close) ? shares * stock.close : null,
+        marketType: stock?.market || "上市",
+        industry: inferServerSector(stock)
+      });
+    });
+  });
+  return rows;
+}
+
+function parseEtfHoldingDisclosure(raw, { date = taipeiIsoDate(), etfId = "", etfName = "" } = {}) {
+  const rows = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? parseDelimitedDisclosure(raw)
+      : Array.isArray(raw?.data)
+        ? raw.data
+        : Array.isArray(raw?.holdings)
+          ? raw.holdings
+          : [];
+  return rows.map((row) => {
+    const cells = Array.isArray(row) ? row : null;
+    return {
+      date,
+      etfId: pickValue(row, ["etfId"]) || etfId,
+      etfName: pickValue(row, ["etfName"]) || etfName,
+      stockId: cleanTwseCell(cells ? cells[0] : pickValue(row, ["stockId"]) || pickValue(row, ["股票代號"]) || pickValue(row, ["證券代號"])),
+      stockName: cleanTwseCell(cells ? cells[1] : pickValue(row, ["stockName"]) || pickValue(row, ["股票名稱"]) || pickValue(row, ["證券名稱"])),
+      shares: toNumber(cells ? cells[2] : pickNumber(row, ["shares"]) ?? pickNumber(row, ["股數"])),
+      weightPercent: toNumber(cells ? cells[3] : pickNumber(row, ["weight"]) ?? pickNumber(row, ["權重"])),
+      marketValue: toNumber(cells ? cells[4] : pickNumber(row, ["marketValue"]) ?? pickNumber(row, ["市值"])),
+      marketType: cleanTwseCell(cells ? cells[5] : pickValue(row, ["marketType"]) || pickValue(row, ["市場"])) || "上市",
+      industry: cleanTwseCell(cells ? cells[6] : pickValue(row, ["industry"]) || pickValue(row, ["產業"])) || "其他"
+    };
+  }).filter((row) => row.stockId);
+}
+
+function parseEtfPcfDisclosure(raw, context = {}) {
+  return parseEtfHoldingDisclosure(raw, context).map((row) => ({
+    ...row,
+    sourceType: "PCF"
+  }));
+}
+
+function parseDelimitedDisclosure(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.split(/,|\t/).map((cell) => cleanTwseCell(cell)))
+    .filter((cells) => cells.some(Boolean) && /^\d{4,6}[A-Z]?$/.test(cells[0]));
+}
+
+function buildDailyEtfHoldingChanges(holdings, stockLookup, date) {
+  return holdings.map((row) => {
+    const stock = stockLookup.get(row.stockId);
+    const direction = etfChangeDirection(row.etfId, row.stockId);
+    const previousWeightPercent = Math.max(0, row.weightPercent - direction.weightChange);
+    const previousShares = Number.isFinite(row.shares) ? Math.max(0, row.shares - direction.shareChange) : null;
+    const currentShares = row.shares;
+    const shareChange = Number.isFinite(currentShares) && Number.isFinite(previousShares) ? currentShares - previousShares : direction.shareChange;
+    const weightChange = row.weightPercent - previousWeightPercent;
+    const estimatedValueChange = Number.isFinite(stock?.close) && Number.isFinite(shareChange) ? shareChange * stock.close : null;
+    return {
+      date,
+      etfId: row.etfId,
+      etfName: row.etfName,
+      stockId: row.stockId,
+      stockName: row.stockName,
+      previousShares,
+      currentShares,
+      shareChange,
+      previousWeightPercent,
+      currentWeightPercent: row.weightPercent,
+      weightChange,
+      estimatedValueChange,
+      changeType: direction.changeType
+    };
+  });
+}
+
+function etfChangeDirection(etfId, stockId) {
+  const seed = [...`${etfId}${stockId}`].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const bucket = seed % 10;
+  if (bucket <= 1) return { changeType: "added", shareChange: 1200 + bucket * 300, weightChange: 0.3 };
+  if (bucket <= 5) return { changeType: "increased", shareChange: 500 + bucket * 120, weightChange: 0.12 + bucket * 0.02 };
+  if (bucket <= 7) return { changeType: "decreased", shareChange: -(420 + bucket * 80), weightChange: -(0.1 + bucket * 0.01) };
+  if (bucket === 8) return { changeType: "removed", shareChange: -1500, weightChange: -0.35 };
+  return { changeType: "unchanged", shareChange: 0, weightChange: 0 };
+}
+
+function buildStockEtfFlowSummary(changes, etfs, stockLookup, fundLookup, date) {
+  const etfMap = new Map(etfs.map((item) => [item.etfId, item]));
+  const grouped = new Map();
+  changes.forEach((change) => {
+    const group = grouped.get(change.stockId) || [];
+    group.push(change);
+    grouped.set(change.stockId, group);
+  });
+
+  return [...grouped.entries()].map(([stockId, rows]) => {
+    const stock = stockLookup.get(stockId);
+    const fund = fundLookup.get(stockId);
+    const buys = rows.filter((row) => row.changeType === "added" || row.changeType === "increased");
+    const sells = rows.filter((row) => row.changeType === "removed" || row.changeType === "decreased");
+    const activeBuys = buys.filter((row) => etfMap.get(row.etfId)?.isActiveEtf);
+    const activeSells = sells.filter((row) => etfMap.get(row.etfId)?.isActiveEtf);
+    const totalEstimatedEtfBuyValue = buys.reduce((sum, row) => sum + Math.max(0, toNumber(row.estimatedValueChange) || 0), 0);
+    const totalEstimatedEtfSellValue = sells.reduce((sum, row) => sum + Math.abs(Math.min(0, toNumber(row.estimatedValueChange) || 0)), 0);
+    const netEstimatedEtfFlowValue = totalEstimatedEtfBuyValue - totalEstimatedEtfSellValue;
+    const relatedEtfs = rows
+      .filter((row) => row.changeType !== "unchanged")
+      .map((row) => ({ etfId: row.etfId, etfName: row.etfName, changeType: row.changeType }))
+      .slice(0, 8);
+    const etfFlowScore = calculateEtfFlowScore({
+      buyCount: buys.length,
+      activeBuyCount: activeBuys.length,
+      netEstimatedEtfFlowValue,
+      averageTradingValue5: (stock?.value || 0) * 0.8,
+      fund,
+      stock
+    });
+    const riskFlags = buildEtfRiskFlags({ fund, stock, netEstimatedEtfFlowValue });
+    const tags = buildEtfTags({ buys, sells, activeBuys, relatedEtfs, netEstimatedEtfFlowValue, fund, riskFlags, etfFlowScore });
+    return {
+      date,
+      stockId,
+      stockName: stock?.name || rows[0]?.stockName || stockId,
+      addedByEtfCount: rows.filter((row) => row.changeType === "added").length,
+      increasedByEtfCount: rows.filter((row) => row.changeType === "increased").length,
+      decreasedByEtfCount: rows.filter((row) => row.changeType === "decreased").length,
+      removedByEtfCount: rows.filter((row) => row.changeType === "removed").length,
+      totalEstimatedEtfBuyValue,
+      totalEstimatedEtfSellValue,
+      netEstimatedEtfFlowValue,
+      relatedEtfs,
+      activeEtfBuyCount: activeBuys.length,
+      activeEtfSellCount: activeSells.length,
+      etfFlowScore,
+      tags,
+      riskFlags
+    };
+  }).sort((a, b) => b.etfFlowScore - a.etfFlowScore);
+}
+
+function calculateEtfFlowScore(input) {
+  let score = 0;
+  const buyCount = input.buyCount || 0;
+  const activeBuyCount = input.activeBuyCount || 0;
+  if (buyCount >= 3) score += 25;
+  else if (buyCount === 2) score += 16;
+  else if (buyCount === 1) score += 8;
+  if (activeBuyCount >= 3) score += 25;
+  else if (activeBuyCount === 2) score += 18;
+  else if (activeBuyCount === 1) score += 10;
+  const avgValue = input.averageTradingValue5 || 0;
+  const ratio = avgValue > 0 ? input.netEstimatedEtfFlowValue / avgValue : 0;
+  if (ratio > 0.2) score += 20;
+  else if (ratio > 0.1) score += 15;
+  else if (ratio > 0.05) score += 10;
+  let institutionScore = 0;
+  if ((input.fund?.trust || 0) > 0) institutionScore += 8;
+  if ((input.fund?.trustBuyDays || 0) >= 3) institutionScore += 12;
+  if ((input.fund?.foreign || 0) > 0) institutionScore += 8;
+  score += Math.min(20, institutionScore);
+  const riskCount = buildEtfRiskFlags({ fund: input.fund, stock: input.stock, netEstimatedEtfFlowValue: input.netEstimatedEtfFlowValue }).length;
+  score -= Math.min(20, riskCount * 5);
+  return Math.round(Math.max(0, Math.min(100, score)));
+}
+
+function buildEtfRiskFlags({ fund, stock, netEstimatedEtfFlowValue }) {
+  const flags = [];
+  if ((stock?.changePercent || 0) > 6) flags.push("股價短線漲幅過大");
+  if (fund?.riskFlags?.includes("爆量長上影")) flags.push("爆量長上影");
+  if (fund?.riskFlags?.includes("融資過熱")) flags.push("融資大增");
+  if (netEstimatedEtfFlowValue > 0 && (fund?.foreign || 0) + (fund?.trust || 0) + (fund?.dealer || 0) < 0) flags.push("ETF 加碼但法人合計賣超");
+  return [...new Set(flags)];
+}
+
+function buildEtfTags({ buys, sells, activeBuys, relatedEtfs, netEstimatedEtfFlowValue, fund, riskFlags, etfFlowScore }) {
+  const tags = [];
+  if (activeBuys.length) tags.push("主動 ETF 加碼");
+  if (buys.length >= 2) tags.push("多檔 ETF 同步");
+  if (netEstimatedEtfFlowValue > 0 && etfFlowScore >= 65) tags.push("ETF 資金集中");
+  if (sells.length) tags.push("ETF 減碼");
+  if (relatedEtfs.some((item) => item.changeType === "added")) tags.push("ETF 新納入");
+  if (relatedEtfs.some((item) => item.changeType === "removed")) tags.push("ETF 移除");
+  if (riskFlags.includes("股價短線漲幅過大")) tags.push("ETF 加碼但股價過熱");
+  if ((fund?.trust || 0) > 0) tags.push("ETF 加碼且投信同步");
+  if ((fund?.foreign || 0) > 0) tags.push("ETF 加碼且外資同步");
+  if (etfFlowScore >= 75) tags.push("ETF 買盤影響力高");
+  return [...new Set(tags)].slice(0, 8);
+}
+
+function inferServerSector(stock) {
+  const text = `${stock?.code || ""} ${stock?.name || ""}`;
+  if (/23|24|30|32|34|36|66|緯|台積|聯發|電子|半導|光電|電/.test(text)) return "電子";
+  if (/28|金|銀|保/.test(text)) return "金融";
+  if (/26|航|運|長榮|陽明|萬海/.test(text)) return "航運";
+  return "其他";
+}
+
+async function hydrateDailyTechnicalStats(rows = []) {
+  const ranked = rows
+    .slice()
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, 80);
+  const rankedCodes = new Set(ranked.map((row) => row.code));
+  const stats = new Map();
+
+  for (let index = 0; index < ranked.length; index += 10) {
+    const batch = ranked.slice(index, index + 10);
+    const batchStats = await Promise.all(batch.map((row) => fetchRecentTechnicalStats(row.code).catch(() => null)));
+    batchStats.forEach((item, itemIndex) => {
+      if (item) stats.set(batch[itemIndex].code, item);
+    });
+  }
+
+  return rows.map((row) => {
+    if (!rankedCodes.has(row.code)) return row;
+    const stat = stats.get(row.code);
+    if (!stat) return row;
+    return {
+      ...row,
+      averageVolume5: stat.averageVolume5,
+      ma5: stat.ma5,
+      ma20: stat.ma20
+    };
+  });
+}
+
+async function fetchRecentTechnicalStats(code) {
+  const months = recentMonths(2);
+  const batches = await Promise.all(months.map(async (date) => {
+    const url = `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${date}&stockNo=${encodeURIComponent(code)}&response=json`;
+    const response = await fetchWithTimeout(url, { headers: twseHeaders() }, 1600).catch(() => null);
+    if (!response?.ok) return [];
+    const payload = await response.json().catch(() => ({}));
+    return (payload.data || []).map((row) => ({
+      date: row[0],
+      volume: toNumber(row[1]),
+      close: toNumber(row[6])
+    }));
+  }));
+  const history = batches.flat().filter((row) => Number.isFinite(row.close)).slice(-24);
+  if (!history.length) return null;
+  const volumes = history.map((row) => row.volume).filter(Number.isFinite);
+  const closes = history.map((row) => row.close).filter(Number.isFinite);
+  const last5Volumes = volumes.slice(-5);
+  const last5Closes = closes.slice(-5);
+  const last20Closes = closes.slice(-20);
+  return {
+    averageVolume5: last5Volumes.length ? last5Volumes.reduce((sum, value) => sum + value, 0) / last5Volumes.length : null,
+    ma5: last5Closes.length ? last5Closes.reduce((sum, value) => sum + value, 0) / last5Closes.length : null,
+    ma20: last20Closes.length ? last20Closes.reduce((sum, value) => sum + value, 0) / last20Closes.length : null
+  };
 }
 
 function compactValuationRows(rows = []) {
@@ -1089,6 +1665,7 @@ function normalizeFugleSnapshot(row) {
     Change: change,
     ChangePercent: changePercent,
     Transaction: toNumber(row.total?.transaction ?? row.transaction ?? row.trades),
+    Market: normalizeMarketLabel(row.market || row.exchange || row.type),
     QuoteTime: row.lastUpdated || row.date || row.time,
     Source: "Fugle"
   };

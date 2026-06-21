@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260618-cloud-sync-fix-v1";
+const APP_ASSET_VERSION = "20260622-etf-flow-v1";
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
 const PORTFOLIO_KEY = "plain-stock-dashboard-portfolios-v1";
@@ -9,6 +9,7 @@ const MARKET_REFRESH_SLOW_MS = 10 * 60000;
 const QUOTE_REFRESH_MS = 5000;
 const BROKERAGE_FEE_RATE = 0.001425;
 const STOCK_TRANSACTION_TAX_RATE = 0.003;
+const ADMIN_EMAILS = Array.isArray(window.EASYINVEST_ADMIN_EMAILS) ? window.EASYINVEST_ADMIN_EMAILS : [];
 
 const endpoints = {
   bundle: getMarketEndpoint()
@@ -88,6 +89,41 @@ const els = {
   portfolioHealthList: document.querySelector("#portfolioHealthList"),
   preflightList: document.querySelector("#preflightList"),
   disciplineList: document.querySelector("#disciplineList"),
+  dashboardLatestTradeDate: document.querySelector("#dashboardLatestTradeDate"),
+  dashboardUpdatedAt: document.querySelector("#dashboardUpdatedAt"),
+  dashboardMarketState: document.querySelector("#dashboardMarketState"),
+  dashboardDataStatusMeta: document.querySelector("#dashboardDataStatusMeta"),
+  dashboardFocusText: document.querySelector("#dashboardFocusText"),
+  dashboardRiskText: document.querySelector("#dashboardRiskText"),
+  dashboardPlainConclusion: document.querySelector("#dashboardPlainConclusion"),
+  decisionSummaryGrid: document.querySelector("#decisionSummaryGrid"),
+  marketTemperatureGrid: document.querySelector("#marketTemperatureGrid"),
+  marketBreadthValue: document.querySelector("#marketBreadthValue"),
+  marketTurnoverChange: document.querySelector("#marketTurnoverChange"),
+  marketSectorHeat: document.querySelector("#marketSectorHeat"),
+  marketBreadthText: document.querySelector("#marketBreadthText"),
+  fundDirectionGrid: document.querySelector("#fundDirectionGrid"),
+  fundDirectionSector: document.querySelector("#fundDirectionSector"),
+  fundRadarSummaryList: document.querySelector("#fundRadarSummaryList"),
+  holdingAlertList: document.querySelector("#holdingAlertList"),
+  watchAlertList: document.querySelector("#watchAlertList"),
+  fundFlowRadarPage: document.querySelector("#fundFlowRadarPage"),
+  fundFlowRadarTable: document.querySelector("#fundFlowRadarTable"),
+  fundFlowRadarCards: document.querySelector("#fundFlowRadarCards"),
+  fundFlowRadarMeta: document.querySelector("#fundFlowRadarMeta"),
+  fundFlowFilterForm: document.querySelector("#fundFlowFilterForm"),
+  fundFlowSort: document.querySelector("#fundFlowSort"),
+  dataStatusPage: document.querySelector("#dataStatusPage"),
+  dataStatusList: document.querySelector("#dataStatusList"),
+  dataStatusMeta: document.querySelector("#dataStatusMeta"),
+  manualDataRefreshButton: document.querySelector("#manualDataRefreshButton"),
+  etfFlowPage: document.querySelector("#etfFlowPage"),
+  etfFlowMeta: document.querySelector("#etfFlowMeta"),
+  etfBuyRankingList: document.querySelector("#etfBuyRankingList"),
+  etfSellRankingList: document.querySelector("#etfSellRankingList"),
+  multiEtfBuyList: document.querySelector("#multiEtfBuyList"),
+  activeEtfBuyList: document.querySelector("#activeEtfBuyList"),
+  etfTradingHeatList: document.querySelector("#etfTradingHeatList"),
   marketIndexName: document.querySelector("#marketIndexName"),
   marketIndexPrice: document.querySelector("#marketIndexPrice"),
   marketIndexChange: document.querySelector("#marketIndexChange"),
@@ -166,6 +202,7 @@ const els = {
   detailInstitutionalText: document.querySelector("#detailInstitutionalText"),
   detailAiAdviceText: document.querySelector("#detailAiAdviceText"),
   detailConclusionList: document.querySelector("#detailConclusionList"),
+  detailDecisionExtras: document.querySelector("#detailDecisionExtras"),
   sectorModal: document.querySelector("#sectorModal"),
   closeSector: document.querySelector("#closeSectorButton"),
   sectorDetailTitle: document.querySelector("#sectorDetailTitle"),
@@ -198,12 +235,14 @@ const els = {
   tierTabs: document.querySelectorAll(".tier-tab"),
   tierPanels: document.querySelectorAll(".tier-panel"),
   briefCards: document.querySelectorAll(".brief-card"),
-  todayPnlCard: document.querySelector(".today-pnl"),
+  todayPnlCard: document.querySelector(".today-pnl-card"),
   todayPnlAmount: document.querySelector("#todayPnlAmount"),
   todayPnlPercent: document.querySelector("#todayPnlPercent"),
   todayPnlCount: document.querySelector("#todayPnlCount"),
   todayPnlMarketValue: document.querySelector("#todayPnlMarketValue"),
   todayPnlAccumulated: document.querySelector("#todayPnlAccumulated"),
+  todayAttentionCount: document.querySelector("#todayAttentionCount"),
+  todayRiskFlagCount: document.querySelector("#todayRiskFlagCount"),
   todayPnlNote: document.querySelector("#todayPnlNote"),
   todayPnlUpdatedAt: document.querySelector("#todayPnlUpdatedAt"),
   viewModeToggle: document.querySelector("#viewModeToggle"),
@@ -264,6 +303,10 @@ let market = {
   index: null,
   usIndex: null,
   institutional: null,
+  fundFlow: [],
+  etfFlow: null,
+  dataStatus: null,
+  latestTradingDate: "",
   news: [],
   source: "sample",
   updatedAt: null
@@ -1603,10 +1646,22 @@ function normalizeDaily(raw) {
       change,
       changePercent,
       trades: number(item.Transaction ?? item["成交筆數"] ?? item.trades ?? item.transaction),
+      market: normalizeMarketLabel(item.Market || item.market || item.Exchange || item.exchange || item.Source || item.source),
+      averageVolume5: number(item.averageVolume5 ?? item.avgVolume5 ?? item.volumeAverage5),
+      marginChange: number(item.marginChange ?? item.marginBalanceChange),
+      ma5: number(item.ma5),
+      ma20: number(item.ma20),
       source: item.Source || item.source,
       realtime: item.realtime || item.Source === "Fugle" || item.Source === "TWSE_REALTIME" || item.source === "Fugle" || item.source === "TWSE_REALTIME"
     };
   }).filter((item) => item.code && item.name && Number.isFinite(item.close));
+}
+
+function normalizeMarketLabel(value) {
+  const text = String(value || "").toUpperCase();
+  if (text.includes("OTC") || text.includes("TWO") || text.includes("TPEX") || text.includes("上櫃")) return "上櫃";
+  if (text.includes("TSE") || text.includes("TWSE") || text.includes("上市")) return "上市";
+  return "上市";
 }
 
 function normalizeValuation(raw) {
@@ -1859,6 +1914,10 @@ async function fetchMarket() {
       index: normalizeIndex(payload.index) || sampleIndex,
       usIndex: normalizeUsMarket(payload.usIndex) || sampleUsMarket,
       institutional: normalizeInstitutional(payload.institutional),
+      fundFlow: normalizeFundFlow(payload.fundFlow || []),
+      etfFlow: normalizeEtfFlow(payload.etfFlow),
+      dataStatus: payload.dataStatus || null,
+      latestTradingDate: payload.latestTradingDate || payload.institutional?.date || "",
       news: normalizeNews(payload.news || []),
       source: sources.length ? [...new Set(sources)].join(" + ") : daily.length ? "TWSE" : "資料不足",
       updatedAt: payload.updatedAt || new Date().toISOString()
@@ -1871,10 +1930,18 @@ async function fetchMarket() {
       index: sampleIndex,
       usIndex: sampleUsMarket,
       institutional: sampleInstitutional,
+      fundFlow: [],
+      etfFlow: null,
+      dataStatus: null,
+      latestTradingDate: "",
       news: sampleNews,
       source: "sample",
       updatedAt: new Date().toISOString()
     };
+  }
+
+  if (!market.fundFlow.length) {
+    market.fundFlow = buildFundFlowRows();
   }
 
   const hasUsableMarketData = market.daily.length || Number.isFinite(number(market.index?.index));
@@ -1910,6 +1977,277 @@ function normalizeInstitutionalStocks(stocks) {
   }]));
 }
 
+function normalizeFundFlow(raw) {
+  return (raw || []).map((item) => ({
+    code: String(item.code || item.symbol || "").trim(),
+    name: item.name || "",
+    market: normalizeMarketLabel(item.market),
+    close: number(item.close),
+    changePercent: number(item.changePercent),
+    volume: number(item.volume),
+    averageVolume5: number(item.averageVolume5),
+    volumeMultiple: number(item.volumeMultiple),
+    foreign: number(item.foreign),
+    foreignBuyDays: number(item.foreignBuyDays) || 0,
+    foreignFiveDay: number(item.foreignFiveDay),
+    trust: number(item.trust),
+    trustBuyDays: number(item.trustBuyDays) || 0,
+    trustFiveDay: number(item.trustFiveDay),
+    dealer: number(item.dealer),
+    institutionFiveDay: number(item.institutionFiveDay),
+    marginChange: number(item.marginChange),
+    ma5: number(item.ma5),
+    ma20: number(item.ma20),
+    fundScore: Math.round(Math.max(0, Math.min(100, number(item.fundScore) ?? 0))),
+    etfFlowScore: number(item.etfFlowScore) || 0,
+    etfIncreasedCount: number(item.etfIncreasedCount) || 0,
+    activeEtfBuyCount: number(item.activeEtfBuyCount) || 0,
+    netEstimatedEtfFlowValue: number(item.netEstimatedEtfFlowValue) || 0,
+    relatedEtfs: Array.isArray(item.relatedEtfs) ? item.relatedEtfs : [],
+    tags: Array.isArray(item.tags) ? item.tags : [],
+    riskFlags: Array.isArray(item.riskFlags) ? item.riskFlags : [],
+    plainText: item.plainText || ""
+  })).filter((item) => item.code);
+}
+
+function normalizeEtfFlow(payload) {
+  if (!payload) return null;
+  return {
+    etfs: (payload.etfs || []).map((item) => ({
+      etfId: String(item.etfId || "").trim(),
+      etfName: item.etfName || "",
+      marketType: item.marketType || "",
+      issuer: item.issuer || "",
+      category: item.category || "other",
+      isActiveEtf: Boolean(item.isActiveEtf),
+      listingDate: item.listingDate || "",
+      trackingIndex: item.trackingIndex || "",
+      officialHoldingUrl: item.officialHoldingUrl || "",
+      officialPcFUrl: item.officialPcFUrl || "",
+      isActive: item.isActive !== false
+    })),
+    dailyEtfTrading: (payload.dailyEtfTrading || []).map((item) => ({
+      date: item.date || "",
+      etfId: item.etfId || "",
+      etfName: item.etfName || "",
+      close: number(item.close),
+      changePercent: number(item.changePercent),
+      volume: number(item.volume),
+      tradingValue: number(item.tradingValue),
+      volumeMultiple: number(item.volumeMultiple),
+      premiumDiscountPercent: number(item.premiumDiscountPercent),
+      nav: number(item.nav),
+      foreignNetBuy: number(item.foreignNetBuy),
+      investmentTrustNetBuy: number(item.investmentTrustNetBuy),
+      dealerNetBuy: number(item.dealerNetBuy),
+      totalInstitutionalNetBuy: number(item.totalInstitutionalNetBuy)
+    })),
+    dailyEtfHoldings: payload.dailyEtfHoldings || [],
+    dailyEtfHoldingChanges: payload.dailyEtfHoldingChanges || [],
+    dailyStockEtfFlowSummary: (payload.dailyStockEtfFlowSummary || []).map((item) => ({
+      date: item.date || "",
+      stockId: item.stockId || "",
+      stockName: item.stockName || "",
+      addedByEtfCount: number(item.addedByEtfCount) || 0,
+      increasedByEtfCount: number(item.increasedByEtfCount) || 0,
+      decreasedByEtfCount: number(item.decreasedByEtfCount) || 0,
+      removedByEtfCount: number(item.removedByEtfCount) || 0,
+      totalEstimatedEtfBuyValue: number(item.totalEstimatedEtfBuyValue) || 0,
+      totalEstimatedEtfSellValue: number(item.totalEstimatedEtfSellValue) || 0,
+      netEstimatedEtfFlowValue: number(item.netEstimatedEtfFlowValue) || 0,
+      relatedEtfs: Array.isArray(item.relatedEtfs) ? item.relatedEtfs : [],
+      activeEtfBuyCount: number(item.activeEtfBuyCount) || 0,
+      activeEtfSellCount: number(item.activeEtfSellCount) || 0,
+      etfFlowScore: number(item.etfFlowScore) || 0,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      riskFlags: Array.isArray(item.riskFlags) ? item.riskFlags : []
+    })),
+    sourceStatus: payload.sourceStatus || {}
+  };
+}
+
+function buildFundFlowRows(stocks = market.daily) {
+  const rows = (stocks || []).map((stock) => {
+    const inst = getInstitutional(stock.code);
+    return buildFundFlowItem(stock, inst);
+  }).filter(Boolean);
+  return rows.sort((a, b) => b.fundScore - a.fundScore);
+}
+
+function buildFundFlowItem(stock, inst = null) {
+  if (!stock) return null;
+  const foreign = number(inst?.foreign) || 0;
+  const trust = number(inst?.trust) || 0;
+  const dealer = number(inst?.dealer) || 0;
+  const foreignBuyDays = number(inst?.foreignBuyDays) || (foreign > 0 ? 1 : 0);
+  const trustBuyDays = number(inst?.trustBuyDays) || (trust > 0 ? 1 : 0);
+  const foreignFiveDay = number(inst?.foreignFiveDay) ?? foreign;
+  const trustFiveDay = number(inst?.trustFiveDay) ?? trust;
+  const institutionFiveDay = number(inst?.institutionFiveDay) ?? (foreignFiveDay || 0) + (trustFiveDay || 0) + dealer;
+  const averageVolume5 = number(stock.averageVolume5);
+  const volumeMultiple = Number.isFinite(averageVolume5) && averageVolume5 > 0 ? (stock.volume || 0) / averageVolume5 : number(stock.volumeMultiple);
+  const marginChange = number(stock.marginChange);
+  const ma5 = number(stock.ma5);
+  const ma20 = number(stock.ma20);
+  const fundScore = calculateFundScore({
+    changePercent: stock.changePercent,
+    volumeMultiple,
+    averageVolume5,
+    foreign,
+    foreignBuyDays,
+    foreignFiveDay,
+    trust,
+    trustBuyDays,
+    trustFiveDay,
+    dealer,
+    marginChange,
+    close: stock.close,
+    ma5,
+    ma20
+  });
+  const riskFlags = buildRiskFlags({
+    stock,
+    volumeMultiple,
+    foreign,
+    trust,
+    dealer,
+    marginChange,
+    averageVolume5
+  });
+  const tags = buildFundTags({
+    fundScore,
+    volumeMultiple,
+    foreign,
+    foreignBuyDays,
+    foreignFiveDay,
+    trust,
+    trustBuyDays,
+    trustFiveDay,
+    dealer,
+    marginChange,
+    close: stock.close,
+    ma20,
+    riskFlags
+  });
+  return {
+    code: stock.code,
+    name: stock.name,
+    market: normalizeMarketLabel(stock.market || stock.source),
+    close: stock.close,
+    changePercent: stock.changePercent,
+    volume: stock.volume,
+    averageVolume5,
+    volumeMultiple,
+    foreign,
+    foreignBuyDays,
+    foreignFiveDay,
+    trust,
+    trustBuyDays,
+    trustFiveDay,
+    dealer,
+    institutionFiveDay,
+    marginChange,
+    ma5,
+    ma20,
+    fundScore,
+    etfFlowScore: 0,
+    etfIncreasedCount: 0,
+    activeEtfBuyCount: 0,
+    netEstimatedEtfFlowValue: 0,
+    relatedEtfs: [],
+    tags,
+    riskFlags,
+    plainText: fundFlowPlainText(stock, fundScore, tags, riskFlags, volumeMultiple, foreignBuyDays, trustBuyDays)
+  };
+}
+
+function calculateFundScore(input) {
+  const changePercent = number(input.changePercent);
+  const volumeMultiple = number(input.volumeMultiple);
+  let score = 0;
+
+  if (changePercent >= 6) score += 20;
+  else if (changePercent >= 4) score += 16;
+  else if (changePercent >= 2) score += 10;
+  else if (changePercent > 0) score += 5;
+
+  if (volumeMultiple >= 3) score += 20;
+  else if (volumeMultiple >= 2) score += 16;
+  else if (volumeMultiple >= 1.5) score += 10;
+  else if (volumeMultiple >= 1.2) score += 5;
+
+  let foreignScore = 0;
+  if ((input.foreign || 0) > 0) foreignScore += 5;
+  if ((input.foreignBuyDays || 0) >= 3) foreignScore += 5;
+  if ((input.foreignBuyDays || 0) >= 5) foreignScore += 8;
+  if ((input.foreignFiveDay || 0) > 0 && (input.averageVolume5 || 0) > 0 && input.foreignFiveDay > input.averageVolume5 * 0.1) foreignScore += 7;
+  score += Math.min(20, foreignScore);
+
+  let trustScore = 0;
+  if ((input.trust || 0) > 0) trustScore += 6;
+  if ((input.trustBuyDays || 0) >= 3) trustScore += 7;
+  if ((input.trustBuyDays || 0) >= 5) trustScore += 10;
+  if ((input.trustFiveDay || 0) > 0 && (input.averageVolume5 || 0) > 0 && input.trustFiveDay > input.averageVolume5 * 0.05) trustScore += 8;
+  score += Math.min(25, trustScore);
+
+  const marginChange = number(input.marginChange);
+  if (!Number.isFinite(marginChange)) score += 5;
+  else if (changePercent > 0 && marginChange <= 0) score += 10;
+  else if (changePercent > 0 && marginChange <= Math.max(100, (input.averageVolume5 || 0) * 0.03)) score += 5;
+  else if (changePercent > 0) score -= 5;
+
+  if (Number.isFinite(input.ma5) && Number.isFinite(input.close) && input.close > input.ma5) score += 2;
+  if (Number.isFinite(input.ma20) && Number.isFinite(input.close) && input.close > input.ma20) score += 3;
+
+  return Math.round(Math.max(0, Math.min(100, score)));
+}
+
+function buildFundTags(input) {
+  const tags = [];
+  if ((input.foreign || 0) > 0 && Math.abs(input.foreign) >= Math.abs(input.trust || 0)) tags.push("外資主導");
+  if ((input.trustBuyDays || 0) >= 3 || (input.trust || 0) > 0) tags.push("投信連買");
+  if ((input.foreign || 0) > 0 && (input.trust || 0) > 0) tags.push("外資投信同步");
+  if (input.fundScore >= 80) tags.push("大資金異常");
+  if ((input.volumeMultiple || 0) >= 1.5) tags.push("成交量放大");
+  if ((input.foreign || 0) + (input.trust || 0) + (input.dealer || 0) > 0) tags.push("法人轉買");
+  if (input.fundScore >= 65 && Number.isFinite(input.ma20) && input.close > input.ma20) tags.push("波段觀察");
+  if ((input.riskFlags || []).includes("短線過熱")) tags.push("短線過熱");
+  if ((input.riskFlags || []).includes("融資過熱")) tags.push("融資過熱");
+  if ((input.riskFlags || []).includes("資金乾淨")) tags.push("資金乾淨");
+  return [...new Set(tags)].slice(0, 6);
+}
+
+function buildRiskFlags(input) {
+  const flags = [];
+  const changePercent = number(input.stock?.changePercent);
+  const totalInstitution = (input.foreign || 0) + (input.trust || 0) + (input.dealer || 0);
+  const marginChange = number(input.marginChange);
+  const avgVolume = number(input.averageVolume5);
+  const high = number(input.stock?.high);
+  const close = number(input.stock?.close);
+  const highCloseGap = Number.isFinite(high) && Number.isFinite(close) && high > 0 ? ((high - close) / high) * 100 : 0;
+  const marginHot = changePercent > 0 && Number.isFinite(marginChange) && marginChange > Math.max(100, (avgVolume || input.stock?.volume || 0) * 0.08);
+
+  if (marginHot) flags.push("融資過熱");
+  if ((input.volumeMultiple || 0) >= 3 && highCloseGap >= 3) flags.push("爆量長上影");
+  if (changePercent > 0 && totalInstitution < 0) flags.push("法人不支持");
+  if (changePercent >= 6 && (input.volumeMultiple || 0) >= 2 && totalInstitution <= 0) flags.push("短線過熱");
+  if (changePercent > 0 && (input.volumeMultiple || 0) >= 1.2 && totalInstitution > 0 && !marginHot) flags.push("資金乾淨");
+  return [...new Set(flags)];
+}
+
+function fundFlowPlainText(stock, fundScore, tags, riskFlags, volumeMultiple, foreignBuyDays, trustBuyDays) {
+  const tagText = tags.length ? tags.slice(0, 2).join("、") : "等待更多籌碼確認";
+  const riskText = riskFlags.length ? `提醒：${riskFlags.join("、")}。` : "暫無明顯風險標籤。";
+  const volumeText = Number.isFinite(volumeMultiple) ? `成交量為 5 日均量的 ${volumeMultiple.toFixed(1)} 倍` : "5 日均量資料等待補齊";
+  return `${stock.code} ${stock.name} 今日漲幅 ${percent(stock.changePercent)}，${volumeText}，資金分數 ${fundScore}，屬於${tagText}型觀察。外資連買 ${foreignBuyDays || 0} 天，投信連買 ${trustBuyDays || 0} 天。${riskText}`;
+}
+
+function getFundFlowItem(code) {
+  const rows = market.fundFlow?.length ? market.fundFlow : buildFundFlowRows();
+  return rows.find((item) => item.code === code) || null;
+}
+
 function normalizeUsMarket(payload) {
   if (!payload?.groups) return null;
   return {
@@ -1932,6 +2270,9 @@ function normalizeNews(items) {
 function setStatus(status, time) {
   els.dataStatus.textContent = status;
   els.updatedAt.textContent = time;
+  if (els.dashboardDataStatusMeta) {
+    els.dashboardDataStatusMeta.textContent = status || "等待資料";
+  }
   if (els.todayPnlUpdatedAt) {
     els.todayPnlUpdatedAt.textContent = `資料更新時間：${time || "尚未同步"}`;
   }
@@ -2137,6 +2478,7 @@ function scoreStock(stock, val, rev) {
 }
 
 function render() {
+  placeMarketTapeAfterSummary();
   const valueRanking = market.daily.slice().sort((a, b) => b.value - a.value);
   const ranking = valueRanking.slice(0, RANKING_LIMIT);
   const trendRanking = valueRanking.slice(0, TREND_STOCK_LIMIT);
@@ -2163,6 +2505,7 @@ function render() {
 
   renderPortfolioSwitcher();
   renderTodayPnl(holdings);
+  renderDashboardSummary(ranking, tracked, holdings, watchOnly, holdingValue);
   renderQuickAddedStocks();
   renderBeginnerBrief(ranking, tracked);
   renderMarketScore(ranking, tracked);
@@ -2187,6 +2530,17 @@ function render() {
   renderTrendPanel(trendRanking);
   renderSmallCapGuide();
   renderImageStockMatches();
+  renderRoutePages();
+}
+
+function placeMarketTapeAfterSummary() {
+  const marketTape = document.querySelector("#marketTape");
+  const marketSummary = document.querySelector("#marketTemperaturePanel");
+  if (!marketTape || !marketSummary) return;
+  marketTape.classList.remove("legacy-detail-section", "advanced-section");
+  if (marketSummary.nextElementSibling !== marketTape) {
+    marketSummary.insertAdjacentElement("afterend", marketTape);
+  }
 }
 
 function renderBeginnerBrief(ranking, tracked) {
@@ -2254,7 +2608,685 @@ function renderBeginnerBrief(ranking, tracked) {
   const sectorText = sectors[0] ? `${sectors[0].name}` : "資金方向未明";
   const riskText = riskTracked.length ? `${riskTracked.length} 檔持股需小心` : els.beginnerRiskText.textContent;
   const tone = els.beginnerMarketTone.textContent;
-  els.todayConclusion.textContent = `今日結論：${tone}，資金主要看 ${sectorText}；${riskText}。先觀察族群是否延續，再決定是否分批。`;
+  if (els.todayConclusion && !els.decisionSummaryGrid) {
+    els.todayConclusion.textContent = `今日結論：${tone}，資金主要看 ${sectorText}；${riskText}。先觀察族群是否延續，再決定是否分批。`;
+  }
+}
+
+function renderDashboardSummary(ranking, tracked, holdings, watchOnly, holdingValue) {
+  const fundRows = market.fundFlow?.length ? market.fundFlow : buildFundFlowRows();
+  const index = market.index;
+  const changePercent = number(index?.changePercent);
+  const institutionalTotal = number(market.institutional?.total);
+  const marketState = marketStateLabel(changePercent, institutionalTotal);
+  const latestDate = market.latestTradingDate || market.institutional?.date || marketDateKey(index?.lastUpdated) || "等待資料";
+  const updatedText = market.updatedAt ? formatUpdateTime(market.updatedAt) : "尚未同步";
+  const sectors = summarizeSectors(ranking);
+  const topSector = sectors[0]?.name || "等待族群資料";
+  const topFund = fundRows[0];
+  const hotCount = fundRows.filter((item) => number(item.changePercent) >= 4 || number(item.volumeMultiple) >= 2).length;
+  const riskRows = fundRows.filter((item) => item.riskFlags?.length);
+  const trackedRisk = tracked.filter((entry) => entry.signal?.tone === "bad").length;
+  const riskText = riskRows.length
+    ? riskRows.slice(0, 2).map((item) => `${item.code} ${item.riskFlags[0]}`).join("、")
+    : trackedRisk
+      ? `${trackedRisk} 檔追蹤股需重新檢查`
+      : "暫無明顯警訊";
+  const upCount = market.daily.filter((stock) => number(stock.changePercent) > 0).length;
+  const downCount = market.daily.filter((stock) => number(stock.changePercent) < 0).length;
+  const operationTone = marketState === "偏強" && hotCount >= 6
+    ? "偏熱"
+    : marketState === "偏弱"
+      ? "需保守"
+      : "可觀察";
+  const flowTone = Number.isFinite(institutionalTotal)
+    ? institutionalTotal > 0
+      ? `三大法人合計 ${formatShareFlow(institutionalTotal)}，籌碼方向偏支持`
+      : institutionalTotal < 0
+        ? `三大法人合計 ${formatShareFlow(institutionalTotal)}，籌碼方向偏保守`
+        : "三大法人合計接近平盤，籌碼方向等待確認"
+    : "法人資料等待盤後更新";
+  const nextStep = holdings.length
+    ? "先檢查持股風險，再從觀察名單中觀察資金是否延續"
+    : "先建立持股或觀察名單，讓系統整理損益、集中度與風險提醒";
+
+  if (els.dashboardLatestTradeDate) els.dashboardLatestTradeDate.textContent = latestDate;
+  if (els.dashboardUpdatedAt) els.dashboardUpdatedAt.textContent = updatedText;
+  if (els.dashboardMarketState) {
+    els.dashboardMarketState.textContent = marketState;
+    els.dashboardMarketState.className = marketState === "偏強" ? "price-up" : marketState === "偏弱" ? "price-down" : "";
+  }
+  if (els.dashboardDataStatusMeta) {
+    els.dashboardDataStatusMeta.textContent = market.source === "sample" ? "範例資料" : market.source || "等待資料";
+  }
+  if (els.dashboardFocusText) {
+    els.dashboardFocusText.textContent = topFund
+      ? `${topSector} 資金熱度較高，先觀察是否延續`
+      : "等待資金排行資料";
+  }
+  if (els.dashboardRiskText) {
+    els.dashboardRiskText.textContent = riskText;
+  }
+  if (els.dashboardPlainConclusion) {
+    els.dashboardPlainConclusion.textContent = topFund
+      ? `資金較集中在 ${topSector}；先看自己的部位，再觀察資金是否延續。`
+      : "資金族群等待資料補齊；先觀察大盤方向、籌碼流向與持股風險。";
+  }
+  if (els.decisionSummaryGrid) {
+    const breadthReason = market.daily.length
+      ? `上漲 ${upCount} / 下跌 ${downCount}，族群熱度 ${sectors.slice(0, 2).map((item) => item.name).join("、") || "等待資料"}`
+      : "漲跌家數與族群熱度等待資料";
+    const cards = [
+      ["市場可操作度", operationTone, `大盤 ${Number.isFinite(changePercent) ? percent(changePercent) : "等待資料"}，${breadthReason}`],
+      ["資金流向", topSector, `${flowTone}；今日集中族群：${sectors.slice(0, 3).map((item) => `${item.name} ${item.count} 檔`).join("、") || "等待資料"}`],
+      ["風險提醒", riskRows.length || trackedRisk ? "需留意" : "暫無明顯警訊", riskText],
+      ["下一步", holdings.length ? "先看持股" : "建立追蹤", nextStep]
+    ];
+    els.decisionSummaryGrid.innerHTML = cards.map(([title, value, text], index) => `
+      <article class="decision-card">
+        <span>${index + 1}. ${title}</span>
+        <strong>${escapeHtml(value)}</strong>
+        <p>${escapeHtml(text)}</p>
+      </article>
+    `).join("");
+  }
+  if (els.todayConclusion) {
+    els.todayConclusion.textContent = topFund
+      ? `今日結論：資金主要集中在${topSector}；可先觀察資金是否延續，再決定是否分批。`
+      : "今日結論：資金流向等待資料補齊；先檢查持股風險與下單紀律。";
+  }
+
+  renderMarketTemperature();
+  renderFundDirection(ranking);
+  renderFundRadarSummary(fundRows);
+  renderHoldingAlerts(holdings, tracked, holdingValue, fundRows);
+  renderWatchAlerts(watchOnly, fundRows);
+}
+
+function marketStateLabel(changePercent, institutionalTotal) {
+  if (!Number.isFinite(changePercent)) return "等待資料";
+  if (changePercent >= 0.7 && (!Number.isFinite(institutionalTotal) || institutionalTotal >= 0)) return "偏強";
+  if (changePercent <= -0.7 || institutionalTotal < 0 && changePercent < 0.2) return "偏弱";
+  return "震盪";
+}
+
+function renderMarketTemperature() {
+  if (!els.marketTemperatureGrid) return;
+  const groups = market.index?.groups || {};
+  const rows = [
+    ["加權指數", market.index],
+    ["上櫃指數", groups.otc],
+    ["電子指數", groups.electronic],
+    ["金融指數", groups.finance]
+  ];
+  if (!rows.some(([, index]) => Number.isFinite(number(index?.index)))) {
+    els.marketTemperatureGrid.innerHTML = '<p class="empty compact-empty">市場資料等待更新。</p>';
+  } else {
+    els.marketTemperatureGrid.innerHTML = rows.map(([label, index]) => {
+      const changePercent = number(index?.changePercent);
+      const status = Number.isFinite(changePercent)
+        ? changePercent >= 1 ? "走強" : changePercent <= -1 ? "承壓" : "震盪"
+        : "等待資料";
+      return `
+        <article class="market-index-row">
+          <span>${label}</span>
+          <strong>${Number.isFinite(number(index?.index)) ? money(number(index.index)) : "等待資料"}</strong>
+          <em class="${priceTone(changePercent)}">${Number.isFinite(changePercent) ? `${signedMoney(number(index?.change))} / ${percent(changePercent)}` : "等待資料"}</em>
+          <small>${status}</small>
+        </article>
+      `;
+    }).join("");
+  }
+  if (els.marketTurnoverChange) {
+    const turnover = number(market.index?.turnover);
+    els.marketTurnoverChange.textContent = Number.isFinite(turnover) ? compactMoney(turnover * 100000000) : "等待資料";
+  }
+  if (els.marketBreadthValue) {
+    const up = market.daily.filter((stock) => number(stock.changePercent) > 0).length;
+    const down = market.daily.filter((stock) => number(stock.changePercent) < 0).length;
+    els.marketBreadthValue.textContent = market.daily.length ? `上漲 ${up} / 下跌 ${down}` : "等待資料";
+    if (els.marketBreadthText) {
+      els.marketBreadthText.textContent = market.daily.length
+        ? up > down * 1.5
+          ? "上漲家數明顯較多，市場廣度偏正向"
+          : down > up * 1.5
+            ? "下跌家數明顯較多，市場廣度偏保守"
+            : "漲跌家數接近，市場廣度偏震盪"
+        : "等待漲跌家數資料";
+    }
+  }
+  if (els.marketSectorHeat) {
+    const sectors = summarizeSectors(latestRanking.length ? latestRanking : market.daily);
+    els.marketSectorHeat.textContent = sectors.length ? sectors.slice(0, 3).map((item) => `${item.name} ${item.count}`).join("、") : "等待資料";
+  }
+}
+
+function renderFundDirection(ranking) {
+  if (!els.fundDirectionGrid) return;
+  const inst = market.institutional || {};
+  const sectors = summarizeSectors(ranking);
+  const rows = [
+    ["三大法人合計", inst.total],
+    ["外資買賣超", inst.foreign],
+    ["投信買賣超", inst.trust],
+    ["自營商買賣超", inst.dealer]
+  ];
+  els.fundDirectionGrid.innerHTML = rows.map(([label, value]) => `
+    <article>
+      <span>${label}</span>
+      <strong class="${priceTone(value)}">${Number.isFinite(number(value)) ? formatShareFlow(value) : "--"}</strong>
+    </article>
+  `).join("");
+  if (els.fundDirectionSector) {
+    els.fundDirectionSector.textContent = sectors.length ? sectors.slice(0, 3).map((item) => `${item.name} ${item.count} 檔`).join("、") : "等待資料";
+  }
+}
+
+function renderFundRadarSummary(fundRows) {
+  if (!els.fundRadarSummaryList) return;
+  const lists = [
+    ["資金分數 Top 5", fundRows.slice().sort((a, b) => b.fundScore - a.fundScore).slice(0, 5), "fundScore", "等待資金分數資料"],
+    ["外資連買 Top 5", fundRows.slice().sort((a, b) => (b.foreignBuyDays || 0) - (a.foreignBuyDays || 0) || (b.foreign || 0) - (a.foreign || 0)).slice(0, 5), "foreign", "暫無外資連買資料"],
+    ["投信連買 Top 5", fundRows.slice().sort((a, b) => (b.trustBuyDays || 0) - (a.trustBuyDays || 0) || (b.trust || 0) - (a.trust || 0)).slice(0, 5), "trust", "暫無投信連買資料"],
+    ["短線過熱警示 Top 5", fundRows.filter((item) => item.riskFlags.includes("短線過熱") || item.riskFlags.includes("爆量長上影")).slice(0, 5), "risk", "暫無短線過熱警示"]
+  ];
+  els.fundRadarSummaryList.innerHTML = lists.map(([title, rows, type, emptyText]) => `
+    <article class="radar-summary-card">
+      <div class="radar-summary-head">
+        <strong>${title}</strong>
+        <a href="/fund-flow-radar?view=${type}">完整雷達</a>
+      </div>
+      <div class="mini-rank-list">
+        ${rows.length ? rows.map((item, index) => `
+          <button type="button" data-radar-code="${escapeAttribute(item.code)}">
+            <span>${index + 1}. ${escapeHtml(item.code)} ${escapeHtml(item.name)}</span>
+            <strong>${type === "fundScore" ? item.fundScore : type === "risk" ? (item.riskFlags[0] || "風險提醒") : `${type === "foreign" ? item.foreignBuyDays : item.trustBuyDays} 天`}</strong>
+            <em>${escapeHtml((item.tags?.[0] || item.riskFlags?.[0] || "等待確認"))}</em>
+          </button>
+        `).join("") : `<p class="empty radar-empty">${escapeHtml(emptyText)}</p>`}
+      </div>
+    </article>
+  `).join("");
+  els.fundRadarSummaryList.querySelectorAll("[data-radar-code]").forEach((button) => {
+    button.addEventListener("click", () => openRadarStock(button.dataset.radarCode));
+  });
+}
+
+function renderHoldingAlerts(holdings, tracked, holdingValue, fundRows) {
+  if (!els.holdingAlertList) return;
+  if (!holdings.length) {
+    els.holdingAlertList.innerHTML = '<p class="empty compact-empty">尚未建立持股，新增持股後會自動整理今日損益、集中度、法人方向與風險提醒。</p>';
+    return;
+  }
+  const today = renderTodayPnlValue(holdings);
+  const largest = holdings.map((entry) => {
+    const shares = holdingShares(entry.item);
+    const value = entry.stock && shares ? entry.stock.close * shares : 0;
+    return { ...entry, value, ratio: holdingValue ? (value / holdingValue) * 100 : 0 };
+  }).sort((a, b) => b.value - a.value)[0];
+  const sector = largestHoldingSector(holdings, holdingValue);
+  const riskHoldings = holdings.map((entry) => ({ entry, fund: fundRows.find((item) => item.code === entry.item.code) })).filter((row) => row.fund?.riskFlags?.length);
+  const institutionTurnSell = holdings.filter(({ item }) => (getInstitutional(item.code)?.total || 0) < 0);
+  const institutionBuy = holdings.filter(({ item }) => (getInstitutional(item.code)?.total || 0) > 0);
+  const cumulative = holdings.reduce((total, entry) => total + (holdingMetrics(entry).pnl || 0), 0);
+  const priorityRows = holdings.map((entry) => {
+    const fund = fundRows.find((item) => item.code === entry.item.code);
+    const metrics = holdingMetrics(entry);
+    const ratio = holdingValue && metrics.marketValue ? (metrics.marketValue / holdingValue) * 100 : 0;
+    const inst = getInstitutional(entry.item.code);
+    const flags = [
+      ...(ratio > 30 ? ["單檔過重"] : []),
+      ...(fund?.riskFlags || []),
+      ...(inst?.total < 0 ? ["法人轉賣"] : []),
+      ...(Number.isFinite(fund?.ma20) && entry.stock?.close < fund.ma20 ? ["跌破 20 日均線"] : [])
+    ];
+    const score = flags.length * 10 + Math.max(0, ratio - 25) + Math.abs(number(entry.stock?.changePercent) || 0);
+    return { entry, fund, metrics, ratio, flags, score };
+  }).sort((a, b) => b.score - a.score).slice(0, 5);
+
+  const largestRatioText = largest?.stock ? `${largest.item.code} ${percent(largest.ratio)}` : "等待資料";
+  const sectorRatioText = sector ? `${sector.name} ${percent(sector.ratio)}` : "等待資料";
+  const riskFlagCount = riskHoldings.reduce((sum, row) => sum + (row.fund?.riskFlags?.length || 0), 0) + institutionTurnSell.length;
+
+  els.holdingAlertList.innerHTML = `
+    <div class="holding-health-grid">
+      <article>
+        <span>今日損益</span>
+        <strong class="${priceTone(today)}">${Number.isFinite(today) ? formatCurrency(today) : "等待資料"}</strong>
+      </article>
+      <article>
+        <span>累計損益</span>
+        <strong class="${priceTone(cumulative)}">${formatCurrency(cumulative)}</strong>
+      </article>
+      <article>
+        <span>單檔最大占比</span>
+        <strong class="${largest?.ratio > 30 ? "price-down" : ""}">${largestRatioText}</strong>
+      </article>
+      <article>
+        <span>同族群集中度</span>
+        <strong class="${sector?.ratio > 45 ? "price-down" : ""}">${sectorRatioText}</strong>
+      </article>
+      <article>
+        <span>籌碼方向</span>
+        <strong>${institutionBuy.length} 多 / ${institutionTurnSell.length} 空</strong>
+      </article>
+      <article>
+        <span>風險標籤</span>
+        <strong class="${riskFlagCount ? "price-down" : "price-up"}">${riskFlagCount ? `${riskFlagCount} 項` : "暫無"}</strong>
+      </article>
+    </div>
+    <div class="priority-holding-list">
+      <div class="priority-list-head">
+        <strong>重點持股清單</strong>
+        <span>${priorityRows.length ? `顯示 ${priorityRows.length} 檔` : "目前沒有資料"}</span>
+      </div>
+      ${priorityRows.length ? priorityRows.map((row) => `
+        <button type="button" class="priority-holding-row" data-priority-holding="${escapeAttribute(row.entry.item.code)}">
+          <span>${escapeHtml(row.entry.item.code)} ${escapeHtml(row.entry.stock?.name || row.entry.item.name || "")}</span>
+          <strong class="${priceTone(row.entry.stock?.changePercent)}">${Number.isFinite(number(row.entry.stock?.changePercent)) ? percent(row.entry.stock.changePercent) : "漲跌等待資料"}</strong>
+          <em class="${priceTone(row.metrics.pnl)}">${Number.isFinite(row.metrics.pnl) ? compactMoney(row.metrics.pnl) : "損益等待資料"}</em>
+          <small>${escapeHtml((getInstitutional(row.entry.item.code)?.total || 0) >= 0 ? "籌碼偏多" : "籌碼偏空")}</small>
+          <div>${pillList((row.flags.length ? row.flags : ["持續觀察"]).slice(0, 3))}</div>
+          <p>提醒：${escapeHtml(holdingPlainReminder(row, holdingValue))}</p>
+        </button>
+      `).join("") : '<p class="empty compact-empty">目前持股沒有可整理的重點提醒。</p>'}
+    </div>
+  `;
+  els.holdingAlertList.querySelectorAll("[data-priority-holding]").forEach((button) => {
+    button.addEventListener("click", () => openRadarStock(button.dataset.priorityHolding));
+  });
+}
+
+function holdingPlainReminder(row) {
+  const changePercent = number(row.entry.stock?.changePercent);
+  if (row.flags.includes("短線過熱") || changePercent >= 6) {
+    return "今日漲幅較大，若已有持股可先觀察是否出現爆量長上影，不宜盲目追高。";
+  }
+  if (row.flags.includes("法人轉賣")) {
+    return "籌碼方向轉弱，先觀察價格是否跌破重要均線與原本持有理由是否仍成立。";
+  }
+  if (row.flags.includes("單檔過重")) {
+    return "單檔占比較高，後續調整前先確認部位與停損條件。";
+  }
+  if (row.flags.includes("跌破 20 日均線")) {
+    return "價格跌破 20 日均線，先觀察是否只是震盪或已轉弱。";
+  }
+  return "目前沒有明顯高優先風險，持續觀察籌碼方向、量能與族群強弱。";
+}
+
+function renderWatchAlerts(watchOnly, fundRows) {
+  if (!els.watchAlertList) return;
+  if (!watchOnly.length) {
+    els.watchAlertList.innerHTML = '<p class="empty compact-empty">尚未加入觀察股，加入後會自動整理資金分數、法人連買與回檔觀察區。</p>';
+    return;
+  }
+  const watchCodes = new Set(watchOnly.map((entry) => entry.item.code));
+  const rows = fundRows.filter((item) => watchCodes.has(item.code));
+  if (!rows.length) {
+    els.watchAlertList.innerHTML = '<p class="empty compact-empty">觀察股尚未取得今日資金資料。</p>';
+    return;
+  }
+  const ranked = rows.slice().sort((a, b) => {
+    const aScore = a.fundScore + (a.foreignBuyDays >= 1 || a.trustBuyDays >= 1 ? 8 : 0) - (a.riskFlags.includes("短線過熱") ? 6 : 0);
+    const bScore = b.fundScore + (b.foreignBuyDays >= 1 || b.trustBuyDays >= 1 ? 8 : 0) - (b.riskFlags.includes("短線過熱") ? 6 : 0);
+    return bScore - aScore;
+  }).slice(0, 5);
+  els.watchAlertList.innerHTML = `
+    <div class="watch-rank-head">
+      <span>排行</span>
+      <span>股票</span>
+      <span>資金分數</span>
+      <span>籌碼狀態</span>
+      <span>狀態標籤</span>
+      <span>觀察理由</span>
+    </div>
+    ${ranked.map((item, index) => `
+      <button type="button" class="watch-rank-row" data-watch-rank="${escapeAttribute(item.code)}">
+        <span>${index + 1}</span>
+        <strong>${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
+        <em>${item.fundScore}</em>
+        <small>${escapeHtml(watchInstitutionText(item))}</small>
+        <div>${pillList(watchAlertTags(item))}</div>
+        <p>${escapeHtml(watchAlertReason(item))}</p>
+      </button>
+    `).join("")}
+  `;
+  els.watchAlertList.querySelectorAll("[data-watch-rank]").forEach((button) => {
+    button.addEventListener("click", () => openRadarStock(button.dataset.watchRank));
+  });
+}
+
+function watchAlertTags(item) {
+  const tags = [];
+  if ((item.foreignBuyDays || 0) >= 1 || (item.trustBuyDays || 0) >= 1) tags.push("籌碼連買");
+  if (item.riskFlags.includes("短線過熱") || item.riskFlags.includes("爆量長上影")) tags.push("短線過熱");
+  if ((item.changePercent || 0) <= 0 && !item.riskFlags.includes("法人不支持")) tags.push("等待回測");
+  if ((item.fundScore || 0) >= 70) tags.push("資金轉強");
+  if ((item.volumeMultiple || 0) < 1.2) tags.push("量能不足");
+  if (item.riskFlags.length) tags.push("風險升高");
+  return tags.length ? tags : ["等待確認"];
+}
+
+function watchInstitutionText(item) {
+  if ((item.foreignBuyDays || 0) || (item.trustBuyDays || 0)) {
+    return `外資 ${item.foreignBuyDays || 0} 天 / 投信 ${item.trustBuyDays || 0} 天`;
+  }
+  const total = number(item.institutionalTotal);
+  if (Number.isFinite(total)) return total > 0 ? "籌碼偏買超" : total < 0 ? "籌碼偏賣超" : "籌碼平盤";
+  return "籌碼等待資料";
+}
+
+function watchAlertReason(item) {
+  if (item.riskFlags.includes("短線過熱") || item.riskFlags.includes("爆量長上影")) {
+    return "漲幅與量能偏熱，先觀察是否回測或量縮整理。";
+  }
+  if ((item.fundScore || 0) >= 70) return "資金分數較高，可觀察資金是否延續。";
+  if ((item.foreignBuyDays || 0) >= 1 || (item.trustBuyDays || 0) >= 1) return "籌碼連買開始出現，仍需搭配量價位置確認。";
+  if ((item.changePercent || 0) <= 0) return "價格回到較容易觀察的位置，等待籌碼與量能同步改善。";
+  return "訊號尚未一致，維持觀察即可。";
+}
+
+function renderRoutePages() {
+  applyRouteVisibility();
+  renderFundFlowRadarPage();
+  renderDataStatusPage();
+  renderEtfFlowPage();
+}
+
+function currentRouteName() {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/fund-flow-radar") return "fund-flow-radar";
+  if (path === "/data-status") return "data-status";
+  if (path === "/etf-flow") return "etf-flow";
+  return "home";
+}
+
+function applyRouteVisibility() {
+  const route = currentRouteName();
+  const shellChildren = Array.from(document.querySelectorAll("main.shell > *"));
+  shellChildren.forEach((child) => {
+    const isFund = child.id === "fundFlowRadarPage";
+    const isStatus = child.id === "dataStatusPage";
+    const isEtf = child.id === "etfFlowPage";
+    child.hidden = route === "fund-flow-radar" ? !isFund : route === "data-status" ? !isStatus : route === "etf-flow" ? !isEtf : isFund || isStatus || isEtf;
+  });
+  document.body.dataset.route = route;
+}
+
+function filteredFundFlowRows() {
+  const form = els.fundFlowFilterForm;
+  const selected = new Set(form ? Array.from(form.querySelectorAll("input[type='checkbox']:checked")).map((item) => item.value) : []);
+  const sort = els.fundFlowSort?.value || "fundScore";
+  let rows = (market.fundFlow?.length ? market.fundFlow : buildFundFlowRows()).slice();
+  if (selected.has("listed")) rows = rows.filter((item) => item.market === "上市");
+  if (selected.has("otc")) rows = rows.filter((item) => item.market === "上櫃");
+  if (selected.has("score70")) rows = rows.filter((item) => item.fundScore >= 70);
+  if (selected.has("foreign3")) rows = rows.filter((item) => item.foreignBuyDays >= 3);
+  if (selected.has("trust3")) rows = rows.filter((item) => item.trustBuyDays >= 3);
+  if (selected.has("sync")) rows = rows.filter((item) => item.foreign > 0 && item.trust > 0);
+  if (selected.has("volume2")) rows = rows.filter((item) => (item.volumeMultiple || 0) >= 2);
+  if (selected.has("noOverheat")) rows = rows.filter((item) => !item.riskFlags.includes("短線過熱") && !item.riskFlags.includes("爆量長上影"));
+  if (selected.has("noMarginHot")) rows = rows.filter((item) => !item.riskFlags.includes("融資過熱"));
+  if (selected.has("institutionSupport")) rows = rows.filter((item) => !item.riskFlags.includes("法人不支持"));
+  const sorters = {
+    fundScore: (a, b) => b.fundScore - a.fundScore,
+    foreign: (a, b) => (b.foreignBuyDays || 0) - (a.foreignBuyDays || 0) || (b.foreign || 0) - (a.foreign || 0),
+    trust: (a, b) => (b.trustBuyDays || 0) - (a.trustBuyDays || 0) || (b.trust || 0) - (a.trust || 0),
+    volume: (a, b) => (b.volumeMultiple || 0) - (a.volumeMultiple || 0),
+    risk: (a, b) => (b.riskFlags.length || 0) - (a.riskFlags.length || 0) || b.fundScore - a.fundScore
+  };
+  return rows.sort(sorters[sort] || sorters.fundScore);
+}
+
+function renderFundFlowRadarPage() {
+  if (!els.fundFlowRadarPage) return;
+  const rows = filteredFundFlowRows();
+  if (els.fundFlowRadarMeta) {
+    const latestDate = market.latestTradingDate || market.institutional?.date || "等待資料";
+    els.fundFlowRadarMeta.textContent = `最新交易日：${latestDate} ｜ 資料更新時間：${market.updatedAt ? formatUpdateTime(market.updatedAt) : "尚未同步"} ｜ ${rows.length} 檔觀察標的`;
+  }
+  if (els.fundFlowRadarTable) {
+    els.fundFlowRadarTable.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            ${["排名", "股票代號", "股票名稱", "市場", "收盤價", "今日漲幅", "成交量倍數", "外資今日買超", "外資連買天數", "投信今日買超", "投信連買天數", "法人 5 日累計", "融資變化", "資金分數", "ETF Flow Score", "ETF 加碼檔數", "主動 ETF 加碼檔數", "ETF 淨流入估算金額", "相關 ETF", "標籤", "風險提示"].map((item) => `<th>${item}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.slice(0, 80).map((item, index) => `
+            <tr data-radar-row="${escapeAttribute(item.code)}">
+              <td>${index + 1}</td>
+              <td>${escapeHtml(item.code)}</td>
+              <td>${escapeHtml(item.name)}</td>
+              <td>${escapeHtml(item.market)}</td>
+              <td>${money(item.close)}</td>
+              <td class="${priceTone(item.changePercent)}">${percent(item.changePercent)}</td>
+              <td>${volumeMultipleText(item.volumeMultiple)}</td>
+              <td class="${priceTone(item.foreign)}">${formatShareFlow(item.foreign)}</td>
+              <td>${item.foreignBuyDays || 0}</td>
+              <td class="${priceTone(item.trust)}">${formatShareFlow(item.trust)}</td>
+              <td>${item.trustBuyDays || 0}</td>
+              <td class="${priceTone(item.institutionFiveDay)}">${formatShareFlow(item.institutionFiveDay)}</td>
+              <td>${Number.isFinite(item.marginChange) ? formatShareFlow(item.marginChange) : "等待資料"}</td>
+              <td><strong>${item.fundScore}</strong></td>
+              <td><strong>${item.etfFlowScore || 0}</strong></td>
+              <td>${item.etfIncreasedCount || 0}</td>
+              <td>${item.activeEtfBuyCount || 0}</td>
+              <td class="${priceTone(item.netEstimatedEtfFlowValue)}">${formatCurrency(item.netEstimatedEtfFlowValue || 0)}</td>
+              <td>${escapeHtml(relatedEtfText(item.relatedEtfs))}</td>
+              <td>${pillList(item.tags)}</td>
+              <td>${pillList(item.riskFlags.length ? item.riskFlags : ["暫無明顯風險"])}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+    els.fundFlowRadarTable.querySelectorAll("[data-radar-row]").forEach((row) => {
+      row.addEventListener("click", () => openRadarStock(row.dataset.radarRow));
+    });
+  }
+  if (els.fundFlowRadarCards) {
+    els.fundFlowRadarCards.innerHTML = rows.slice(0, 80).map((item) => `
+      <article class="radar-mobile-card" data-radar-card="${escapeAttribute(item.code)}">
+        <div>
+          <strong>${escapeHtml(item.code)} ${escapeHtml(item.name)}</strong>
+          <span class="${priceTone(item.changePercent)}">${percent(item.changePercent)}</span>
+        </div>
+        <div class="radar-card-score">
+          <span>資金分數</span>
+          <strong>${item.fundScore}</strong>
+        </div>
+        <p>外資連買 ${item.foreignBuyDays || 0} 天 / 投信連買 ${item.trustBuyDays || 0} 天 ｜ 成交量 ${volumeMultipleText(item.volumeMultiple)}</p>
+        <p>ETF Flow ${item.etfFlowScore || 0} ｜ ETF 加碼 ${item.etfIncreasedCount || 0} 檔 ｜ 主動 ETF ${item.activeEtfBuyCount || 0} 檔 ｜ ${escapeHtml(relatedEtfText(item.relatedEtfs))}</p>
+        <div>${pillList(item.tags.slice(0, 3))}</div>
+        <small>${item.riskFlags.length ? item.riskFlags.join("、") : "暫無明顯風險提示"}</small>
+      </article>
+    `).join("") || '<p class="empty">目前沒有符合篩選條件的觀察標的。</p>';
+    els.fundFlowRadarCards.querySelectorAll("[data-radar-card]").forEach((card) => {
+      card.addEventListener("click", () => openRadarStock(card.dataset.radarCard));
+    });
+  }
+}
+
+function renderDataStatusPage() {
+  if (!els.dataStatusPage) return;
+  const status = market.dataStatus || {};
+  const rows = [
+    ["最新交易日", market.latestTradingDate || market.institutional?.date || "等待資料"],
+    ["上市行情資料狀態", status.twseDaily || (market.daily.some((item) => item.market === "上市") ? "已取得" : "等待資料")],
+    ["上櫃行情資料狀態", status.tpexDaily || (market.daily.some((item) => item.market === "上櫃") ? "已取得" : "等待資料")],
+    ["上市法人資料狀態", status.twseInstitutional || (String(market.institutional?.source || "").includes("TWSE") ? "已取得" : "等待資料")],
+    ["上櫃法人資料狀態", status.tpexInstitutional || (String(market.institutional?.source || "").includes("TPEx") ? "已取得" : "等待資料")],
+    ["融資融券資料狀態", status.margin || "等待穩定資料來源"],
+    ["財報資料狀態", status.financial || (market.revenue.length || market.valuation.length ? "已取得" : "等待資料")],
+    ["ETF 商品資訊狀態", market.etfFlow?.sourceStatus?.etfList || "等待資料"],
+    ["ETF 交易資料狀態", market.etfFlow?.sourceStatus?.trading || "等待資料"],
+    ["ETF 持股資料狀態", market.etfFlow?.sourceStatus?.holdings || "等待資料"],
+    ["ETF PCF 資料狀態", market.etfFlow?.sourceStatus?.pcf || "等待資料"],
+    ["最後更新時間", market.updatedAt ? formatUpdateTime(market.updatedAt) : "尚未同步"],
+    ["最近一次錯誤訊息", status.lastError || "目前沒有記錄錯誤"]
+  ];
+  if (els.dataStatusList) {
+    els.dataStatusList.innerHTML = rows.map(([label, value]) => `
+      <article>
+        <span>${label}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </article>
+    `).join("");
+  }
+  if (els.dataStatusMeta) {
+    els.dataStatusMeta.textContent = "資料來源優先使用 TWSE、TPEx 與公開財報資料；盤中報價依可用來源標示。";
+  }
+  if (els.manualDataRefreshButton) {
+    const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+    els.manualDataRefreshButton.disabled = !isAdmin;
+    els.manualDataRefreshButton.textContent = isAdmin ? "手動更新資料" : "手動更新限管理員";
+  }
+}
+
+function renderEtfFlowPage() {
+  if (!els.etfFlowPage) return;
+  const flow = market.etfFlow || { dailyStockEtfFlowSummary: [], dailyEtfTrading: [], etfs: [] };
+  const summary = flow.dailyStockEtfFlowSummary || [];
+  const latestDate = market.latestTradingDate || summary[0]?.date || "等待資料";
+  if (els.etfFlowMeta) {
+    els.etfFlowMeta.textContent = `最新交易日：${latestDate} ｜ 資料更新時間：${market.updatedAt ? formatUpdateTime(market.updatedAt) : "尚未同步"} ｜ 追蹤 ETF ${flow.etfs?.length || 0} 檔`;
+  }
+  renderEtfStockList(els.etfBuyRankingList, summary
+    .filter((item) => item.totalEstimatedEtfBuyValue > 0)
+    .slice()
+    .sort((a, b) => b.etfFlowScore - a.etfFlowScore || b.totalEstimatedEtfBuyValue - a.totalEstimatedEtfBuyValue)
+    .slice(0, 12), "buy");
+  renderEtfStockList(els.etfSellRankingList, summary
+    .filter((item) => item.totalEstimatedEtfSellValue > 0)
+    .slice()
+    .sort((a, b) => b.totalEstimatedEtfSellValue - a.totalEstimatedEtfSellValue)
+    .slice(0, 12), "sell");
+  renderEtfStockList(els.multiEtfBuyList, summary
+    .filter((item) => item.addedByEtfCount + item.increasedByEtfCount >= 2)
+    .slice()
+    .sort((a, b) => (b.addedByEtfCount + b.increasedByEtfCount) - (a.addedByEtfCount + a.increasedByEtfCount) || b.etfFlowScore - a.etfFlowScore)
+    .slice(0, 12), "multi");
+  renderEtfStockList(els.activeEtfBuyList, summary
+    .filter((item) => item.activeEtfBuyCount > 0)
+    .slice()
+    .sort((a, b) => b.activeEtfBuyCount - a.activeEtfBuyCount || b.etfFlowScore - a.etfFlowScore)
+    .slice(0, 12), "active");
+  renderEtfTradingHeat(flow.dailyEtfTrading || []);
+}
+
+function renderEtfStockList(container, rows, mode) {
+  if (!container) return;
+  if (!rows.length) {
+    container.innerHTML = '<p class="empty">等待 ETF 持股變化資料。</p>';
+    return;
+  }
+  container.innerHTML = rows.map((item, index) => {
+    const related = relatedEtfText(item.relatedEtfs);
+    const buyCount = item.addedByEtfCount + item.increasedByEtfCount;
+    const sellCount = item.decreasedByEtfCount + item.removedByEtfCount;
+    const valueText = mode === "sell" ? compactMoney(item.totalEstimatedEtfSellValue) : compactMoney(item.totalEstimatedEtfBuyValue);
+    const countText = mode === "sell" ? `${sellCount} 檔 ETF 減碼` : `${buyCount} 檔 ETF 加碼 / 主動 ${item.activeEtfBuyCount} 檔`;
+    return `
+      <article class="etf-flow-card" data-etf-stock="${escapeAttribute(item.stockId)}">
+        <div class="etf-flow-card-head">
+          <span>${index + 1}</span>
+          <strong>${escapeHtml(item.stockId)} ${escapeHtml(item.stockName)}</strong>
+          <em>${item.etfFlowScore}</em>
+        </div>
+        <div class="etf-flow-metrics">
+          <div><span>${mode === "sell" ? "估算賣出" : "估算買入"}</span><strong>${valueText}</strong></div>
+          <div><span>ETF 檔數</span><strong>${countText}</strong></div>
+          <div><span>相關 ETF</span><strong>${escapeHtml(related)}</strong></div>
+        </div>
+        <div class="etf-flow-tags">${pillList(mode === "sell" ? item.riskFlags.concat(item.tags).slice(0, 5) : item.tags.slice(0, 5))}</div>
+      </article>
+    `;
+  }).join("");
+  container.querySelectorAll("[data-etf-stock]").forEach((card) => {
+    card.addEventListener("click", () => openRadarStock(card.dataset.etfStock));
+  });
+}
+
+function renderEtfTradingHeat(rows) {
+  if (!els.etfTradingHeatList) return;
+  const sorted = (rows || []).slice().sort((a, b) => (b.tradingValue || 0) - (a.tradingValue || 0)).slice(0, 14);
+  if (!sorted.length) {
+    els.etfTradingHeatList.innerHTML = '<p class="empty">等待 ETF 日成交資料。</p>';
+    return;
+  }
+  els.etfTradingHeatList.innerHTML = sorted.map((item) => `
+    <article class="etf-flow-card etf-trading-card">
+      <div class="etf-flow-card-head">
+        <strong>${escapeHtml(item.etfId)} ${escapeHtml(item.etfName)}</strong>
+        <em class="${priceTone(item.changePercent)}">${percent(item.changePercent)}</em>
+      </div>
+      <div class="etf-flow-metrics">
+        <div><span>今日成交值</span><strong>${Number.isFinite(item.tradingValue) ? compactMoney(item.tradingValue) : "--"}</strong></div>
+        <div><span>成交量倍數</span><strong>${volumeMultipleText(item.volumeMultiple)}</strong></div>
+        <div><span>溢折價</span><strong>${Number.isFinite(item.premiumDiscountPercent) ? percent(item.premiumDiscountPercent) : "等待資料"}</strong></div>
+        <div><span>法人買賣超</span><strong class="${priceTone(item.totalInstitutionalNetBuy)}">${formatShareFlow(item.totalInstitutionalNetBuy)}</strong></div>
+      </div>
+    </article>
+  `).join("");
+}
+
+function relatedEtfText(items = []) {
+  return (items || []).slice(0, 4).map((item) => item.etfId).join("、") || "等待資料";
+}
+
+function pillList(items) {
+  return (items || []).length
+    ? items.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")
+    : '<span class="pill">等待資料</span>';
+}
+
+function renderTodayPnlValue(holdings) {
+  let total = 0;
+  let hasValue = false;
+  holdings.forEach(({ item, stock }) => {
+    const metrics = holdingTodayPnlMetrics(item, stock);
+    if (Number.isFinite(metrics.todayPnl)) {
+      total += metrics.todayPnl;
+      hasValue = true;
+    }
+  });
+  return hasValue ? total : null;
+}
+
+function largestHoldingSector(holdings, holdingValue) {
+  const sectorMap = new Map();
+  holdings.forEach(({ item, stock }) => {
+    const shares = holdingShares(item);
+    if (!stock || !shares) return;
+    const sector = inferSector(stock);
+    sectorMap.set(sector, (sectorMap.get(sector) || 0) + stock.close * shares);
+  });
+  const [name, value] = Array.from(sectorMap.entries()).sort((a, b) => b[1] - a[1])[0] || [];
+  return name ? { name, value, ratio: holdingValue ? (value / holdingValue) * 100 : 0 } : null;
+}
+
+function volumeMultipleText(value) {
+  return Number.isFinite(number(value)) ? `${number(value).toFixed(1)}x` : "--";
+}
+
+function openRadarStock(code) {
+  const fund = getFundFlowItem(code);
+  const stock = getStock(code);
+  if (!stock && fund) {
+    window.location.href = `/fund-flow-radar?code=${encodeURIComponent(code)}`;
+    return;
+  }
+  if (stock) {
+    openStockDetail({
+      item: watchList.find((entry) => entry.code === code) || { code, name: stock.name, type: "watch" },
+      stock,
+      val: getValuation(code),
+      rev: getRevenue(code),
+      signal: scoreStock(stock, getValuation(code), getRevenue(code))
+    });
+  }
 }
 
 function formatStockLabel(stock) {
@@ -2284,7 +3316,7 @@ function pickBeginnerCandidate(ranking) {
     const trendCandidate = trendCandidates[seed % trendCandidates.length];
     return {
       stock: trendCandidate,
-      reason: `每分鐘從前 ${trendCandidates.length} 檔候選中輪替顯示一檔。依近一週趨勢、今天強弱與成交熱度排序，先觀察是否延續，這不是買進建議。`
+      reason: `每分鐘從前 ${trendCandidates.length} 檔候選中輪替顯示一檔。依近一週趨勢、今天強弱與成交熱度排序，先觀察是否延續，這不是進場指示。`
     };
   }
 
@@ -2365,18 +3397,18 @@ function renderDataQuality() {
     dataBadge(hasRealMarket ? "即時/公開" : market.source === "sample" ? "範例" : "資料不足", hasRealMarket ? "good" : "bad", hasRealMarket ? "大盤與成交資料已連接公開資料來源。" : "主要市場資料目前沒有成功回傳，先不要用這個畫面做判斷。"),
     quoteBadge,
     dataBadge(hasInstitutional ? "盤後" : "估算", hasInstitutional ? "warn" : "bad", hasInstitutional ? "法人資料為 TWSE / TPEx 盤後統計，適合看方向，不是即時籌碼。" : "法人資料尚未完整連接，先當參考。"),
-    dataBadge("非建議", "warn", "AI 只整理訊號與風險，不保證獲利；下單前仍要檢查部位與停損。")
+    dataBadge("非指示", "warn", "AI 只整理訊號與風險，不承諾獲利；下單前仍要檢查部位與停損。")
   ].join("");
 }
 
 function stockDecision(signal, stock, val, rev, inst) {
   if (!stock) return { label: "資料不足", tone: "warn", text: "先確認股票代號與資料來源。" };
-  if (!val && !rev && !inst) return { label: "資料不足", tone: "warn", text: "缺少估值、營收與法人資料，不建議只用價格判斷。" };
+  if (!val && !rev && !inst) return { label: "資料不足", tone: "warn", text: "缺少估值、營收與法人資料，不宜只用價格判斷。" };
   if (signal.tone === "bad" || rev?.yoy < -10 || inst?.total < 0 && stock.change < 0) {
     return { label: "風險偏高", tone: "bad", text: "價格、法人或基本面偏弱，先等轉強。" };
   }
   if (signal.tone === "good" && rev?.yoy >= 0 && (!inst || inst.total >= 0)) {
-    return { label: "可觀察", tone: "good", text: "訊號偏正面，但仍建議等回檔或突破確認。" };
+    return { label: "可觀察", tone: "good", text: "訊號偏正面，但仍需等回檔或突破確認。" };
   }
   if (val?.pe > 35 || stock.changePercent > 6) {
     return { label: "等回檔", tone: "warn", text: "短線或估值偏熱，不適合急追。" };
@@ -2388,7 +3420,7 @@ function operationScenario(item, stock, val, rev, inst, pnlRate = null) {
   const decision = stockDecision(scoreStock(stock, val, rev), stock, val, rev, inst);
   if (!stock) return "資料不足：先確認代號，不要下單。";
   if ((item?.type || "watch") === "holding") {
-    if (pnlRate >= 15) return "若已持有：可續抱，但設定移動停利，不建議獲利後再重押加碼。";
+    if (pnlRate >= 15) return "若已持有：可續抱觀察，但設定移動停利，獲利後不宜再重押加碼。";
     if (pnlRate <= -8) return "若已持有：先檢查買進理由是否還成立，必要時設停損或減碼。";
     if (decision.label === "可觀察") return "若已持有：續抱觀察，等營收與法人方向確認後再加碼。";
     if (decision.label === "風險偏高") return "若已持有：避免攤平，先降低曝險或等待轉強。";
@@ -2468,7 +3500,7 @@ function dataWarning(val, rev, inst) {
   if (!rev) missing.push("營收");
   if (!inst) missing.push("法人");
   if (!missing.length) return "";
-  return `資料不足：缺少${missing.join("、")}，不建議只用價格或排名判斷。`;
+  return `資料不足：缺少${missing.join("、")}，不宜只用價格或排名判斷。`;
 }
 
 function riskLevel(stock, val, rev, inst, pnlRate = null) {
@@ -2532,21 +3564,46 @@ function renderPortfolioHealth(holdings, tracked, holdingValue) {
 }
 
 function renderPreflightChecklist(tracked, ranking) {
-  const hot = ranking[0] ? `${ranking[0].code} ${ranking[0].name}` : "今日熱門股";
-  const checks = [
-    ["知道為什麼漲嗎？", `先看成交族群、新聞與法人，避免只因 ${hot} 很熱門就追。`],
-    ["有設定停損嗎？", "進場前先寫下跌多少要減碼，不要等虧損後才想。"],
-    ["單檔會不會太重？", "新手單檔部位盡量不要過度集中，尤其小型股更要小部位。"],
-    ["資料是否即時？", "確認該區塊標示是即時、盤後還是範例，避免用延遲資料做短線決策。"]
+  const indexChange = number(market.index?.changePercent);
+  const fundRows = market.fundFlow?.length ? market.fundFlow : buildFundFlowRows();
+  const hot = fundRows[0] || ranking[0];
+  const hotRisk = hot?.riskFlags?.length ? hot.riskFlags.join("、") : "等待個股風險資料";
+  const totalFlow = number(market.institutional?.total);
+  const groups = [
+    {
+      title: "市場面",
+      items: [
+        ["大盤是否偏弱", Number.isFinite(indexChange) ? `${marketStateLabel(indexChange, totalFlow)}，加權 ${percent(indexChange)}` : "等待資料", Number.isFinite(indexChange) && indexChange < -0.7 ? "大盤偏弱時，先降低追高與加碼衝動。" : "先看大盤方向是否支撐個股表現。"],
+        ["成交量是否異常", hot ? `代表股成交量 ${volumeMultipleText(hot.volumeMultiple)}` : "等待資料", "量能放大要搭配收盤位置，避免只看熱度。"],
+        ["籌碼是否支持", Number.isFinite(totalFlow) ? `三大法人 ${formatShareFlow(totalFlow)}` : "等待盤後資料", "籌碼方向不一致時，個股訊號需要更多確認。"]
+      ]
+    },
+    {
+      title: "個股面",
+      items: [
+        ["是否追高", hot ? `${hot.code} ${percent(hot.changePercent)}` : "先選觀察標的", "漲幅偏大時，可等回測或量縮整理。"],
+        ["融資是否過熱", hotRisk, "融資大增時，留意短線波動與停損紀律。"],
+        ["是否設定停損", "先寫下重新檢查條件", "下單前先定義錯了要怎麼處理。"],
+        ["單檔部位是否過大", "檢查單檔與族群占比", "避免單一股票或同族群影響整體帳戶。"]
+      ]
+    }
   ];
-  els.preflightList.innerHTML = checks.map(([title, text], index) => `
-    <article class="preflight-card">
-      <span>${index + 1}</span>
-      <div>
-        <strong>${title}</strong>
-        <p>${text}</p>
-      </div>
-    </article>
+  let order = 0;
+  els.preflightList.innerHTML = groups.map((group) => `
+    <section class="preflight-group">
+      <strong>${group.title}</strong>
+      ${group.items.map(([title, text, note]) => {
+        order += 1;
+        return `
+        <article>
+          <span>${order}</span>
+          <strong>${title}</strong>
+          <p>${text}</p>
+          <small>${note}</small>
+        </article>
+      `;
+      }).join("")}
+    </section>
   `).join("");
 }
 
@@ -2615,6 +3672,7 @@ function holdingMetrics(entry) {
 
 function renderTodayPnl(holdings) {
   if (!els.todayPnlAmount) return;
+  const fundRows = market.fundFlow?.length ? market.fundFlow : buildFundFlowRows();
 
   const valid = holdings
     .map((entry) => ({ entry, m: holdingMetrics(entry) }))
@@ -2669,6 +3727,26 @@ function renderTodayPnl(holdings) {
   // Meta 區
   els.todayPnlCount.textContent = valid.length ? `${valid.length} 檔` : "--";
   els.todayPnlMarketValue.textContent = totalMarketValue ? compactMoney(totalMarketValue) : "--";
+  const attentionRows = holdings.filter((entry) => {
+    const fund = fundRows.find((item) => item.code === entry.item.code);
+    const metrics = holdingMetrics(entry);
+    const ratio = totalMarketValue && metrics.marketValue ? (metrics.marketValue / totalMarketValue) * 100 : 0;
+    const inst = getInstitutional(entry.item.code);
+    return ratio > 30 || (fund?.riskFlags?.length || 0) || (inst?.total || 0) < 0;
+  });
+  const riskFlagCount = holdings.reduce((sum, entry) => {
+    const fund = fundRows.find((item) => item.code === entry.item.code);
+    return sum + (fund?.riskFlags?.length || 0);
+  }, 0);
+  if (els.todayAttentionCount) {
+    els.todayAttentionCount.textContent = holdings.length ? `${attentionRows.length} 檔` : "--";
+    els.todayAttentionCount.className = attentionRows.length ? "price-down" : "";
+  }
+  if (els.todayRiskFlagCount) {
+    els.todayRiskFlagCount.textContent = holdings.length ? `${riskFlagCount} 項` : "--";
+    els.todayRiskFlagCount.className = riskFlagCount ? "price-down" : "";
+  }
+  document.querySelector(".today-add-link")?.toggleAttribute("hidden", Boolean(holdings.length));
 
   if (cumulativePnl !== 0) {
     els.todayPnlAccumulated.textContent = pnlText(cumulativePnl, "帳面增加", "帳面減少", "帳面持平", compactMoney);
@@ -2750,7 +3828,7 @@ function renderHoldingOverview(holdings) {
     : totalPnlRate >= 10
       ? "整體獲利不錯，重點是守住停利與避免單檔過度集中。"
       : totalPnlRate <= -8
-        ? "整體虧損偏大，先檢查弱勢股原因，不建議盲目攤平。"
+        ? "整體虧損偏大，先檢查弱勢股原因，不宜盲目攤平。"
         : "整體仍在可控範圍，持續追蹤營收、法人與族群集中度。";
 
   const currentHoldingCards = [
@@ -3593,7 +4671,7 @@ function renderTierResults(tier, items) {
   }
 
   listEl.innerHTML = items.map((item, index) => `
-    <article class="small-cap-card" data-code="${escapeHtml(item.stock.code)}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(item.stock.code)} ${escapeHtml(item.stock.name)} 觀察建議">
+    <article class="small-cap-card" data-code="${escapeHtml(item.stock.code)}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(item.stock.code)} ${escapeHtml(item.stock.name)} 觀察提醒">
       <div class="small-cap-head">
         <div>
           <strong>${index + 1}. ${escapeHtml(item.stock.code)} ${escapeHtml(item.stock.name)}</strong>
@@ -3693,7 +4771,7 @@ function renderTierSelection(tier, item, rank) {
       <ul>${(cautions.length ? cautions : [`暫無明顯警訊，但${cfg.label}仍要注意流動性與波動。`]).map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
     </section>
     <section>
-      <strong>觀察建議</strong>
+      <strong>觀察提醒</strong>
       <p>${escapeHtml(decision.text)} ${escapeHtml(risk.text)}。${escapeHtml(smallCapAdvice(item))}</p>
     </section>
     <section>
@@ -3703,7 +4781,7 @@ function renderTierSelection(tier, item, rank) {
         <li>急漲檢查：${escapeHtml(surgeProtection)}</li>
         <li>營收支撐：${escapeHtml(revenueProtection)}</li>
         <li>法人方向：${escapeHtml(institutionProtection)}</li>
-        <li>單檔部位：建議 ${escapeHtml(positionSize)} 部位，不適合一次重押。</li>
+        <li>單檔部位：${escapeHtml(positionSize)} 部位觀察，不適合一次重押。</li>
       </ul>
     </section>
     <section>
@@ -4455,7 +5533,7 @@ function aiHoldingAdvice(stock, val, rev, inst, pnlRate) {
     return `${notes.join("，")}。整體偏強，可續抱並設定移動停利；若短線急漲，避免追高加碼。`;
   }
   if (pnlRate < 0 && inst?.total < 0 && rev?.yoy < 0) {
-    return `${notes.join("，")}。價格、法人與基本面同時偏弱，建議先降低曝險或等待轉強訊號。`;
+    return `${notes.join("，")}。價格、法人與基本面同時偏弱，可先降低曝險或等待轉強訊號。`;
   }
   if (pnlRate < -8) {
     return `${notes.join("，")}。虧損已擴大，先檢查原始買進理由是否仍成立，並訂出明確停損或減碼條件。`;
@@ -4463,7 +5541,7 @@ function aiHoldingAdvice(stock, val, rev, inst, pnlRate) {
   if (inst?.total > 0 && rev?.yoy >= 0) {
     return `${notes.join("，")}。籌碼與營收偏正向，可列入續抱觀察；加碼仍以回檔或突破確認為主。`;
   }
-  return `${notes.join("，") || "資料正在整理"}。目前訊號不夠一致，建議先觀察，不把單一資料當作買賣依據。`;
+  return `${notes.join("，") || "資料正在整理"}。目前訊號不夠一致，先觀察，不把單一資料當作買賣依據。`;
 }
 
 function institutionalText(inst) {
@@ -5055,9 +6133,16 @@ function renderHoldings(holdings) {
     return;
   }
 
+  const totalHoldingValue = holdings.reduce((total, entry) => {
+    const shares = holdingShares(entry.item);
+    return total + (entry.stock && shares ? entry.stock.close * shares : 0);
+  }, 0);
+
   holdings.forEach(({ item, stock, val, rev, signal }) => {
     const inst = getInstitutional(item.code);
+    const fund = getFundFlowItem(item.code) || buildFundFlowItem(stock, inst);
     const { cost, shares, marketValue, costValue, pnl, pnlRate, netPnl, tradingCost, todayChange, todayChangePercent, todayPnl, yearlyDividend } = holdingMetrics({ item, stock, val });
+    const holdingRatio = totalHoldingValue && marketValue ? (marketValue / totalHoldingValue) * 100 : null;
     const lots = holdingLots(item);
     const dayHigh = number(stock?.high);
     const dayLow = number(stock?.low);
@@ -5101,6 +6186,12 @@ function renderHoldings(holdings) {
         <div class="metric"><span>月營收月增</span><strong class="${priceTone(rev?.mom)}">${rev ? percent(rev.mom) : "--"}</strong></div>
         <div class="metric"><span>月營收年增</span><strong class="${priceTone(rev?.yoy)}">${rev ? percent(rev.yoy) : "--"}</strong></div>
         <div class="metric"><span>法人合計</span><strong class="${inst ? inst.total >= 0 ? "price-up" : "price-down" : ""}">${inst ? formatShareFlow(inst.total) : "--"}</strong></div>
+        <div class="metric"><span>單檔占比</span><strong class="${holdingRatio > 30 ? "price-down" : ""}">${holdingRatio === null ? "--" : percent(holdingRatio)}</strong></div>
+        <div class="metric"><span>法人連買</span><strong>${fund ? `外 ${fund.foreignBuyDays || 0} / 投 ${fund.trustBuyDays || 0}` : "--"}</strong></div>
+        <div class="metric"><span>法人轉賣</span><strong class="${inst?.total < 0 ? "price-down" : ""}">${inst?.total < 0 ? "是" : "未明顯"}</strong></div>
+        <div class="metric"><span>短線過熱</span><strong class="${fund?.riskFlags?.includes("短線過熱") ? "price-down" : ""}">${fund?.riskFlags?.includes("短線過熱") ? "是" : "未明顯"}</strong></div>
+        <div class="metric"><span>20 日均線</span><strong class="${Number.isFinite(fund?.ma20) && stock?.close < fund.ma20 ? "price-down" : ""}">${Number.isFinite(fund?.ma20) ? (stock?.close < fund.ma20 ? "跌破" : "站上") : "等待資料"}</strong></div>
+        <div class="metric"><span>資金分數</span><strong>${fund ? fund.fundScore : "--"}</strong></div>
         <div class="metric"><span>狀態</span><strong><span class="pill ${decision.tone}">${decision.label}</span></strong></div>
         <div class="metric"><span>風險等級</span><strong><span class="pill ${risk.tone}">${risk.label}</span></strong></div>
       </div>
@@ -5124,7 +6215,7 @@ function renderHoldings(holdings) {
           }).join("")}
         </div>
       ` : ""}
-      <p class="holding-note">${revenueSummaryText(rev)} ${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
+      <p class="holding-note">${holdingHealthPlainText(item, stock, fund, holdingRatio, todayPnl, pnl)} ${revenueSummaryText(rev)} ${decision.text} ${risk.text}。${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)}</p>
     `;
     card.querySelector(".delete").addEventListener("click", () => {
       watchList = watchList.filter((entry) => entry.code !== item.code);
@@ -5169,6 +6260,19 @@ function renderNews() {
       <span class="pill source-pill">${escapeHtml(item.source || "鉅亨網")}</span>
     </a>
   `).join("");
+}
+
+function holdingHealthPlainText(item, stock, fund, holdingRatio, todayPnl, cumulativePnl) {
+  const riskText = fund?.riskFlags?.length ? `風險標籤為 ${fund.riskFlags.join("、")}` : "暫無明顯風險標籤";
+  const ratioText = Number.isFinite(holdingRatio) ? `單檔占比 ${percent(holdingRatio)}` : "單檔占比等待股數資料";
+  const institutionText = fund
+    ? `外資連買 ${fund.foreignBuyDays || 0} 天、投信連買 ${fund.trustBuyDays || 0} 天`
+    : "法人連買資料等待補齊";
+  const overheatText = fund?.riskFlags?.includes("短線過熱") ? "短線過熱，留意不宜追高或加重部位" : "短線過熱未明顯";
+  const ma20Text = Number.isFinite(fund?.ma20) && Number.isFinite(stock?.close)
+    ? stock.close < fund.ma20 ? "已跌破 20 日均線，需觀察是否轉弱" : "仍在 20 日均線之上"
+    : "20 日均線等待資料";
+  return `${item.code} 今日損益 ${Number.isFinite(todayPnl) ? formatCurrency(todayPnl) : "--"}，累計損益 ${Number.isFinite(cumulativePnl) ? formatCurrency(cumulativePnl) : "--"}，${ratioText}。${institutionText}，${overheatText}，${ma20Text}，${riskText}。`;
 }
 
 function renderHoldingNews(tracked) {
@@ -5313,6 +6417,7 @@ async function openStockDetail(entry) {
   els.detailInstitutionalText.textContent = institutionalText(inst);
   els.detailAiAdviceText.textContent = `${revenueSummaryText(rev)} ${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
   renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning });
+  renderDetailDecisionExtras(item, stock, inst, []);
   els.detailChartStatus.textContent = "線圖讀取中";
   els.detailModal.hidden = false;
 
@@ -5323,6 +6428,7 @@ async function openStockDetail(entry) {
   els.detailMonthReturn.textContent = monthReturn === null ? "--" : percent(monthReturn);
   els.detailChartStatus.textContent = history.length ? "近月歷史成交資料" : "歷史資料不足";
   activeChartHistory = history;
+  renderDetailDecisionExtras(item, stock, inst, history);
   resizeChartCanvas();
   setDetailChartMode(activeChartMode);
 }
@@ -5355,6 +6461,7 @@ function refreshActiveDetailQuote() {
     : "尚未填入買進價與股數，可以先當作觀察標的。";
   els.detailAiAdviceText.textContent = `${revenueSummaryText(rev)} ${operationScenario(item, stock, val, rev, inst, pnlRate)} ${warning ? `${warning} ` : ""}${aiHoldingAdvice(stock, val, rev, inst, pnlRate ?? 0)} 下單前請確認：買進理由、停損線、單檔部位與資料是否即時。`;
   renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning });
+  renderDetailDecisionExtras(item, stock, inst, activeChartHistory);
 }
 
 function renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, pnlRate, warning }) {
@@ -5384,6 +6491,53 @@ function renderDetailConclusions({ item, stock, val, rev, inst, decision, risk, 
       <strong class="${tone === "bad" ? "price-down" : tone === "good" ? "price-up" : ""}">${text}</strong>
     </article>
   `).join("");
+}
+
+function renderDetailDecisionExtras(item, stock, inst, history = []) {
+  if (!els.detailDecisionExtras) return;
+  const fund = getFundFlowItem(item.code) || buildFundFlowItem(stock, inst);
+  const recent = (history || []).slice(-20);
+  const first = recent[0]?.close;
+  const last = recent.at(-1)?.close;
+  const twentyDayReturn = Number.isFinite(first) && Number.isFinite(last) && first ? ((last - first) / first) * 100 : null;
+  const volumeAvg = recent.length ? recent.reduce((sum, row) => sum + (number(row.volume) || 0), 0) / recent.length : null;
+  const closeNearHigh = recent.length && Number.isFinite(last)
+    ? last >= Math.max(...recent.map((row) => number(row.high) || number(row.close) || 0)) * 0.97
+    : false;
+  const plain = fund
+    ? `${stock?.name || item.code} 今日上漲 ${percent(stock?.changePercent)}，成交量為 5 日均量的 ${volumeMultipleText(fund.volumeMultiple)}。外資連買 ${fund.foreignBuyDays || 0} 天，投信連買 ${fund.trustBuyDays || 0} 天，資金分數 ${fund.fundScore}，屬於${fund.tags[0] || "等待確認"}型觀察。${closeNearHigh ? "不過股價已接近近 20 日高點，短線不宜追高，可等待回測或量縮整理。" : "可持續觀察量價是否延續，並先設定停損與部位上限。"}`
+    : "資金分數等待資料補齊，先以價格、成交量與法人方向做中性觀察。";
+  const checks = [
+    marketStateLabel(number(market.index?.changePercent), number(market.institutional?.total)) === "偏弱" ? "大盤偏弱" : "大盤未明顯偏弱",
+    stock?.changePercent > 6 ? "留意追高" : "追高風險未明顯升高",
+    fund?.volumeMultiple >= 2 ? "成交量異常放大" : "成交量未明顯異常",
+    (inst?.total || 0) > 0 ? "法人支持" : "法人支持度等待確認",
+    fund?.riskFlags?.includes("融資過熱") ? "融資過熱" : "融資資料中性",
+    "需先設定停損",
+    "需檢查單檔部位"
+  ];
+  const rows = [
+    ["最近 20 日價格走勢", Number.isFinite(twentyDayReturn) ? percent(twentyDayReturn) : "等待歷史資料"],
+    ["最近 20 日成交量", Number.isFinite(volumeAvg) ? compactMoney(volumeAvg) : "等待歷史資料"],
+    ["外資買賣超趨勢", inst ? `${formatShareFlow(inst.foreign)} / 連買 ${fund?.foreignBuyDays || 0} 天` : "等待法人資料"],
+    ["投信買賣超趨勢", inst ? `${formatShareFlow(inst.trust)} / 連買 ${fund?.trustBuyDays || 0} 天` : "等待法人資料"],
+    ["自營商買賣超趨勢", inst ? formatShareFlow(inst.dealer) : "等待法人資料"],
+    ["融資餘額變化", Number.isFinite(fund?.marginChange) ? formatShareFlow(fund.marginChange) : "等待穩定資料"],
+    ["fundScore 歷史變化", fund ? `目前 ${fund.fundScore}，歷史序列等待多日資料` : "等待資料"],
+    ["下單前檢查表", checks.join("、")]
+  ];
+  els.detailDecisionExtras.innerHTML = `
+    ${rows.map(([label, value]) => `
+      <article>
+        <span>${label}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </article>
+    `).join("")}
+    <article class="detail-extra-plain">
+      <span>白話判讀</span>
+      <p>${escapeHtml(plain)}</p>
+    </article>
+  `;
 }
 
 function movingAverage(values, days) {
@@ -5884,7 +7038,7 @@ function renderInsights(tracked, ranking) {
   if (strong.length) items.push(["可優先觀察", `${strong.map((entry) => entry.item.code).join("、")} 的量價與營收訊號相對健康。`]);
   if (weak.length) items.push(["需要小心", `${weak.map((entry) => entry.item.code).join("、")} 有價格或基本面警訊，先確認原因。`]);
   if (ranking[0]) items.push(["市場熱度", `今日成交金額最高是 ${ranking[0].code} ${ranking[0].name}，代表資金注意力集中。`]);
-  items.push(["使用提醒", "這套工具只整理資料與風險，不保證獲利；真正下單前仍要看資金配置與停損。"]);
+  items.push(["使用提醒", "這套工具只整理資料與風險，不承諾獲利；真正下單前仍要看資金配置與停損。"]);
 
   els.insightList.innerHTML = items.map(([title, text]) => `
     <article class="insight-card">
@@ -7230,7 +8384,22 @@ function initTierTabs() {
   });
 }
 
+function initRouteControls() {
+  applyRouteVisibility();
+  els.fundFlowFilterForm?.addEventListener("change", renderFundFlowRadarPage);
+  els.fundFlowSort?.addEventListener("change", renderFundFlowRadarPage);
+  els.manualDataRefreshButton?.addEventListener("click", () => {
+    if (!currentUser?.email || !ADMIN_EMAILS.includes(currentUser.email)) return;
+    fetchMarket();
+  });
+  window.addEventListener("popstate", () => {
+    applyRouteVisibility();
+    renderRoutePages();
+  });
+}
+
 async function initApp() {
+  initRouteControls();
   initViewMode();
   initTheme();
   initGoogleSignIn();
