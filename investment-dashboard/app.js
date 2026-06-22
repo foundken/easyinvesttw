@@ -1,4 +1,4 @@
-const APP_ASSET_VERSION = "20260622-etf-flow-v1";
+const APP_ASSET_VERSION = "20260622-ledger-pnl-v1";
 const WATCH_KEY = "plain-stock-dashboard-watchlist-v1";
 const SELL_HISTORY_KEY = "plain-stock-dashboard-sell-history-v1";
 const PORTFOLIO_KEY = "plain-stock-dashboard-portfolios-v1";
@@ -287,6 +287,7 @@ const TREND_DATA_VERSION = "twse-history-v2";
 
 let watchList = [];
 let sellHistory = [];
+let capitalSettings = {};
 let portfolios = [];
 let activePortfolioId = DEFAULT_PORTFOLIO_ID;
 let cloudAuth = null;
@@ -523,6 +524,20 @@ function loadSellHistory() {
   }
 }
 
+function normalizeCapitalSettings(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    settlementCash: Number.isFinite(number(source.settlementCash)) ? String(number(source.settlementCash)) : "",
+    pendingReceivable: Number.isFinite(number(source.pendingReceivable)) ? String(number(source.pendingReceivable)) : "",
+    pendingPayable: Number.isFinite(number(source.pendingPayable)) ? String(number(source.pendingPayable)) : "",
+    note: typeof source.note === "string" ? source.note : ""
+  };
+}
+
+function capitalValue(field) {
+  return number(capitalSettings?.[field]) || 0;
+}
+
 const KNOWN_MISSING_BUY_DATE_REPAIRS = [
   { code: "8043", cost: 224.5, boughtAt: "2026-06-18T12:00:00+08:00" },
   { code: "2382", cost: 370, boughtAt: "2026-06-17T12:00:00+08:00" },
@@ -745,7 +760,8 @@ function createDefaultPortfolio(items = [], history = []) {
     id: DEFAULT_PORTFOLIO_ID,
     name: "主要帳本",
     items: Array.isArray(items) ? items : [],
-    sellHistory: Array.isArray(history) ? history : []
+    sellHistory: Array.isArray(history) ? history : [],
+    capital: normalizeCapitalSettings()
   };
 }
 
@@ -757,7 +773,8 @@ function normalizePortfolio(raw, index = 0) {
     id,
     name,
     items: Array.isArray(raw?.items) ? raw.items : [],
-    sellHistory: Array.isArray(raw?.sellHistory) ? raw.sellHistory : []
+    sellHistory: Array.isArray(raw?.sellHistory) ? raw.sellHistory : [],
+    capital: normalizeCapitalSettings(raw?.capital)
   };
 }
 
@@ -822,6 +839,7 @@ function syncCurrentPortfolio() {
   const portfolio = currentPortfolio();
   portfolio.items = watchList;
   portfolio.sellHistory = sellHistory;
+  portfolio.capital = normalizeCapitalSettings(capitalSettings);
   return portfolio;
 }
 
@@ -833,6 +851,7 @@ function applyPortfolioState(state, options = {}) {
   const portfolio = currentPortfolio();
   watchList = portfolio.items;
   sellHistory = portfolio.sellHistory;
+  capitalSettings = normalizeCapitalSettings(portfolio.capital);
   persistPortfolioStateLocal(normalized);
   if (options.source === "cloud") rememberCloudState(normalized);
   renderPortfolioSwitcher();
@@ -848,7 +867,8 @@ function portfolioPayload(savedAt = new Date().toISOString()) {
       id: portfolio.id,
       name: portfolio.name,
       items: Array.isArray(portfolio.items) ? portfolio.items : [],
-      sellHistory: Array.isArray(portfolio.sellHistory) ? portfolio.sellHistory : []
+      sellHistory: Array.isArray(portfolio.sellHistory) ? portfolio.sellHistory : [],
+      capital: normalizeCapitalSettings(portfolio.capital)
     }))
   };
 }
@@ -936,7 +956,8 @@ function startCloudWatchSubscription() {
 }
 
 function currentSessionPortfolioState() {
-  if (!portfolios.length && !watchList.length && !sellHistory.length) return null;
+  const hasCapitalSettings = Object.values(normalizeCapitalSettings(capitalSettings)).some(Boolean);
+  if (!portfolios.length && !watchList.length && !sellHistory.length && !hasCapitalSettings) return null;
   syncCurrentPortfolio();
   return normalizePortfolioState({
     activePortfolioId,
@@ -1097,6 +1118,7 @@ async function switchPortfolio(portfolioId) {
   const portfolio = currentPortfolio();
   watchList = portfolio.items || [];
   sellHistory = portfolio.sellHistory || [];
+  capitalSettings = normalizeCapitalSettings(portfolio.capital);
   await saveWatchList();
   render();
   fetchMarket();
@@ -1110,10 +1132,11 @@ async function addPortfolio() {
   }
   syncCurrentPortfolio();
   const id = `portfolio-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  portfolios.push({ id, name, items: [], sellHistory: [] });
+  portfolios.push({ id, name, items: [], sellHistory: [], capital: normalizeCapitalSettings() });
   activePortfolioId = id;
   watchList = [];
   sellHistory = [];
+  capitalSettings = normalizeCapitalSettings();
   if (els.portfolioNameInput) els.portfolioNameInput.value = "";
   await saveWatchList();
   render();
@@ -1222,6 +1245,11 @@ function formatCurrency(value) {
   return `${signedMoney(value)} 元`;
 }
 
+function plainCurrency(value) {
+  if (!Number.isFinite(value)) return "--";
+  return `${money(value)} 元`;
+}
+
 function transactionFee(value) {
   return Number.isFinite(value) && value > 0 ? value * BROKERAGE_FEE_RATE : 0;
 }
@@ -1255,7 +1283,7 @@ function netTradeMetrics({ buyValue, sellValue, grossProfit }) {
 }
 
 function tradingCostNote() {
-  return `扣費後盈虧以手續費 0.1425%、股票賣出證交稅 0.3%估算，未含券商折扣與最低手續費。`;
+  return `帳本實際總損益以已賣出實際損益加上目前持股帳面損益計算；個別扣費後估算仍以手續費 0.1425%、股票賣出證交稅 0.3%估算。`;
 }
 
 function stockPriceLabel(stock) {
@@ -3772,21 +3800,115 @@ function renderTodayPnl(holdings) {
   }
 }
 
+function capitalInputValue(field) {
+  return escapeHtml(capitalSettings?.[field] || "");
+}
+
+function renderCapitalFlowSection({ totalMarketValue = 0, currentPnl = null, realizedNetPnl = 0 } = {}) {
+  const settlementCash = capitalValue("settlementCash");
+  const pendingReceivable = capitalValue("pendingReceivable");
+  const pendingPayable = capitalValue("pendingPayable");
+  const hasCapitalInput = ["settlementCash", "pendingReceivable", "pendingPayable"]
+    .some((field) => capitalSettings?.[field] !== "");
+  const pendingNet = pendingReceivable - pendingPayable;
+  const marketFunds = settlementCash + pendingNet + (totalMarketValue || 0);
+  const hasTradingPnl = Number.isFinite(currentPnl) || sellHistory.length;
+  const tradingPnl = (Number.isFinite(currentPnl) ? currentPnl : 0) + (Number.isFinite(realizedNetPnl) ? realizedNetPnl : 0);
+  const investedCapital = hasCapitalInput && hasTradingPnl ? marketFunds - tradingPnl : null;
+
+  const cards = [
+    ["目前股市流動資金", hasCapitalInput ? plainCurrency(marketFunds) : "--", "", "交割戶現金 + 未交割淨額 + 持股市值"],
+    ["推算實際投入本金", Number.isFinite(investedCapital) ? plainCurrency(investedCapital) : "--", "", "目前股市流動資金 - 交易總損益"],
+    ["交易總損益", hasTradingPnl ? formatCurrency(tradingPnl) : "--", priceTone(tradingPnl), "已賣出實際損益 + 目前持股帳面損益"],
+    ["未交割淨額", hasCapitalInput ? formatCurrency(pendingNet) : "--", priceTone(pendingNet), "未交割應收 - 未交割應付"]
+  ];
+  const sourceCards = [
+    ["交割戶現金", hasCapitalInput ? plainCurrency(settlementCash) : "--"],
+    ["未交割應收", hasCapitalInput ? plainCurrency(pendingReceivable) : "--"],
+    ["未交割應付", hasCapitalInput ? plainCurrency(pendingPayable) : "--"],
+    ["目前持股市值", totalMarketValue ? plainCurrency(totalMarketValue) : "--"]
+  ];
+
+  return `
+    <section class="holding-overview-section capital-flow-section" aria-label="資金流總覽">
+      <div class="holding-overview-section-head">
+        <strong>資金流總覽</strong>
+        <span>看實際在股市裡流動的錢</span>
+      </div>
+      <div class="holding-overview-grid">
+        ${cards.map(([label, value, tone, helper]) => `
+          <article>
+            <span>${escapeHtml(label)}</span>
+            <strong class="${escapeHtml(tone)}">${value}</strong>
+            <small>${escapeHtml(helper)}</small>
+          </article>
+        `).join("")}
+      </div>
+      <div class="capital-flow-body">
+        <form id="capitalFlowForm" class="capital-flow-form">
+          <label>
+            <span>交割戶現金</span>
+            <input type="number" inputmode="decimal" name="settlementCash" value="${capitalInputValue("settlementCash")}" placeholder="例如 946">
+          </label>
+          <label>
+            <span>未交割應收</span>
+            <input type="number" inputmode="decimal" name="pendingReceivable" value="${capitalInputValue("pendingReceivable")}" placeholder="例如 356592">
+          </label>
+          <label>
+            <span>未交割應付</span>
+            <input type="number" inputmode="decimal" name="pendingPayable" value="${capitalInputValue("pendingPayable")}" placeholder="沒有就填 0">
+          </label>
+          <button type="submit">儲存資金數字</button>
+        </form>
+        <div class="capital-flow-source">
+          ${sourceCards.map(([label, value]) => `
+            <article>
+              <span>${escapeHtml(label)}</span>
+              <strong>${value}</strong>
+            </article>
+          `).join("")}
+        </div>
+      </div>
+      <p class="capital-flow-note">如果交割戶同時拿來繳信用卡或日常支出，這裡仍以股票交割後的現金、未交割款和持股市值來看股市資金池。</p>
+    </section>
+  `;
+}
+
+function bindCapitalFlowForm() {
+  const form = document.querySelector("#capitalFlowForm");
+  if (!form) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    capitalSettings = normalizeCapitalSettings({
+      settlementCash: data.get("settlementCash"),
+      pendingReceivable: data.get("pendingReceivable"),
+      pendingPayable: data.get("pendingPayable")
+    });
+    await saveWatchList();
+    render();
+  });
+}
+
 function renderHoldingOverview(holdings) {
   if (!els.holdingOverview) return;
   const realizedPnl = realizedProfitTotal();
+  const realizedNetPnl = realizedNetProfitTotal();
   if (!holdings.length) {
     els.holdingOverview.innerHTML = `
+      <div class="holding-overview-sections">
+        ${renderCapitalFlowSection({ totalMarketValue: 0, currentPnl: null, realizedNetPnl })}
+      </div>
       <p class="empty">新增「我的存股」後，這裡會自動計算總市值、總成本、總損益與預估股息。</p>
       ${sellHistory.length ? `<p class="holding-overview-note">歷史已賣出毛損益：<strong class="${priceTone(realizedPnl)}">${formatCurrency(realizedPnl)}</strong></p>` : ""}
     `;
+    bindCapitalFlowForm();
     return;
   }
 
   const rows = holdings.map((entry) => ({ ...entry, metrics: holdingMetrics(entry) }));
   const totalMarketValue = rows.reduce((sum, row) => sum + (row.metrics.marketValue || 0), 0);
   const totalCost = rows.reduce((sum, row) => sum + (row.metrics.costValue || 0), 0);
-  const realizedNetPnl = realizedNetProfitTotal();
   const realizedTradingCost = realizedTradingCostTotal();
   const recoveredPrincipal = sellHistory.reduce((sum, item) => {
     const costValue = number(item.costValue);
@@ -3806,11 +3928,8 @@ function renderHoldingOverview(holdings) {
   const totalPnl = totalMarketValue && totalCost ? totalMarketValue - totalCost : null;
   const totalPnlRate = totalPnl !== null && totalCost ? (totalPnl / totalCost) * 100 : null;
   const cumulativePnl = (totalPnl || 0) + realizedPnl;
-  const currentNetPnl = rows.reduce((sum, row) => sum + (Number.isFinite(row.metrics.netPnl) ? row.metrics.netPnl : 0), 0);
-  const currentTradingCost = rows.reduce((sum, row) => sum + (Number.isFinite(row.metrics.netPnl) ? row.metrics.tradingCost || 0 : 0), 0);
-  const totalNetPnl = currentNetPnl + realizedNetPnl;
-  const totalTradingCost = currentTradingCost + realizedTradingCost;
-  const hasNetPnl = rows.some((row) => Number.isFinite(row.metrics.netPnl)) || sellHistory.length;
+  const ledgerTotalPnl = (Number.isFinite(totalPnl) ? totalPnl : 0) + realizedNetPnl;
+  const hasLedgerPnl = Number.isFinite(totalPnl) || sellHistory.length;
   const totalDividend = rows.reduce((sum, row) => sum + (row.metrics.yearlyDividend || 0), 0);
   const averageYield = totalMarketValue ? (totalDividend / totalMarketValue) * 100 : null;
   const profitable = rows.filter((row) => row.metrics.pnl > 0);
@@ -3843,13 +3962,13 @@ function renderHoldingOverview(holdings) {
     ["已回收本金", recoveredPrincipal ? compactMoney(recoveredPrincipal) : "--", ""],
     ["已賣出金額", totalSoldValue ? compactMoney(totalSoldValue) : "--", ""],
     ["已賣出毛損益（未扣費）", sellHistory.length ? formatCurrency(realizedPnl) : "--", priceTone(realizedPnl), "已賣出金額 - 當初買進成本，還沒扣交易費用"],
-    ["已賣出扣費後損益", sellHistory.length ? formatCurrency(realizedNetPnl) : "--", priceTone(realizedNetPnl), "已賣出的毛損益，再扣手續費和證交稅"]
+    ["已賣出實際損益", sellHistory.length ? formatCurrency(realizedNetPnl) : "--", priceTone(realizedNetPnl), "依賣出淨收付扣掉當初買進付出成本"]
   ];
   const summaryCards = [
     ["累計投入本金", lifetimeInvested ? compactMoney(lifetimeInvested) : "--", ""],
-    ["估計交易成本", totalTradingCost ? compactMoney(totalTradingCost) : "--", ""],
-    ["全部毛損益合計", totalPnl === null && !sellHistory.length ? "--" : formatCurrency(cumulativePnl), priceTone(cumulativePnl), "目前持股帳面損益 + 已賣出毛損益，這一格還沒扣交易費用"],
-    ["全部扣費後總盈虧", hasNetPnl ? formatCurrency(totalNetPnl) : "--", priceTone(totalNetPnl), "目前持股若現在賣出 + 已賣出，全部扣掉手續費和證交稅"]
+    ["已賣出交易成本", realizedTradingCost ? compactMoney(realizedTradingCost) : "--", "", "只統計已完成賣出的手續費與證交稅"],
+    ["全部毛損益合計", totalPnl === null && !sellHistory.length ? "--" : formatCurrency(cumulativePnl), priceTone(cumulativePnl), "目前持股帳面損益 + 已賣出毛損益，這一格還沒扣已賣出費用"],
+    ["帳本實際總損益", hasLedgerPnl ? formatCurrency(ledgerTotalPnl) : "--", priceTone(ledgerTotalPnl), "已賣出實際損益 + 目前持股帳面損益"]
   ];
   const renderCardGroup = (title, subtitle, cards) => `
     <section class="holding-overview-section" aria-label="${escapeHtml(title)}">
@@ -3871,12 +3990,14 @@ function renderHoldingOverview(holdings) {
 
   els.holdingOverview.innerHTML = `
     <div class="holding-overview-sections">
+      ${renderCapitalFlowSection({ totalMarketValue, currentPnl: totalPnl, realizedNetPnl })}
       ${renderCardGroup("目前持股", "你現在手上還持有的部位", currentHoldingCards)}
       ${renderCardGroup("已賣出", "已經完成賣出的交易結果", soldCards)}
       ${renderCardGroup("全部合計", "把目前持股和已賣出一起看", summaryCards)}
     </div>
     <p class="holding-overview-note">${escapeHtml(aiTone)} ${escapeHtml(tradingCostNote())}</p>
   `;
+  bindCapitalFlowForm();
 }
 
 function formatShareFlow(value) {
@@ -5822,10 +5943,9 @@ function renderHoldingTradeSummary(holdings) {
     const realizedPnl = realizedProfitByCode(code);
     const realizedNetPnl = realizedNetProfitByCode(code);
     const currentPnl = Number.isFinite(metrics.pnl) ? metrics.pnl : 0;
-    const currentNetPnl = Number.isFinite(metrics.netPnl) ? metrics.netPnl : 0;
     const todayPnl = Number.isFinite(metrics.todayPnl) ? metrics.todayPnl : 0;
     const cumulativePnl = currentPnl + realizedPnl;
-    const netCumulativePnl = currentNetPnl + realizedNetPnl;
+    const ledgerCumulativePnl = currentPnl + realizedNetPnl;
     const tradeDateLines = [
       buyTradePriceListText(buyLots),
       sellTradePriceListText(sales)
@@ -5842,7 +5962,7 @@ function renderHoldingTradeSummary(holdings) {
       currentPnl,
       realizedPnl,
       cumulativePnl,
-      netCumulativePnl
+      ledgerCumulativePnl
     };
   }).sort((a, b) => a.cumulativePnl - b.cumulativePnl || a.code.localeCompare(b.code));
 
@@ -5853,7 +5973,7 @@ function renderHoldingTradeSummary(holdings) {
   const todayDownsideTotal = todayDownRows.reduce((sum, row) => sum + row.todayPnl, 0);
   const todayNetPnl = holdingRows.reduce((sum, row) => sum + row.todayPnl, 0);
   const totalPnl = rows.reduce((sum, row) => sum + row.cumulativePnl, 0);
-  const totalNetPnl = rows.reduce((sum, row) => sum + row.netCumulativePnl, 0);
+  const totalLedgerPnl = rows.reduce((sum, row) => sum + row.ledgerCumulativePnl, 0);
 
   els.holdingTradeSummary.innerHTML = `
     <div class="trade-summary-table" role="table" aria-label="歷史買賣紀錄彙總">
@@ -5879,7 +5999,7 @@ function renderHoldingTradeSummary(holdings) {
           <span role="cell" data-label="買 / 賣">${row.buyCount} / ${row.sellCount} 筆</span>
           <strong role="cell" data-label="買賣至今損益" class="${priceTone(row.cumulativePnl)}">
             ${formatCurrency(row.cumulativePnl)}
-            <small class="${priceTone(row.netCumulativePnl)}">扣費後 ${formatCurrency(row.netCumulativePnl)}</small>
+            <small class="${priceTone(row.ledgerCumulativePnl)}">帳本 ${formatCurrency(row.ledgerCumulativePnl)}</small>
           </strong>
         </div>
       `).join("")}
@@ -5904,8 +6024,8 @@ function renderHoldingTradeSummary(holdings) {
           <strong class="${priceTone(totalPnl)}">${formatCurrency(totalPnl)}</strong>
         </div>
         <div class="trade-total-item">
-          <span>扣費後總盈虧</span>
-          <strong class="${priceTone(totalNetPnl)}">${formatCurrency(totalNetPnl)}</strong>
+          <span>帳本實際總損益</span>
+          <strong class="${priceTone(totalLedgerPnl)}">${formatCurrency(totalLedgerPnl)}</strong>
         </div>
       </div>
     </div>
@@ -6042,7 +6162,7 @@ function renderSellHistory() {
         <strong class="${priceTone(totalProfit)}">${sellHistory.length ? formatCurrency(totalProfit) : "--"}</strong>
       </article>
       <article>
-        <span>已賣出扣費後</span>
+        <span>已賣出實際損益</span>
         <strong class="${priceTone(totalNetProfit)}">${sellHistory.length ? formatCurrency(totalNetProfit) : "--"}</strong>
       </article>
       <article>
@@ -8082,6 +8202,7 @@ els.logout.addEventListener("click", async () => {
   currentUser = null;
   watchList = [];
   sellHistory = [];
+  capitalSettings = normalizeCapitalSettings();
   updateAuthUi();
   render();
 });
