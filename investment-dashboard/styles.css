@@ -1187,6 +1187,48 @@ select:focus {
   font-weight: 800;
 }
 
+.market-detail-panel .market-board {
+  grid-template-columns: 1fr;
+}
+
+.market-detail-panel .market-groups {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 10px;
+  background: var(--card-muted);
+}
+
+.market-detail-panel .group-card {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--card);
+  color: var(--muted);
+}
+
+.market-detail-panel .group-card.active {
+  background: var(--blue);
+  box-shadow: none;
+  color: #fff;
+}
+
+.market-detail-panel .group-card span {
+  color: inherit;
+  font-size: 15px;
+}
+
+.market-detail-panel .group-card strong,
+.market-detail-panel .group-card small {
+  display: none;
+}
+
 .index-detail {
   padding: 18px 18px 12px;
 }
@@ -5121,8 +5163,21 @@ body.chart-expanded .chart-wrap canvas {
     border-bottom: 1px solid var(--line);
   }
 
+  .market-detail-panel .market-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+  }
+
   .group-card {
     min-height: 92px;
+  }
+
+  .market-detail-panel .group-card {
+    flex: 1 1 96px;
+    min-height: 38px;
+    padding: 0 10px;
   }
 
   .market-tabs {
